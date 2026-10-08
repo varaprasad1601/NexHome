@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NexHome API</title>
+<style>
+/* Light by default; a softer dark theme only when chosen with the Theme button */
+:root {
+  --bg: #f7f9fc; --panel: #ffffff; --text: #26303e; --muted: #667085; --border: #e3e8ef;
+  --brand: #1e293b; --accent: #0f766e; --code-bg: #f3f5f9;
+  --side: #ffffff; --side-text: #344054; --side-muted: #8a94a6; --side-hover: #f2f5f7; --side-active: #e6f4f1; --side-active-text: #0f766e;
+  --side-border: #e3e8ef; --input-bg: #f7f9fc;
+  --post: #16a34a; --put: #d97706; --delete: #dc2626;
+  --req: #dc2626; --opt: #16a34a; --no: #b45309; --path: #475569;
+  --ok-bg: #ecfdf3; --err-bg: #fef3f2;
+}
+:root[data-theme="dark"] {
+  --bg: #1f2430; --panel: #282e3b; --text: #e4e7ec; --muted: #a3acbb; --border: #3a4252;
+  --brand: #e2e8f0; --accent: #14b8a6; --code-bg: #303747;
+  --side: #252b37; --side-text: #d0d5dd; --side-muted: #98a2b3; --side-hover: #2f3644; --side-active: #1f3d3a; --side-active-text: #5eead4;
+  --side-border: #3a4252; --input-bg: #1f2430;
+  --post: #22c55e; --put: #f59e0b; --delete: #f87171;
+  --req: #f87171; --opt: #4ade80; --no: #fbbf24; --path: #cbd5e1;
+  --ok-bg: #1d3528; --err-bg: #3b2526;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font: 14px/1.5 "Segoe UI", system-ui, -apple-system, Arial, sans-serif; color: var(--text); background: var(--bg); display: flex; }
+code, pre, textarea, input.mono { font-family: Consolas, "Cascadia Mono", "Courier New", monospace; }
+
+/* Sidebar */
+aside { width: 300px; flex: 0 0 300px; background: var(--side); color: var(--side-text); border-right: 1px solid var(--side-border); height: 100vh; position: sticky; top: 0; display: flex; flex-direction: column; }
+.brand { padding: 18px 18px 10px; }
+.brand h1 { margin: 0; font-size: 18px; color: var(--brand); }
+.brand small { color: var(--side-muted); }
+.search { margin: 6px 14px 10px; }
+.search input { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--side-border); background: var(--input-bg); color: var(--text); outline: none; }
+.search input:focus, .side-foot input:focus { border-color: var(--accent); }
+.search input::placeholder { color: var(--side-muted); }
+nav { overflow-y: auto; padding: 0 8px 16px; flex: 1; }
+.group-toggle { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 6px; padding: 9px 10px; border: 0; border-radius: 6px; background: none; color: var(--side-text); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.group-toggle:hover { background: var(--side-hover); }
+.group-toggle span:first-child { flex: 1; }
+.group-toggle .count { font-size: 11px; font-weight: 600; color: var(--side-muted); background: var(--input-bg); border: 1px solid var(--side-border); border-radius: 999px; padding: 0 7px; }
+.group-toggle .chevron { width: 8px; height: 8px; border-right: 2px solid var(--side-muted); border-bottom: 2px solid var(--side-muted); transform: rotate(45deg); margin: -4px 4px 0 2px; transition: transform .15s; }
+.group-toggle.open .chevron { transform: rotate(-135deg); margin-top: 3px; }
+.group-items { padding-left: 6px; margin-bottom: 4px; }
+.group-items.collapsed { display: none; }
+.nav-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; color: var(--side-text); text-decoration: none; cursor: pointer; }
+.nav-item:hover { background: var(--side-hover); }
+.nav-item.active { background: var(--side-active); color: var(--side-active-text); font-weight: 600; }
+.nav-item .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-foot { padding: 10px 14px; border-top: 1px solid var(--side-border); font-size: 12px; }
+.side-foot label { display: block; color: var(--side-muted); margin-bottom: 4px; }
+.side-foot input { width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--side-border); background: var(--input-bg); color: var(--text); outline: none; }
+
+/* Method badges */
+.m { display: inline-block; min-width: 54px; text-align: center; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; color: #fff; }
+.m.POST { background: var(--post); } .m.PUT { background: var(--put); } .m.DELETE { background: var(--delete); }
+.nav-item .m { min-width: 48px; font-size: 10px; }
+
+/* Main */
+main { flex: 1; height: 100vh; overflow-y: auto; }
+.topbar { position: sticky; top: 0; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--border); padding: 10px 28px; display: flex; justify-content: space-between; align-items: center; }
+.topbar .crumbs { color: var(--muted); }
+.btn { font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.small { padding: 4px 10px; font-size: 12px; }
+.content { max-width: 1050px; padding: 24px 28px 60px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; margin-bottom: 18px; }
+.endpoint-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.endpoint-head .path { font-family: Consolas, monospace; font-size: 17px; font-weight: 600; }
+.endpoint-head .m { font-size: 13px; padding: 4px 10px; }
+h2 { margin: 0 0 6px; font-size: 22px; color: var(--brand); }
+h3 { margin: 18px 0 8px; font-size: 15px; }
+p { margin: 6px 0; }
+.muted { color: var(--muted); }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+.note { border-left: 4px solid var(--delete); background: var(--err-bg); padding: 8px 12px; border-radius: 4px; margin: 10px 0; }
+.info { border-left: 4px solid var(--accent); background: var(--code-bg); padding: 8px 12px; border-radius: 4px; margin: 10px 0; }
+
+table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-bottom: 2px solid var(--border); padding: 6px 8px; }
+td { border-bottom: 1px solid var(--border); padding: 7px 8px; vertical-align: top; }
+td.field { font-family: Consolas, monospace; font-weight: 600; white-space: nowrap; }
+.tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid currentColor; }
+.tag.required { color: var(--req); } .tag.optional { color: var(--opt); } .tag.not-allowed { color: var(--no); } .tag.path { color: var(--path); }
+
+/* Try it out */
+.try { display: grid; gap: 10px; }
+.try label { font-weight: 600; font-size: 13px; }
+/* Path parameter label: the tag's bottom edge sits on the same line as the bottom of the field name */
+.try .param-label { display: inline-flex; align-items: flex-end; gap: 6px; line-height: 1.25; margin-bottom: 4px; }
+.try .param-label .tag { line-height: 1.25; padding: 0 8px; }
+.try input.mono { width: 220px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+textarea { width: 100%; min-height: 120px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--code-bg); color: var(--text); font-size: 13px; resize: vertical; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.response { margin-top: 6px; }
+.status { display: inline-flex; gap: 10px; align-items: center; font-weight: 700; padding: 4px 10px; border-radius: 6px; }
+.status.ok { background: var(--ok-bg); color: var(--opt); }
+.status.err { background: var(--err-bg); color: var(--req); }
+pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 8px 0; font-size: 12.5px; white-space: pre-wrap; word-break: break-word; }
+/* Responses table */
+.responses td { vertical-align: top; }
+.responses td:first-child { width: 64px; } .responses td:nth-child(2) { width: 110px; white-space: nowrap; }
+.responses pre, .responses td > p { margin: 0; }
+.code { display: inline-block; min-width: 42px; text-align: center; font-weight: 700; font-size: 12px; padding: 2px 6px; border-radius: 4px; }
+.code.ok { background: var(--ok-bg); color: var(--opt); } .code.err { background: var(--err-bg); color: var(--req); }
+details summary { cursor: pointer; }
+details[open] summary { margin-bottom: 6px; }
+a { color: var(--accent); }
+.copy-row { display: flex; justify-content: space-between; align-items: center; }
+.hidden { display: none; }
+
+@media (max-width: 820px) {
+  body { flex-direction: column; }
+  aside { width: 100%; flex: none; height: auto; position: static; }
+  nav { max-height: 40vh; }
+  main { height: auto; }
+  .content { padding: 16px; }
+  .topbar { padding: 10px 16px; }
+}
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand">
+    <h1>NexHome API</h1>
+    <small>Interactive reference</small>
+  </div>
+  <div class="search"><input id="search" type="search" placeholder="Filter endpoints..." aria-label="Filter endpoints"></div>
+  <nav id="nav" aria-label="Endpoints"></nav>
+  <div class="side-foot">
+    <label for="baseUrl">Server</label>
+    <input id="baseUrl" class="mono" spellcheck="false">
+  </div>
+</aside>
+
+<main id="main">
+  <div class="topbar">
+    <div class="crumbs" id="crumbs">Overview</div>
+    <button class="btn small" id="themeBtn" type="button" title="Toggle light/dark">Theme</button>
+  </div>
+  <div class="content" id="content"></div>
+</main>
+
+<script>
+// ---------------------------------------------------------------------------------------------
+// API definition. Keep in sync with the controllers and DTOs (see docs/NexHome-API-Reference.md).
+// req: "required" | "optional" | "not-allowed" | "path"
+// ---------------------------------------------------------------------------------------------
+const R = "required", O = "optional", N = "not-allowed", P = "path";
+// Example success bodies (returns); deletes return a string because 204 has no body
+const DATE = "Thu, 08 Oct 2026 14:29:20 IST";
+const USER_RESPONSE = { userId: 1, phone: "9876543210", email: "ravi@example.com", roleName: "CUSTOMER",
+  userStatus: "SUBMITTED", activeFlag: false, creationDate: DATE };
+const DETAILS_RESPONSE = { userDetailsId: 1, userId: 1, firstName: "Ravi", lastName: "Kumar", fullName: "Ravi Kumar", creationDate: DATE };
+const ADDRESS_RESPONSE = { userAddressId: 1, userId: 1, address1: "Flat 4, Sai Residency", address2: "MG Road", address3: "Near City Mall",
+  city: "Hyderabad", district: "Hyderabad", state: "Telangana", pinCode: "500001", activeFlag: true, creationDate: DATE };
+const ROLE_RESPONSE = { roleId: 1, roleName: "PARTNER", description: "Service partners", activeFlag: true, creationDate: DATE };
+const ROLE_FUNCTION_RESPONSE = { roleFunctionId: 1, roleId: 1, roleName: "PARTNER", functionId: 1, functionCode: "PARTNER_VERIFY",
+  functionName: "Partner Verification", read: true, write: true, delete: false, activeFlag: true, creationDate: DATE };
+const FUNCTION_RESPONSE = { functionId: 1, functionModule: "PARTNER", functionCode: "PARTNER_VERIFY",
+  functionName: "Partner Verification", activeFlag: true, creationDate: DATE };
+const STATUS_TEXT = { 200: "OK", 201: "Created", 204: "No Content", 400: "Bad Request", 404: "Not Found", 409: "Conflict" };
+
+// Error responses of each endpoint: [status, message]. Messages are the server's exact text.
+const ERRORS = {
+  "users-create": [[400, "Phone must be exactly 10 digits"], [400, "Password cannot be set when creating a user"],
+    [404, "Role Not Found or Inactive"], [409, "User already exists with this phone number"]],
+  "users-update": [[400, "Phone cannot be updated"], [400, "Only an activated user can be made active."], [404, "User does not exist."]],
+  "users-status": [[400, "User status can only be set to APPROVED or REJECTED."], [400, "User is already APPROVED."],
+    [400, "An activated user's status cannot be changed."], [404, "User does not exist."]],
+  "users-password-set": [[400, "Password must be between 8 and 16 characters"], [400, "Password is already set. Use the password update instead."],
+    [400, "User is not approved yet."], [400, "Password and confirm password do not match."], [404, "User does not exist."]],
+  "users-password-update": [[400, "New password must be between 8 and 16 characters"], [400, "Password has not been set yet."],
+    [400, "Current password is incorrect."], [400, "New password must be different from the current password."], [404, "User does not exist."]],
+  "users-delete": [[404, "User does not exist."]],
+  "details-add": [[400, "First name is required"], [404, "User does not exist."], [409, "User details already exist for this user"]],
+  "details-update": [[400, "First name cannot be blank"], [400, "User cannot be updated"], [404, "User details do not exist."]],
+  "address-add": [[400, "PIN code must be exactly 6 digits"], [404, "User does not exist."]],
+  "address-update": [[400, "City cannot be blank"], [400, "User cannot be updated"], [404, "User address does not exist."]],
+  "address-delete": [[404, "User address does not exist."]],
+  "roles-create": [[400, "Role name is required"], [409, "Role name already exists"]],
+  "roles-update": [[400, "Role name cannot be updated"], [404, "Role does not exist."]],
+  "roles-delete": [[404, "Role does not exist."]],
+  "role-functions-add": [[400, "Role is required"], [404, "Role does not exist."], [404, "Function does not exist."],
+    [409, "Function is already assigned to this role"]],
+  "role-functions-update": [[400, "Function cannot be updated"], [404, "Role function does not exist."]],
+  "role-functions-delete": [[404, "Role function does not exist."]],
+  "functions-create": [[400, "Function code is required"], [409, "Function code already exists"], [409, "Function name already exists"]],
+  "functions-update": [[400, "Function code cannot be updated"], [404, "Function does not exist."], [409, "Function name already exists"]],
+  "functions-delete": [[404, "Function does not exist."]]
+};
+
+const API = [
+  { group: "Users", items: [
+    { id: "users-create", method: "POST", path: "/api/users/create", title: "Create user", success: 201,
+      desc: "Creates a user without a password. The user starts as <code>SUBMITTED</code> and inactive.",
+      params: [
+        ["phone", "string", R, "Exactly 10 digits, no +91 or spaces. Same phone + same role twice gives 409."],
+        ["email", "string", O, "Valid email with a dotted domain, at most 254 characters; stored lower-case."],
+        ["roleId", "number", R, "Must be an existing, active role; otherwise 404 Role Not Found or Inactive."],
+        ["password", "string", N, "Set later through Set password."]],
+      example: { phone: "9876543210", email: "ravi@example.com", roleId: 1 }, returns: USER_RESPONSE },
+    { id: "users-update", method: "PUT", path: "/api/users/update", title: "Update user", success: 200,
+      desc: "Updates email and active flag. Send only what changes.",
+      params: [
+        ["userId", "number", R, "Must exist; otherwise 404."],
+        ["email", "string", O, "Valid email; \"\" clears it."],
+        ["activeFlag", "boolean", O, "true only for an ACTIVATED user; false is always allowed."],
+        ["phone", "string", N, "Phone never changes."],
+        ["roleId", "number", N, "Role never changes."],
+        ["password", "string", N, "Use the password endpoints."]],
+      example: { userId: 1, email: "new@example.com", activeFlag: true }, returns: USER_RESPONSE },
+    { id: "users-status", method: "PUT", path: "/api/users/status/update", title: "Update user status (admin)", success: 200,
+      desc: "Admin approves or rejects a user. Allowed: SUBMITTED or REJECTED to APPROVED, and SUBMITTED or APPROVED to REJECTED. An ACTIVATED user cannot be changed.",
+      params: [
+        ["userId", "number", R, "Must exist; otherwise 404."],
+        ["userStatus", "string", R, "APPROVED or REJECTED only."]],
+      example: { userId: 1, userStatus: "APPROVED" }, returns: USER_RESPONSE },
+    { id: "users-password-set", method: "POST", path: "/api/users/password/set", title: "Set password", success: 200,
+      desc: "An approved user sets their first password. The user becomes <code>ACTIVATED</code> with <code>activeFlag: true</code>.",
+      params: [
+        ["userId", "number", R, "User must be APPROVED."],
+        ["password", "string", R, "8 to 16 characters."],
+        ["confirmPassword", "string", R, "Must equal password."]],
+      example: { userId: 1, password: "Secret@123", confirmPassword: "Secret@123" }, returns: USER_RESPONSE },
+    { id: "users-password-update", method: "PUT", path: "/api/users/password/update", title: "Update password", success: 200,
+      desc: "Changes the password of an activated user.",
+      params: [
+        ["userId", "number", R, "User must be ACTIVATED."],
+        ["currentPassword", "string", R, "Must match the stored password."],
+        ["newPassword", "string", R, "8 to 16 characters, different from the current one."]],
+      example: { userId: 1, currentPassword: "Secret@123", newPassword: "Secret@456" }, returns: USER_RESPONSE },
+    { id: "users-delete", method: "DELETE", path: "/api/users/delete/{userId}", title: "Delete user", success: 204,
+      desc: "Deletes the user together with their details and addresses.", danger: "This permanently deletes the user, their details and all their addresses.",
+      params: [["userId", "number", P, "Must exist."]], pathDefaults: { userId: "" }, returns: "No body (204)." }
+  ]},
+  { group: "User details", items: [
+    { id: "details-add", method: "POST", path: "/api/users/details/add", title: "Add user details", success: 201,
+      desc: "Each user has at most one details record. <code>fullName</code> is built from first and last name.",
+      params: [
+        ["userId", "number", R, "User must exist (404); a second details record for the same user gives 409."],
+        ["firstName", "string", R, "At most 100 characters."],
+        ["lastName", "string", O, "At most 100 characters."]],
+      example: { userId: 1, firstName: "Ravi", lastName: "Kumar" }, returns: DETAILS_RESPONSE },
+    { id: "details-update", method: "PUT", path: "/api/users/details/update", title: "Update user details", success: 200,
+      desc: "Updates first and last name; <code>fullName</code> is recalculated.",
+      params: [
+        ["userDetailsId", "number", R, "Must exist; otherwise 404."],
+        ["firstName", "string", O, "Cannot be blanked; at most 100 characters."],
+        ["lastName", "string", O, "\"\" clears it; at most 100 characters."],
+        ["userId", "number", N, "Details never move to another user."]],
+      example: { userDetailsId: 1, firstName: "Ravindra", lastName: "Kumar" }, returns: DETAILS_RESPONSE }
+  ]},
+  { group: "User addresses", items: [
+    { id: "address-add", method: "POST", path: "/api/users/address/add", title: "Add address", success: 201,
+      desc: "A user can have many addresses but at most one active. Only an explicit <code>\"activeFlag\": true</code> makes it active, and the user's current active address becomes inactive.",
+      params: [
+        ["userId", "number", R, "User must exist; otherwise 404."],
+        ["address1", "string", R, "At most 255 characters."],
+        ["address2", "string", R, "At most 255 characters."],
+        ["address3", "string", O, "At most 255 characters."],
+        ["city", "string", R, "At most 100 characters."],
+        ["district", "string", R, "At most 100 characters."],
+        ["state", "string", R, "At most 100 characters."],
+        ["pinCode", "string", R, "Exactly 6 digits."],
+        ["activeFlag", "boolean", O, "Only true makes it active; false or missing saves it inactive."]],
+      example: { userId: 1, address1: "Flat 4, Sai Residency", address2: "MG Road", address3: "Near City Mall",
+                 city: "Hyderabad", district: "Hyderabad", state: "Telangana", pinCode: "500001", activeFlag: true },
+      returns: ADDRESS_RESPONSE },
+    { id: "address-update", method: "PUT", path: "/api/users/address/update", title: "Update address", success: 200,
+      desc: "Send only what changes, except <code>address3</code>, which is always replaced (leaving it out clears it).",
+      params: [
+        ["userAddressId", "number", R, "Must exist; otherwise 404."],
+        ["address1", "string", O, "Cannot be blanked; at most 255 characters."],
+        ["address2", "string", O, "Cannot be blanked; at most 255 characters."],
+        ["address3", "string", O, "Always replaced: leaving it out or \"\" clears it."],
+        ["city", "string", O, "Cannot be blanked; at most 100 characters."],
+        ["district", "string", O, "Cannot be blanked; at most 100 characters."],
+        ["state", "string", O, "Cannot be blanked; at most 100 characters."],
+        ["pinCode", "string", O, "Exactly 6 digits."],
+        ["activeFlag", "boolean", O, "true activates it, false deactivates it, missing leaves it."],
+        ["userId", "number", N, "An address never moves to another user."]],
+      example: { userAddressId: 1, address1: "Flat 5, Sai Residency", pinCode: "500033", activeFlag: true },
+      returns: ADDRESS_RESPONSE },
+    { id: "address-delete", method: "DELETE", path: "/api/users/address/delete/{userAddressId}", title: "Delete address", success: 204,
+      desc: "Deletes one address. Deleting the active address leaves the user without one; no other address is activated.",
+      params: [["userAddressId", "number", P, "Must exist."]], pathDefaults: { userAddressId: "" }, returns: "No body (204)." }
+  ]},
+  { group: "Roles", items: [
+    { id: "roles-create", method: "POST", path: "/api/roles/create", title: "Create role", success: 201,
+      desc: "Role names are unique and fixed once created.",
+      params: [
+        ["roleName", "string", R, "At most 50 characters; must be unique (409)."],
+        ["description", "string", O, "At most 500 characters."],
+        ["activeFlag", "boolean", O, "Defaults to true."]],
+      example: { roleName: "PARTNER", description: "Service partners", activeFlag: true }, returns: ROLE_RESPONSE },
+    { id: "roles-update", method: "PUT", path: "/api/roles/update", title: "Update role", success: 200,
+      desc: "Updates description and active flag. <code>description</code> is always replaced.",
+      params: [
+        ["roleId", "number", R, "Must exist; otherwise 404."],
+        ["description", "string", O, "Always replaced: leaving it out or \"\" clears it; at most 500 characters."],
+        ["activeFlag", "boolean", O, "Missing leaves it unchanged."],
+        ["roleName", "string", N, "Role name never changes."]],
+      example: { roleId: 1, description: "Verified service partners", activeFlag: true }, returns: ROLE_RESPONSE },
+    { id: "roles-delete", method: "DELETE", path: "/api/roles/delete/{roleId}", title: "Delete role", success: 204,
+      desc: "Deletes the role, its role functions and every user with this role.",
+      danger: "This permanently deletes EVERY USER with this role, with their details and addresses. Test it with a separate role.",
+      params: [["roleId", "number", P, "Must exist."]], pathDefaults: { roleId: "" }, returns: "No body (204)." }
+  ]},
+  { group: "Role functions", items: [
+    { id: "role-functions-add", method: "POST", path: "/api/roles/functions/add", title: "Add role function", success: 201,
+      desc: "Gives a role read, write and delete access to a function. <code>write</code> or <code>delete</code> also turns on <code>read</code>.",
+      params: [
+        ["roleId", "number", R, "Role must exist (404)."],
+        ["functionId", "number", R, "Function must exist (404); the same role and function twice gives 409."],
+        ["read", "boolean", O, "Defaults to false."],
+        ["write", "boolean", O, "Defaults to false; true also sets read."],
+        ["delete", "boolean", O, "Defaults to false; true also sets read."],
+        ["activeFlag", "boolean", O, "Defaults to true."]],
+      example: { roleId: 1, functionId: 1, read: true, write: true, delete: false }, returns: ROLE_FUNCTION_RESPONSE },
+    { id: "role-functions-update", method: "PUT", path: "/api/roles/functions/update", title: "Update role function", success: 200,
+      desc: "Updates the access flags. A missing flag keeps its value.",
+      params: [
+        ["roleFunctionId", "number", R, "Must exist; otherwise 404."],
+        ["read", "boolean", O, "Cannot be turned off while write or delete is on."],
+        ["write", "boolean", O, "Missing leaves it unchanged."],
+        ["delete", "boolean", O, "Missing leaves it unchanged."],
+        ["activeFlag", "boolean", O, "Missing leaves it unchanged."],
+        ["roleId", "number", N, "Role never changes."],
+        ["functionId", "number", N, "Function never changes."]],
+      example: { roleFunctionId: 1, delete: true }, returns: ROLE_FUNCTION_RESPONSE },
+    { id: "role-functions-delete", method: "DELETE", path: "/api/roles/functions/delete/{roleFunctionId}", title: "Delete role function", success: 204,
+      desc: "Deletes just this row; the role and function stay.",
+      params: [["roleFunctionId", "number", P, "Must exist."]], pathDefaults: { roleFunctionId: "" }, returns: "No body (204)." }
+  ]},
+  { group: "Functions", items: [
+    { id: "functions-create", method: "POST", path: "/api/functions/create", title: "Create function", success: 201,
+      desc: "A function is a screen or feature roles can be given access to. Module and code are fixed once created.",
+      params: [
+        ["functionModule", "string", R, "At most 50 characters."],
+        ["functionCode", "string", R, "At most 50 characters; must be unique (409)."],
+        ["functionName", "string", R, "At most 100 characters; must be unique (409)."],
+        ["activeFlag", "boolean", O, "Defaults to true."]],
+      example: { functionModule: "PARTNER", functionCode: "PARTNER_VERIFY", functionName: "Partner Verification" },
+      returns: FUNCTION_RESPONSE },
+    { id: "functions-update", method: "PUT", path: "/api/functions/update", title: "Update function", success: 200,
+      desc: "Updates the name and active flag.",
+      params: [
+        ["functionId", "number", R, "Must exist; otherwise 404."],
+        ["functionName", "string", O, "Cannot be blanked; at most 100 characters; must stay unique (409)."],
+        ["activeFlag", "boolean", O, "Missing leaves it unchanged."],
+        ["functionModule", "string", N, "Module never changes."],
+        ["functionCode", "string", N, "Code never changes."]],
+      example: { functionId: 1, functionName: "Partner Verification v2", activeFlag: true }, returns: FUNCTION_RESPONSE },
+    { id: "functions-delete", method: "DELETE", path: "/api/functions/delete/{functionId}", title: "Delete function", success: 204,
+      desc: "Deletes the function and every role function that grants it.",
+      params: [["functionId", "number", P, "Must exist."]], pathDefaults: { functionId: "" }, returns: "No body (204)." }
+  ]}
+];
+const ALL = API.flatMap(g => g.items.map(e => ({ ...e, group: g.group })));
+const LABEL = { required: "Required", optional: "Optional", "not-allowed": "Not allowed", path: "Path" };
+
+// ------------------------------------------------- helpers
+const $ = (sel) => document.querySelector(sel);
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const store = {
+  get(key) { try { return localStorage.getItem(key); } catch { return null; } },
+  set(key, value) { try { localStorage.setItem(key, value); } catch { /* storage unavailable */ } }
+};
+function defaultBaseUrl() {
+  return location.protocol.startsWith("http") ? location.origin : "http://localhost:8080";
+}
+function baseUrl() { return ($("#baseUrl").value || defaultBaseUrl()).replace(/\/+$/, ""); }
+
+// ------------------------------------------------- navigation
+function renderNav(filter = "") {
+  const f = filter.trim().toLowerCase();
+  const current = location.hash.slice(1);
+  let html = `<a class="nav-item ${current === "" || current === "overview" ? "active" : ""}" href="#overview"><span class="label">Overview</span></a>`
+    + `<a class="nav-item ${current === "errors" ? "active" : ""}" href="#errors"><span class="label">Error responses</span></a>`;
+  for (const g of API) {
+    const items = g.items.filter(e => !f || (e.title + " " + e.path + " " + e.method).toLowerCase().includes(f));
+    if (!items.length) continue;
+    // A service is open when the user opened it, while filtering, or when it holds the endpoint being viewed
+    const open = f !== "" || g.group === openGroup;
+    html += `<button type="button" class="group-toggle ${open ? "open" : ""}" data-group="${esc(g.group)}" aria-expanded="${open}">`
+      + `<span>${esc(g.group)}</span><span class="count">${items.length}</span><span class="chevron" aria-hidden="true"></span></button>`
+      + `<div class="group-items ${open ? "" : "collapsed"}">`;
+    for (const e of items) {
+      html += `<a class="nav-item ${current === e.id ? "active" : ""}" href="#${e.id}" title="${esc(e.method + " " + e.path)}">`
+        + `<span class="m ${e.method}">${e.method}</span><span class="label">${esc(e.title)}</span></a>`;
+    }
+    html += `</div>`;
+  }
+  $("#nav").innerHTML = html;
+}
+
+// The one service open in the sidebar (accordion), remembered between visits
+let openGroup = store.get("nexhome.openGroup") || null;
+function setOpenGroup(group) {
+  openGroup = group;
+  store.set("nexhome.openGroup", group || "");
+}
+$("#nav").addEventListener("click", (event) => {
+  const toggle = event.target.closest(".group-toggle");
+  if (!toggle) return;
+  const group = toggle.dataset.group;
+  const willOpen = toggle.getAttribute("aria-expanded") !== "true";
+  setOpenGroup(willOpen ? group : null);
+  // Opening one service closes every other
+  for (const other of document.querySelectorAll(".group-toggle")) {
+    const open = willOpen && other === toggle;
+    other.classList.toggle("open", open);
+    other.setAttribute("aria-expanded", String(open));
+    other.nextElementSibling.classList.toggle("collapsed", !open);
+  }
+});
+
+// ------------------------------------------------- pages
+function overviewPage() {
+  $("#crumbs").textContent = "Overview";
+  return `<div class="card">
+    <h2>NexHome API</h2>
+    <p>Every endpoint takes and returns JSON. Pick an endpoint on the left, read its parameters, then use <b>Try it out</b> to call the server set at the bottom of the sidebar.</p>
+    <div class="info">There is no authentication yet, so every call runs immediately against the configured server. Deletes are permanent.</div>
+    <h3>Field marks</h3>
+    <table><tr><th>Mark</th><th>Meaning</th></tr>
+      <tr><td><span class="tag required">Required</span></td><td>Must be sent and non-blank; missing gives 400</td></tr>
+      <tr><td><span class="tag optional">Optional</span></td><td>May be left out</td></tr>
+      <tr><td><span class="tag not-allowed">Not allowed</span></td><td>Must not be sent; sending it gives 400 (fields that can never change)</td></tr>
+      <tr><td><span class="tag path">Path</span></td><td>Part of the URL, not the body</td></tr>
+    </table>
+    <h3>Update rules (PUT)</h3>
+    <ul>
+      <li>Send only the fields you want to change. A missing or <code>null</code> field keeps its current value, except role <code>description</code> and address <code>address3</code>, which are always replaced.</li>
+      <li>A required field can be left out of an update but cannot be blanked.</li>
+      <li><code>""</code> clears an optional text field.</li>
+    </ul>
+    <h3>User lifecycle</h3>
+    <p><code>create</code> &rarr; <b>SUBMITTED</b> &rarr; admin &rarr; <b>APPROVED</b> (or <b>REJECTED</b>) &rarr; user sets password &rarr; <b>ACTIVATED</b> and active.</p>
+    <p class="muted">Success codes: create/add 201, update 200, delete 204. Dates look like <code>Thu, 08 Oct 2026 14:29:20 IST</code>.</p>
+  </div>`;
+}
+
+function errorsPage() {
+  $("#crumbs").textContent = "Error responses";
+  return `<div class="card">
+    <h2>Error responses</h2>
+    <p>Every error returns the same body. Validation errors list each invalid field's message, separated by commas.</p>
+    <pre>${esc(JSON.stringify({ path: "/api/users/create", method: "POST", statusCode: 400, error: "Bad Request",
+      message: "Phone must be exactly 10 digits, Role is required", timestamp: "Thu, 08 Oct 2026 14:29:20 IST" }, null, 2))}</pre>
+    <table><tr><th>Status</th><th>When</th></tr>
+      <tr><td>400 Bad Request</td><td>A required field is missing or invalid, a Not allowed field was sent, the JSON is malformed or has an unknown value, or a rule failed</td></tr>
+      <tr><td>404 Not Found</td><td>The record does not exist, or the URL is wrong</td></tr>
+      <tr><td>405 Method Not Allowed</td><td>Wrong HTTP method for the URL</td></tr>
+      <tr><td>409 Conflict</td><td>A duplicate: phone + role, role name, function code or name, role + function pair, or a second details record</td></tr>
+      <tr><td>415 Unsupported Media Type</td><td>Content-Type is not application/json</td></tr>
+      <tr><td>500 Internal Server Error</td><td>An unexpected server error</td></tr>
+    </table>
+  </div>`;
+}
+
+// Success response with its body, then every error with its message and the full error body on demand
+function responsesTable(e) {
+  const code = (status) => `<span class="code ${status < 300 ? "ok" : "err"}">${status}</span>`;
+  const success = typeof e.returns === "string"
+    ? `<p class="muted">${esc(e.returns)}</p>`
+    : `<pre>${esc(JSON.stringify(e.returns, null, 2))}</pre>`;
+  const errors = (ERRORS[e.id] || []).map(([status, message]) => {
+    const example = { path: e.path.replace(/\{\w+\}/, "1"), method: e.method, statusCode: status,
+      error: STATUS_TEXT[status], message, timestamp: DATE };
+    return `<tr><td>${code(status)}</td><td>${esc(STATUS_TEXT[status])}</td><td>
+      <details><summary>${esc(message)}</summary><pre>${esc(JSON.stringify(example, null, 2))}</pre></details></td></tr>`;
+  }).join("");
+  return `<table class="responses"><tr><th>Code</th><th>Status</th><th>Body</th></tr>
+    <tr><td>${code(e.success)}</td><td>${esc(STATUS_TEXT[e.success])}</td><td>${success}</td></tr>${errors}</table>
+    ${e.example ? `<p class="muted">Validation errors list every invalid field's message, joined with commas. See <a href="#errors">Error responses</a>.</p>` : ""}`;
+}
+
+function endpointPage(e) {
+  $("#crumbs").innerHTML = `${esc(e.group)} &rsaquo; ${esc(e.title)}`;
+  const pathParams = e.params.filter(p => p[2] === P);
+  const rows = e.params.map(([name, type, req, rule]) =>
+    `<tr><td class="field">${esc(name)}</td><td>${esc(type)}</td><td><span class="tag ${req}">${LABEL[req]}</span></td><td>${esc(rule)}</td></tr>`).join("");
+  const body = e.example ? JSON.stringify(e.example, null, 2) : "";
+  return `<div class="card">
+    <div class="endpoint-head"><span class="m ${e.method}">${e.method}</span><span class="path">${esc(e.path)}</span></div>
+    <h2 style="margin-top:12px">${esc(e.title)}</h2>
+    <p>${e.desc}</p>
+    ${e.danger ? `<div class="note">${esc(e.danger)}</div>` : ""}
+    <h3>${pathParams.length ? "Parameters" : "Request body"}</h3>
+    <table><tr><th>Field</th><th>Type</th><th>Required?</th><th>Rules</th></tr>${rows}</table>
+    <h3>Responses</h3>
+    ${responsesTable(e)}
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Try it out</h3>
+    <div class="try">
+      ${pathParams.map(([name]) => `<div><label class="param-label" for="pp-${name}"><span>${esc(name)}</span><span class="tag path">Path</span></label><br>
+        <input class="mono" id="pp-${name}" data-path-param="${name}" placeholder="e.g. 1"></div>`).join("")}
+      ${e.example ? `<div class="copy-row"><label for="body">Request body</label>
+        <button class="btn small" type="button" id="resetBody">Reset example</button></div>
+        <textarea id="body" spellcheck="false" rows="${body.split("\n").length + 1}">${esc(body)}</textarea>` : ""}
+      <div class="actions">
+        <button class="btn primary" type="button" id="execute">Execute</button>
+        <button class="btn" type="button" id="showCurl">Copy as curl</button>
+      </div>
+      <div id="curlBox" class="hidden"><pre id="curl"></pre></div>
+      <div class="response" id="response"></div>
+    </div>
+  </div>`;
+}
+
+function render() {
+  const id = location.hash.slice(1) || "overview";
+  const e = ALL.find(x => x.id === id);
+  if (e) setOpenGroup(e.group);
+  $("#content").innerHTML = id === "errors" ? errorsPage() : e ? endpointPage(e) : overviewPage();
+  renderNav($("#search").value);
+  $("#main").scrollTop = 0;
+  if (e) wireEndpoint(e);
+}
+
+// ------------------------------------------------- try it out
+function buildUrl(e) {
+  let path = e.path;
+  for (const input of document.querySelectorAll("[data-path-param]")) {
+    const value = input.value.trim();
+    if (!value) throw new Error(`Enter ${input.dataset.pathParam}.`);
+    path = path.replace(`{${input.dataset.pathParam}}`, encodeURIComponent(value));
+  }
+  return baseUrl() + path;
+}
+
+function readBody() {
+  const area = $("#body");
+  if (!area) return undefined;
+  const text = area.value.trim();
+  if (!text) return undefined;
+  try { JSON.parse(text); } catch (err) { throw new Error("Request body is not valid JSON: " + err.message); }
+  return text;
+}
+
+function curlFor(e, url, body) {
+  let cmd = `curl -X ${e.method} "${url}"`;
+  if (body !== undefined) cmd += ` \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(JSON.parse(body))}'`;
+  return cmd;
+}
+
+function wireEndpoint(e) {
+  const reset = $("#resetBody");
+  if (reset) reset.onclick = () => { $("#body").value = JSON.stringify(e.example, null, 2); };
+
+  $("#showCurl").onclick = async () => {
+    try {
+      const cmd = curlFor(e, buildUrl(e), readBody());
+      $("#curl").textContent = cmd;
+      $("#curlBox").classList.remove("hidden");
+      try { await navigator.clipboard.writeText(cmd); $("#showCurl").textContent = "Copied"; setTimeout(() => $("#showCurl").textContent = "Copy as curl", 1500); }
+      catch { /* clipboard unavailable: the command is shown instead */ }
+    } catch (err) { showResponse({ error: err.message }); }
+  };
+
+  $("#execute").onclick = async () => {
+    let url, body;
+    try { url = buildUrl(e); body = readBody(); } catch (err) { return showResponse({ error: err.message }); }
+    if (e.danger && !confirm(e.danger + "\n\nContinue?")) return;
+    const button = $("#execute");
+    button.disabled = true; button.textContent = "Running...";
+    const started = performance.now();
+    try {
+      const res = await fetch(url, { method: e.method, headers: body ? { "Content-Type": "application/json", Accept: "application/json" } : { Accept: "application/json" }, body });
+      const ms = Math.round(performance.now() - started);
+      const text = await res.text();
+      let pretty = text;
+      try { pretty = text ? JSON.stringify(JSON.parse(text), null, 2) : ""; } catch { /* not JSON */ }
+      showResponse({ status: res.status, statusText: res.statusText, ok: res.ok, ms, url, body: pretty });
+    } catch (err) {
+      showResponse({ error: `Could not reach ${baseUrl()}. Is the backend running? (${err.message})` });
+    } finally {
+      button.disabled = false; button.textContent = "Execute";
+    }
+  };
+}
+
+function showResponse(r) {
+  const box = $("#response");
+  if (r.error) { box.innerHTML = `<div class="status err">${esc(r.error)}</div>`; return; }
+  box.innerHTML = `<h3>Response</h3>
+    <div class="status ${r.ok ? "ok" : "err"}"><span>${r.status} ${esc(r.statusText || "")}</span><span class="muted" style="font-weight:400">${r.ms} ms</span></div>
+    <p class="muted" style="margin-top:8px">${esc(r.url)}</p>
+    ${r.body ? `<pre>${esc(r.body)}</pre>` : `<p class="muted">No body.</p>`}`;
+}
+
+// ------------------------------------------------- setup
+$("#baseUrl").value = store.get("nexhome.apiBaseUrl") || defaultBaseUrl();
+$("#baseUrl").addEventListener("change", () => store.set("nexhome.apiBaseUrl", $("#baseUrl").value.trim()));
+$("#search").addEventListener("input", () => renderNav($("#search").value));
+window.addEventListener("hashchange", render);
+
+const savedTheme = store.get("nexhome.theme");
+if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+$("#themeBtn").onclick = () => {
+  const dark = document.documentElement.dataset.theme === "dark";
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  store.set("nexhome.theme", document.documentElement.dataset.theme);
+};
+
+render();
+</script>
+</body>
+</html>
