@@ -18,7 +18,7 @@ import lombok.Setter;
 @AllArgsConstructor
 public class ExceptionBody {
 
-	/** Request path, e.g. {@code /api/users/register}. */
+	/** Request path, e.g. {@code /api/users/create}. */
 	private String path;
 
 	/** HTTP method, e.g. {@code POST}. */
@@ -33,7 +33,7 @@ public class ExceptionBody {
 	/** Client-safe description of what went wrong. */
 	private String message;
 
-	/** When the error occurred, in India time, e.g. {@code Thu, 08 Oct 2026 01:42:30 IST}. */
+	/** When the error occurred, e.g. {@code Thu, 08 Oct 2026 01:42:30 IST}. */
 	@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
 			timezone = "Asia/Kolkata")
 	private ZonedDateTime timestamp;

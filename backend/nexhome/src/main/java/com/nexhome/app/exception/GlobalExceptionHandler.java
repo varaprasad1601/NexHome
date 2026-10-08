@@ -28,7 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-	/** Error timestamps are reported in India time regardless of the server's time zone. */
+	/** Error timestamps are created in India time; ExceptionBody formats them for the response. */
 	private static final ZoneId TIME_ZONE = ZoneId.of("Asia/Kolkata");
 
 	@ExceptionHandler(DuplicateResourceException.class)
@@ -39,6 +39,12 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(InvalidRequestException.class)
 	public ResponseEntity<ExceptionBody> handleInvalidRequest(InvalidRequestException ex, HttpServletRequest request) {
 		return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+	}
+
+	@ExceptionHandler(ResourceNotFoundException.class)
+	public ResponseEntity<ExceptionBody> handleResourceNotFound(ResourceNotFoundException ex,
+			HttpServletRequest request) {
+		return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
 	}
 
 	@ExceptionHandler(DataIntegrityViolationException.class)

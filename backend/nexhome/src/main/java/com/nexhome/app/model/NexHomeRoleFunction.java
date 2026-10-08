@@ -37,21 +37,22 @@ public class NexHomeRoleFunction {
 	private Long roleFunctionId;
 
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
-	@JoinColumn(name = "role_id", referencedColumnName = "role_id", nullable = false)
+	// Role and function identify the row and are fixed once it is created
+	@JoinColumn(name = "role_id", referencedColumnName = "role_id", nullable = false, updatable = false)
 	private NexHomeRole role;
 
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
-	@JoinColumn(name = "function_id", referencedColumnName = "function_id", nullable = false)
+	@JoinColumn(name = "function_id", referencedColumnName = "function_id", nullable = false, updatable = false)
 	private NexHomeFunction function;
 
 	@Column(name = "read", nullable = false)
-	private boolean read;
+	private boolean read = false;
 
 	@Column(name = "write", nullable = false)
-	private boolean write;
+	private boolean write = false;
 
 	@Column(name = "delete", nullable = false)
-	private boolean delete;
+	private boolean delete = false;
 
 	@Column(name = "active_flag", nullable = false)
 	private boolean activeFlag = true;

@@ -1,17 +1,22 @@
 package com.nexhome.app.model;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.ConstraintMode;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.ForeignKey;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -31,10 +36,11 @@ public class NexHomeUserDetails {
 	private Long userDetailsId;
 
 	@OneToOne(fetch = FetchType.LAZY, optional = false)
-	@JoinColumn(name = "user_id", referencedColumnName = "user_id", nullable = false, unique = true)
+	// The owning user is fixed once the details are created
+	@JoinColumn(name = "user_id", referencedColumnName = "user_id", nullable = false, unique = true, updatable = false)
 	private NexHomeUser user;
 
-	@Column(name = "first_name", length = 100)
+	@Column(name = "first_name", nullable = false, length = 100)
 	private String firstName;
 
 	@Column(name = "last_name", length = 100)
@@ -43,28 +49,18 @@ public class NexHomeUserDetails {
 	@Column(name = "full_name", length = 201)
 	private String fullName;
 
-	@Column(name = "address1")
-	private String address1;
+    /**
+     * All addresses of this user (at most one active), loaded lazily. Read-only: the join column is not insertable
+     * or updatable and nothing cascades, so creating or updating user details never inserts, changes or unlinks
+     * addresses. Addresses are saved through NexHomeUserAddressRepository.
+     */
+    @OneToMany(fetch = FetchType.LAZY)
+    // NO_CONSTRAINT: addresses reference nexhome_users only; no foreign key to nexhome_user_details
+    @JoinColumn(name = "user_id", referencedColumnName = "user_id", insertable = false, updatable = false,
+            foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT))
+    private List<NexHomeUserAddress> addresses = new ArrayList<>();
 
-	@Column(name = "address2")
-	private String address2;
-
-	@Column(name = "address3")
-	private String address3;
-
-	@Column(name = "city", length = 100)
-	private String city;
-
-	@Column(name = "district", length = 100)
-	private String district;
-
-	@Column(name = "state", length = 100)
-	private String state;
-
-	@Column(name = "pin_code", length = 10)
-	private String pinCode;
-
-	@CreationTimestamp
+    @CreationTimestamp
 	@Column(name = "creation_date", nullable = false, updatable = false)
 	private Instant creationDate;
 

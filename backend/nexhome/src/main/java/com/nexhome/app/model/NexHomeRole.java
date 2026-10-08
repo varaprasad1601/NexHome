@@ -27,7 +27,8 @@ public class NexHomeRole {
 	@Column(name = "role_id")
 	private Long roleId;
 
-	@Column(name = "role_name", nullable = false, unique = true, length = 50)
+	// The role name identifies the role and is fixed once it is created
+	@Column(name = "role_name", nullable = false, unique = true, updatable = false, length = 50)
 	private String roleName;
 
 	@Column(name = "description", length = 500)

@@ -30,10 +30,11 @@ public class NexHomeFunction {
 	@Column(name = "function_id")
 	private Long functionId;
 
-	@Column(name = "function_module", nullable = false, length = 50)
+	// Module and code identify the function and are fixed once it is created
+	@Column(name = "function_module", nullable = false, updatable = false, length = 50)
 	private String functionModule;
 
-	@Column(name = "function_code", nullable = false, unique = true, length = 50)
+	@Column(name = "function_code", nullable = false, unique = true, updatable = false, length = 50)
 	private String functionCode;
 
 	@Column(name = "function_name", nullable = false, unique = true, length = 100)

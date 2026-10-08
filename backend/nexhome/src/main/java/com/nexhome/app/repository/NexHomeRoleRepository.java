@@ -13,6 +13,8 @@ public interface NexHomeRoleRepository extends JpaRepository<NexHomeRole, Long> 
 
 	Optional<NexHomeRole> findByRoleId(Long roleId);
 
+	Optional<NexHomeRole> findByRoleIdAndActiveFlag(Long roleId, boolean activeFlag);
+
 	Optional<NexHomeRole> findByRoleName(String roleName);
 
 }
