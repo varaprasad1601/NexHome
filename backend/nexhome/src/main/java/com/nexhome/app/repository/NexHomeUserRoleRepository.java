@@ -24,4 +24,7 @@ public interface NexHomeUserRoleRepository extends JpaRepository<NexHomeUserRole
 
 	/** Whether the user currently holds the role: the assignment and the role are both active. */
 	boolean existsByUserIdAndRoleCodeAndActiveTrueAndRoleActiveFlagTrue(Long userId, String roleCode);
+
+	/** Whether the user currently holds any of the roles. */
+	boolean existsByUserIdAndRoleCodeInAndActiveTrueAndRoleActiveFlagTrue(Long userId, Collection<String> roleCodes);
 }

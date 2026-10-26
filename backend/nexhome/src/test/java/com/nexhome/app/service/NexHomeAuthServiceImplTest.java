@@ -108,7 +108,7 @@ class NexHomeAuthServiceImplTest {
 				userRoleRepository, roleRepository, lookupService, permissionService, new NexHomeAuthOtpRequestMapper(),
 				new NexHomeAuthRefreshTokenMapper(), new NexHomeUserMapper(), passwordEncoder,
 				new NimbusJwtEncoder(new ImmutableSecret<>(KEY)), new NexHomeOtpProperties(6, 5, 3, 60, false),
-				new NexHomeSecurityProperties("unused", "nexhome", 15, 30, List.of()));
+				new NexHomeSecurityProperties("unused", "nexhome", 15, 30, List.of(), "unused"));
 	}
 
 	@Test

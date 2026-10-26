@@ -79,6 +79,8 @@ main { flex: 1; height: 100vh; overflow-y: auto; }
 .access { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
 .access.public { color: var(--opt); border-color: currentColor; }
 .access.guarded { color: var(--no); border-color: currentColor; }
+.who { margin: 4px 0 8px; padding-left: 20px; }
+.who li { margin: 2px 0; }
 h2 { margin: 0 0 6px; font-size: 22px; color: var(--brand); }
 h3 { margin: 18px 0 8px; font-size: 15px; }
 p { margin: 6px 0; }
@@ -187,11 +189,11 @@ const TOKENS = { tokenType: "Bearer", accessToken: "eyJhbGciOiJIUzI1NiJ9.eyJpc3M
 const OTP_PENDING = { otpRequestId: 31, countryCode: "+91", mobileNumber: SUPER_USER_MOBILE, purpose: "LOGIN",
   requestStatus: "PENDING", expiresAt: "Sun, 25 Oct 2026 22:35:00 IST", verifiedAt: null, user: null, tokens: null };
 const OTP_VERIFIED = { ...OTP_PENDING, requestStatus: "VERIFIED", verifiedAt: DATE, user: SUPER_USER_RESPONSE, tokens: TOKENS };
-const LOOKUP_TYPE_RESPONSE = { lookupTypeId: 44, typeCode: "PREFERRED_CONTACT_LANGUAGE", typeName: "Preferred Contact Language",
-  description: "Languages a partner can be contacted in", activeFlag: true, isSystemManaged: false, creationDate: DATE };
-const LOOKUP_VALUE_RESPONSE = { lookupValueId: 260, lookupTypeId: 44, typeCode: "PREFERRED_CONTACT_LANGUAGE", valueCode: "te",
-  displayName: "Telugu", description: null, displayOrder: 1, activeFlag: true, isDefault: true,
-  metadata: { nativeName: "తెలుగు" }, creationDate: DATE };
+const LOOKUP_TYPE_RESPONSE = { lookupTypeId: 51, typeCode: "SERVICE_AREA", typeName: "Service Area",
+  description: "Areas partners can serve", activeFlag: true, isSystemManaged: false, creationDate: DATE };
+const LOOKUP_VALUE_RESPONSE = { lookupValueId: 300, lookupTypeId: 51, typeCode: "SERVICE_AREA", valueCode: "MADHAPUR",
+  displayName: "Madhapur", description: null, displayOrder: 1, activeFlag: true, isDefault: true,
+  metadata: { city: "Hyderabad" }, creationDate: DATE };
 const ACCOUNT_STATUS_VALUES = ["ACTIVE", "SUSPENDED", "BLOCKED", "DEACTIVATED"].map((code, i) => ({ lookupValueId: i + 1, lookupTypeId: 1,
   typeCode: "ACCOUNT_STATUS", valueCode: code, displayName: code.charAt(0) + code.slice(1).toLowerCase(), description: null,
   displayOrder: i + 1, activeFlag: true, isDefault: false, metadata: {}, creationDate: DATE }));
@@ -210,6 +212,8 @@ const NO_PENDING = "No pending OTP for this mobile number. Request a new one.";
 
 const LIST_ERRORS = [[400, "Page must be 0 or more."], [400, "Size must be between 1 and 100."],
   [400, "Account status must be one of: ACTIVE, SUSPENDED, BLOCKED, DEACTIVATED."], [400, "Parameter page has an invalid value."]];
+const PROFILE_LIST_ERRORS = [[400, "Page must be 0 or more."], [400, "Size must be between 1 and 100."],
+  [400, "Parameter page has an invalid value."]];
 // Error responses of each endpoint: [status, message]. Messages are the server's exact text.
 // 401 (no or bad token) and 403 (missing permission) are added automatically from the endpoint's access.
 const ERRORS = {
@@ -242,6 +246,81 @@ const ERRORS = {
   "users-roles-assign": [[404, "User does not exist."], [404, "Role Not Found or Inactive"], [409, "User already has this role"]],
   "users-roles-update": [[400, "Active flag is required"], [400, "An inactive role cannot be activated for a user."],
     [404, "User does not have this role."]],
+  "profiles-customers-create": [[400, "First name is required"], [400, "First name must contain only letters, spaces, dots, apostrophes and hyphens"],
+    [400, "Date of birth must be in the past"], [400, "Preferred language must be one of: en, hi, te, ta, kn, ml, mr, bn, gu, or, pa, ur."],
+    [400, "Customer profiles are only for accounts with the CUSTOMER role."], [404, "User does not exist."],
+    [409, "This account already has a customer profile."]],
+  "profiles-customers-update": [[400, "Customer profile ID is required"], [400, "User cannot be updated"], [400, "Public ID cannot be updated"],
+    [400, "Preferred language must be one of: en, hi, te, ta, kn, ml, mr, bn, gu, or, pa, ur."], [404, "Customer profile does not exist."]],
+  "profiles-customers-me": [[404, "You do not have a customer profile yet."]],
+  "profiles-customers-get": [[404, "Customer profile does not exist."]],
+  "profiles-customers-list": PROFILE_LIST_ERRORS,
+  "addresses-create": [[400, "Address type must be one of: HOME, WORK, REGISTERED, OTHER."], [400, "Mobile number must be 6 to 15 digits"],
+    [400, "Postal code must be a 6-digit PIN code for India."], [400, "Latitude and longitude must be given together."],
+    [400, "Latitude must be between -90 and 90"], [400, "Addresses are only for accounts with the CUSTOMER role."],
+    [404, "User does not exist."]],
+  "addresses-update": [[400, "Address ID is required"], [400, "User cannot be updated"], [400, "Contact name cannot be blank"],
+    [400, "Postal code must be a 6-digit PIN code for India."], [400, "Latitude and longitude must be given together."],
+    [404, "Address does not exist."]],
+  "addresses-delete": [[404, "Address does not exist."]],
+  "addresses-me": [],
+  "addresses-user": [[404, "User does not exist."]],
+  "addresses-get": [[404, "Address does not exist."]],
+  "profiles-admins-create": [[400, "Staff profiles are only for super users, admins and sub-admins."],
+    [400, "Employee code must contain only letters, digits, hyphens and underscores"], [400, "Postal code must be a 6-digit PIN code for India."],
+    [400, "Country code must be a 2-letter ISO country code, e.g. IN"], [404, "User does not exist."],
+    [409, "This account already has a staff profile."], [409, "Another staff profile has this employee code."]],
+  "profiles-admins-update": [[400, "Admin profile ID is required"], [400, "User cannot be updated"], [400, "City cannot be blank"],
+    [400, "Postal code must be a 6-digit PIN code for India."], [404, "Staff profile does not exist."],
+    [409, "Another staff profile has this employee code."]],
+  "profiles-admins-me": [[404, "You do not have a staff profile yet."]],
+  "profiles-admins-get": [[404, "Staff profile does not exist."]],
+  "profiles-admins-list": PROFILE_LIST_ERRORS,
+  "partners-create": [[400, "First name is required"], [400, "Aadhaar number must be 12 digits and cannot start with 0 or 1"],
+    [400, "Postal code must be a 6-digit PIN code"], [400, "Skill category must be one of: SKILLED, UNSKILLED."],
+    [400, "Weekly availability days must be MONDAY to SUNDAY."],
+    [400, "Weekly availability slots must be one of: EARLY_MORNING, MORNING, AFTERNOON, EVENING, NIGHT."],
+    [400, "Latitude and longitude must be given together."], [400, "Alternate contact number must differ from the partner's mobile number."],
+    [400, "Partner profiles are only for accounts with the PARTNER role."], [404, "User does not exist."],
+    [409, "This account already has a partner profile."]],
+  "partners-update": [[400, "Partner profile ID is required"], [400, "Onboarding status cannot be updated here"],
+    [400, "The profile is UNDER_REVIEW and cannot be changed now. Contact support to update it."],
+    [400, "Complete these fields first: serviceAreas."], [400, "Weekly availability days must be MONDAY to SUNDAY."],
+    [404, "Partner profile does not exist."]],
+  "partners-submit": [[400, "Only a DRAFT or PROFILE_INCOMPLETE profile can be submitted; this one is UNDER_REVIEW."],
+    [400, "Complete these fields first: isAdult, preferredContactLanguage, addressLine1, locality, city, state, postalCode, skillCategory, yearsExperience, preferredArrangement, paymentBasis, expectedEarningsInr, maxTravelKm, weekendAvailability, serviceAreas, weeklyAvailability."],
+    [400, "Partners must be 18 or older."],
+    [400, "Weekly availability does not match weekend availability NEITHER: check the Saturday and Sunday slots."],
+    [404, "Partner profile does not exist."]],
+  "partners-review": [[400, "Onboarding status must be one of: DRAFT, PROFILE_INCOMPLETE, UNDER_REVIEW, TRAINING_REQUIRED, APPROVED, REJECTED, SUSPENDED."],
+    [400, "A profile that is DRAFT cannot be moved to APPROVED."], [400, "Rejection reason is required to move a profile to REJECTED."],
+    [400, "Only a partner who is 18 or older can be approved."], [404, "Partner profile does not exist."]],
+  "partners-availability": [[400, "Availability status must be one of: ONLINE, OFFLINE, BUSY."],
+    [400, "Only an APPROVED partner can change availability."], [404, "Partner profile does not exist."]],
+  "partners-me": [[404, "You do not have a partner profile yet."]],
+  "partners-get": [[404, "Partner profile does not exist."]],
+  "partners-list": [...PROFILE_LIST_ERRORS,
+    [400, "Onboarding status must be one of: DRAFT, PROFILE_INCOMPLETE, UNDER_REVIEW, TRAINING_REQUIRED, APPROVED, REJECTED, SUSPENDED."]],
+  "partner-documents-list": [[404, "Partner profile does not exist."]],
+  "partner-documents-add": [[400, "Document type must be one of: GOVERNMENT_ID, ADDRESS_PROOF, POLICE_CHECK, CERTIFICATION, OTHER."],
+    [400, "Document number must be 4 to 30 letters, digits, spaces, slashes or hyphens"], [400, "File storage key is required"],
+    [400, "Expiry date cannot be in the past"], [404, "Partner profile does not exist."]],
+  "partner-documents-update": [[400, "Partner document ID is required"], [400, "Document type cannot be updated"],
+    [400, "A verified document cannot be changed; add a new document instead."], [404, "Partner document does not exist."]],
+  "partner-documents-verify": [[400, "Verification status must be one of: IN_REVIEW, VERIFIED, REJECTED, EXPIRED."],
+    [400, "Document is already VERIFIED."], [400, "Rejection reason is required to reject a document."],
+    [400, "An expired document cannot be verified."], [404, "Partner document does not exist."]],
+  "partner-documents-delete": [[400, "A verified document cannot be deleted."], [404, "Partner document does not exist."]],
+  "partner-bank-accounts-list": [[404, "Partner profile does not exist."]],
+  "partner-bank-accounts-add": [[400, "Account number must be 9 to 18 digits"],
+    [400, "IFSC code must be 4 letters, a zero and 6 letters or digits"], [400, "Account holder name is required"],
+    [404, "Partner profile does not exist."], [409, "This bank account has already been added."]],
+  "partner-bank-accounts-update": [[400, "Account number cannot be updated; add a new bank account instead"],
+    [400, "IFSC code cannot be updated; add a new bank account instead"], [400, "Account holder name cannot be blank"],
+    [404, "Partner bank account does not exist."]],
+  "partner-bank-accounts-verify": [[400, "Verification status must be one of: IN_REVIEW, VERIFIED, REJECTED, EXPIRED."],
+    [400, "Bank account is already VERIFIED."], [404, "Partner bank account does not exist."]],
+  "partner-bank-accounts-delete": [[404, "Partner bank account does not exist."]],
   "lookup-types-create": [[400, "Type code must contain only capital letters, digits and underscores, starting with a letter"],
     [409, "Lookup type code already exists"]],
   "lookup-types-update": [[400, "Type code cannot be updated"], [400, "A system managed lookup type cannot be deactivated."],
@@ -280,6 +359,94 @@ const LIST_PARAMS = [
 const CUSTOMER_RESPONSE = { userId: 21, countryCode: "+91", mobileNumber: "9876543210", email: "ravi.kumar@example.com",
   profilePhotoUrl: null, accountStatus: "ACTIVE", accountVerifiedDate: DATE, lastLoginAt: DATE, roles: [ROLE_CUSTOMER], creationDate: DATE };
 const userPage = (user) => ({ content: [user], page: 0, size: 10, totalElements: 1, totalPages: 1 });
+
+const NAME_RULE = "Letters of any script, spaces, dots, apostrophes and hyphens; repeated spaces are collapsed.";
+const PROFILE_LIST_PARAMS = [
+  ["page", "number", Q, "Zero-based page number; default 0."],
+  ["size", "number", Q, "Profiles per page, 1 to 100; default 10."],
+  ["search", "string", Q, "Part of the first or last name or the public id, any case."]];
+const page = (record) => ({ content: [record], page: 0, size: 10, totalElements: 1, totalPages: 1 });
+const CUSTOMER_PROFILE_RESPONSE = { customerProfileId: 5, publicId: "NHCUST0005", userId: 21, firstName: "Ravi Teja",
+  lastName: "Kumar", dateOfBirth: "1994-03-12", preferredLanguage: "te", marketingConsent: false, creationDate: DATE };
+const ADMIN_PROFILE_RESPONSE = { adminProfileId: 2, publicId: "NHADMI0002", userId: 20, firstName: "Priya", lastName: "Sharma",
+  employeeCode: "EMP-0042", department: "Operations", jobTitle: "City Manager", addressLine1: "Flat 4, Road 12, Banjara Hills",
+  addressLine2: null, landmark: "Near GVK Mall", city: "Hyderabad", state: "Telangana", postalCode: "500034", countryCode: "IN",
+  creationDate: DATE };
+const ADDRESS_RESPONSE = { addressId: 11, publicId: "NHADDR0011", userId: 21, contactName: "Ravi Teja", mobileNumber: "9876543210",
+  addressType: "HOME", label: "Home", addressLine1: "Plot 12, Road 3, Jubilee Hills", addressLine2: null, landmark: "Opp. KBR Park",
+  city: "Hyderabad", state: "Telangana", postalCode: "500033", countryCode: "IN", latitude: 17.4325, longitude: 78.4071,
+  isDefault: true, creationDate: DATE };
+const WEEKLY = { MONDAY: ["MORNING", "EVENING"], WEDNESDAY: ["MORNING", "EVENING"], SATURDAY: ["EARLY_MORNING", "MORNING"] };
+const PARTNER_DRAFT = { partnerProfileId: 3, publicId: "NHPART0003", userId: 22, firstName: "Suresh", middleName: null,
+  lastName: "Babu", aadhaarNumber: "XXXXXXXX0123", alternateContactNumber: null, isAdult: null, preferredContactLanguage: null,
+  addressLine1: null, addressLine2: null, landmark: null, locality: null, city: null, state: null, postalCode: null,
+  countryCode: "IN", latitude: null, longitude: null, registrationDate: "2026-10-25", registeredBy: 22, skillCategory: null,
+  yearsExperience: null, additionalSkills: null, preferredArrangement: null, paymentBasis: null, expectedEarningsInr: null,
+  visitChargeInr: null, minimumJobPaymentInr: null, previousWorkDetails: null, serviceAreas: [], maxTravelKm: null,
+  weeklyAvailability: {}, weekendAvailability: null, emergencyContactName: "Lakshmi", emergencyContactRelationship: "SPOUSE",
+  emergencyContactNumber: "9000000001", emergencyContactPermission: false, onboardingStatus: "DRAFT",
+  verificationStatus: "PENDING", availabilityStatus: "OFFLINE", approvedBy: null, approvedAt: null, rejectionReason: null,
+  creationDate: DATE };
+const PARTNER_FIELDS = { isAdult: true, preferredContactLanguage: "te", addressLine1: "H.No 1-2-3, Street 4",
+  locality: "Madhapur", city: "Hyderabad", state: "Telangana", postalCode: "500081", skillCategory: "SKILLED",
+  yearsExperience: 6, additionalSkills: ["AC repair", "Wiring"], preferredArrangement: "FLEXIBLE_JOBS", paymentBasis: "PER_JOB",
+  expectedEarningsInr: 800, visitChargeInr: 150, serviceAreas: ["Madhapur", "Kondapur"], maxTravelKm: 12.5,
+  weeklyAvailability: WEEKLY, weekendAvailability: "SATURDAY" };
+const PARTNER_PROFILE_RESPONSE = { ...PARTNER_DRAFT, ...PARTNER_FIELDS };
+const PARTNER_SUBMITTED = { ...PARTNER_PROFILE_RESPONSE, onboardingStatus: "UNDER_REVIEW", verificationStatus: "IN_REVIEW" };
+// Staff see the emergency contact only once the partner has given permission
+const PARTNER_STAFF_VIEW = { ...PARTNER_SUBMITTED, emergencyContactName: null, emergencyContactRelationship: null,
+  emergencyContactNumber: null };
+const PARTNER_APPROVED = { ...PARTNER_STAFF_VIEW, onboardingStatus: "APPROVED", verificationStatus: "VERIFIED", approvedBy: 20,
+  approvedAt: DATE };
+const DOCUMENT_RESPONSE = { partnerDocumentId: 9, partnerProfileId: 3, documentType: "GOVERNMENT_ID", documentNumber: "XXXXXX234F",
+  fileStorageKey: "partners/NHPART0003/pan.pdf", verificationStatus: "PENDING", verifiedBy: null, verifiedAt: null,
+  expiryDate: "2031-10-25", rejectionReason: null, creationDate: DATE };
+const BANK_ACCOUNT_RESPONSE = { partnerBankAccountId: 4, partnerProfileId: 3, accountHolderName: "Suresh Babu",
+  accountNumberLast4: "4321", ifscCode: "SBIN0001234", bankName: "State Bank of India", verificationStatus: "PENDING",
+  isPrimary: true, creationDate: DATE };
+const ADDRESS_FIELDS = [
+  ["addressLine1", "string", R, "At most 255 characters."],
+  ["addressLine2", "string", O, "At most 255 characters."],
+  ["landmark", "string", O, "At most 255 characters."],
+  ["city", "string", R, "At most 100 characters."],
+  ["state", "string", R, "At most 100 characters."],
+  ["postalCode", "string", R, "3 to 12 letters, digits, spaces or hyphens; in India (IN) a 6-digit PIN code."],
+  ["countryCode", "string", O, "2-letter ISO country, e.g. IN (the default); stored upper-case."]];
+// Partner profile fields shared by create and update (all optional on create except the names)
+const PARTNER_PARAMS = [
+  ["middleName", "string", O, NAME_RULE + " \"\" clears it."],
+  ["aadhaarNumber", "string", O, "12 digits, not starting with 0 or 1. Stored encrypted, never returned in full (XXXXXXXX0123). \"\" clears it."],
+  ["alternateContactNumber", "string", O, "10-digit Indian mobile, different from the account's own. \"\" clears it."],
+  ["isAdult", "boolean", O, "Self-declared; must be true to submit and to be approved."],
+  ["preferredContactLanguage", "string", O, "PREFERRED_CONTACT_LANGUAGE code: en, hi, te, ta, kn, ml, mr, bn, gu, or, pa, ur."],
+  ["addressLine1", "string", O, "Current address; at most 300 characters; cannot be blanked."],
+  ["addressLine2", "string", O, "\"\" clears it."],
+  ["landmark", "string", O, "\"\" clears it."],
+  ["locality", "string", O, "Area or locality; at most 100 characters."],
+  ["city", "string", O, "At most 100 characters."],
+  ["state", "string", O, "At most 100 characters."],
+  ["postalCode", "string", O, "6-digit PIN code (the country is always IN)."],
+  ["latitude", "number", O, "-90 to 90, rounded to 7 decimals; send together with longitude."],
+  ["longitude", "number", O, "-180 to 180; send together with latitude."],
+  ["registrationDate", "string", O, "yyyy-MM-dd, not in the future; defaults to today. Staff only (403 for the partner)."],
+  ["skillCategory", "string", O, "SKILL_CATEGORY code: SKILLED or UNSKILLED."],
+  ["yearsExperience", "number", O, "0 to 60."],
+  ["additionalSkills", "array", O, "Up to 30 skill names or codes; trimmed and de-duplicated; [] clears it."],
+  ["preferredArrangement", "string", O, "FLEXIBLE_JOBS, COMMITTED_PART_TIME or CORE_FULL_TIME."],
+  ["paymentBasis", "string", O, "PER_JOB, PER_HOUR, PER_DAY or MONTHLY: the unit of the expected earnings."],
+  ["expectedEarningsInr", "number", O, "More than 0, at most 2 decimals."],
+  ["visitChargeInr", "number", O, "0 or more."],
+  ["minimumJobPaymentInr", "number", O, "0 or more."],
+  ["previousWorkDetails", "string", O, "At most 2000 characters; \"\" clears it."],
+  ["serviceAreas", "array", O, "Up to 50 area names or codes; trimmed and de-duplicated. At least one to submit."],
+  ["maxTravelKm", "number", O, "0 to 999.9, one decimal."],
+  ["weeklyAvailability", "object", O, "Day (MONDAY ... SUNDAY, any case) to AVAILABILITY_SLOT codes: EARLY_MORNING, MORNING, AFTERNOON, EVENING, NIGHT. Normalized: days in week order, slots in slot order, empty days dropped. At least one slot to submit."],
+  ["weekendAvailability", "string", O, "SATURDAY, SUNDAY, NEITHER or VARIES. On submit it must agree with the Saturday/Sunday slots of the grid."],
+  ["emergencyContactName", "string", O, "At most 120 characters; \"\" clears it."],
+  ["emergencyContactRelationship", "string", O, "SPOUSE, PARENT, SIBLING, CHILD, RELATIVE, FRIEND or OTHER; \"\" clears it."],
+  ["emergencyContactNumber", "string", O, "10-digit Indian mobile, not the account's own; \"\" clears it."],
+  ["emergencyContactPermission", "boolean", O, "Defaults to false. Until true, the emergency contact is hidden from everyone but the partner."]];
 
 const API = [  { group: "Authentication", items: [
     { id: "auth-register", method: "POST", path: "/api/auth/register", title: "Sign up (customer / partner)", success: 201, access: "public",
@@ -381,10 +548,208 @@ const API = [  { group: "Authentication", items: [
       example: { userId: 20, roleId: 4, isActive: false },
       returns: { ...ADMIN_RESPONSE, roles: [ROLE_ADMIN, { ...ROLE_CUSTOMER, isActive: false }] } }
   ]},
+  { group: "Customer profiles", items: [
+    { id: "profiles-customers-create", method: "POST", path: "/api/profiles/customers/create", title: "Create customer profile", success: 201, access: "self or PROFILE_MANAGE WRITE",
+      desc: "Names and preferences of an account that holds the CUSTOMER role; one per account. The public id (NHCUST0001, ...) is generated. Customers create their own; staff need PROFILE_MANAGE write.",
+      params: [["userId", "number", R, "The customer's account (yours, from My account)."],
+        ["firstName", "string", R, "At most 100 characters. " + NAME_RULE],
+        ["lastName", "string", R, "At most 100 characters. " + NAME_RULE],
+        ["dateOfBirth", "string", O, "yyyy-MM-dd, in the past."],
+        ["preferredLanguage", "string", O, "PREFERRED_CONTACT_LANGUAGE code, e.g. te."],
+        ["marketingConsent", "boolean", O, "Defaults to false."]],
+      example: { userId: 21, firstName: "Ravi Teja", lastName: "Kumar", dateOfBirth: "1994-03-12", preferredLanguage: "te" },
+      returns: CUSTOMER_PROFILE_RESPONSE },
+    { id: "profiles-customers-update", method: "PUT", path: "/api/profiles/customers/update", title: "Update customer profile", success: 200, access: "owner or PROFILE_MANAGE WRITE",
+      desc: "Send only what changes. Names cannot be blanked; <code>\"\"</code> clears the preferred language.",
+      params: [["customerProfileId", "number", R, "From the create response or My customer profile."],
+        ["firstName", "string", O, NAME_RULE], ["lastName", "string", O, NAME_RULE],
+        ["dateOfBirth", "string", O, "yyyy-MM-dd, in the past."], ["preferredLanguage", "string", O, "\"\" clears it."],
+        ["marketingConsent", "boolean", O, "Missing keeps it."],
+        ["userId", "number", N, "The owner never changes."], ["publicId", "string", N, "Never changes."]],
+      example: { customerProfileId: 5, lastName: "Varma", marketingConsent: true },
+      returns: { ...CUSTOMER_PROFILE_RESPONSE, lastName: "Varma", marketingConsent: true } },
+    { id: "profiles-customers-me", method: "GET", path: "/api/profiles/customers/me", title: "My customer profile", success: 200, access: "token",
+      desc: "The signed-in user's customer profile; 404 until it is created.", params: [], returns: CUSTOMER_PROFILE_RESPONSE },
+    { id: "profiles-customers-get", method: "GET", path: "/api/profiles/customers/{customerProfileId}", title: "Get customer profile", success: 200, access: "owner or PROFILE_MANAGE READ",
+      desc: "One customer profile.", params: [["customerProfileId", "number", P, "Must exist."]], pathDefaults: { customerProfileId: "5" },
+      returns: CUSTOMER_PROFILE_RESPONSE },
+    { id: "profiles-customers-list", method: "GET", path: "/api/profiles/customers", title: "All customer profiles", success: 200, access: "PROFILE_MANAGE READ",
+      desc: "Customer profiles, newest first. Allowed for SUPER_USER, ADMIN and SUB_ADMIN.", params: PROFILE_LIST_PARAMS,
+      returns: page(CUSTOMER_PROFILE_RESPONSE) }
+  ]},
+  { group: "Addresses", items: [
+    { id: "addresses-create", method: "POST", path: "/api/addresses/create", title: "Add address", success: 201, access: "self or PROFILE_MANAGE WRITE",
+      desc: "A service address of an account holding the CUSTOMER role; customers may have many. The first one becomes the default; <code>isDefault: true</code> makes a later one the default instead (the previous default is cleared).",
+      params: [["userId", "number", R, "The customer's account."],
+        ["contactName", "string", R, "At most 150 characters."],
+        ["mobileNumber", "string", R, "6 to 15 digits."],
+        ["addressType", "string", R, "ADDRESS_TYPE code: HOME, WORK, REGISTERED, OTHER."],
+        ["label", "string", O, "At most 50 characters, e.g. Mom's place."],
+        ...ADDRESS_FIELDS,
+        ["latitude", "number", O, "-90 to 90, rounded to 7 decimals; send together with longitude."],
+        ["longitude", "number", O, "-180 to 180."],
+        ["isDefault", "boolean", O, "Missing: default only when the customer has none yet."]],
+      example: { userId: 21, contactName: "Ravi Teja", mobileNumber: "9876543210", addressType: "HOME", label: "Home",
+        addressLine1: "Plot 12, Road 3, Jubilee Hills", landmark: "Opp. KBR Park", city: "Hyderabad", state: "Telangana",
+        postalCode: "500033", latitude: 17.4325, longitude: 78.4071 }, returns: ADDRESS_RESPONSE },
+    { id: "addresses-update", method: "PUT", path: "/api/addresses/update", title: "Update address", success: 200, access: "owner or PROFILE_MANAGE WRITE",
+      desc: "Send only what changes; <code>\"\"</code> clears the label, address line 2 or landmark. <code>isDefault: true</code> makes this the default; <code>false</code> leaves the customer without one.",
+      params: [["addressId", "number", R, "Must exist."], ["contactName", "string", O, "Cannot be blanked."],
+        ["mobileNumber", "string", O, "6 to 15 digits."], ["addressType", "string", O, "ADDRESS_TYPE code."],
+        ["label", "string", O, "\"\" clears it."], ...ADDRESS_FIELDS.map(([n, t, , d]) => [n, t, O, d]),
+        ["latitude", "number", O, "Replaced together with longitude."], ["longitude", "number", O, "Replaced together with latitude."],
+        ["isDefault", "boolean", O, "true makes it the default; false removes it."],
+        ["userId", "number", N, "The owner never changes."], ["publicId", "string", N, "Never changes."]],
+      example: { addressId: 11, label: "", isDefault: true }, returns: { ...ADDRESS_RESPONSE, label: null } },
+    { id: "addresses-delete", method: "DELETE", path: "/api/addresses/delete/{addressId}", title: "Delete address", success: 204, access: "owner or PROFILE_MANAGE DELETE",
+      desc: "Deletes the address. Deleting the default leaves the customer without one.", danger: "This permanently deletes the address.",
+      params: [["addressId", "number", P, "Must exist."]], pathDefaults: { addressId: "" }, returns: "No body (204)." },
+    { id: "addresses-me", method: "GET", path: "/api/addresses/me", title: "My addresses", success: 200, access: "token",
+      desc: "The signed-in user's addresses: the default first, then newest first.", params: [], returns: [ADDRESS_RESPONSE] },
+    { id: "addresses-user", method: "GET", path: "/api/addresses/users/{userId}", title: "Addresses of a user", success: 200, access: "self or PROFILE_MANAGE READ",
+      desc: "A customer's addresses, the default first.", params: [["userId", "number", P, "Must exist."]], pathDefaults: { userId: "21" },
+      returns: [ADDRESS_RESPONSE] },
+    { id: "addresses-get", method: "GET", path: "/api/addresses/{addressId}", title: "Get address", success: 200, access: "owner or PROFILE_MANAGE READ",
+      desc: "One address.", params: [["addressId", "number", P, "Must exist."]], pathDefaults: { addressId: "11" }, returns: ADDRESS_RESPONSE }
+  ]},
+  { group: "Staff profiles", items: [
+    { id: "profiles-admins-create", method: "POST", path: "/api/profiles/admins/create", title: "Create staff profile", success: 201, access: "self or STAFF_MANAGE WRITE",
+      desc: "Names and registered address of a super user, admin or sub-admin; one per account (public id NHADMI0001, ...). Staff may create their own <b>without</b> employee details; the employee code, department and job title, and anyone else's profile, need STAFF_MANAGE write (SUPER_USER, ADMIN). Only a super user can create a super user's profile.",
+      params: [["userId", "number", R, "A staff account."],
+        ["firstName", "string", R, "At most 100 characters. " + NAME_RULE],
+        ["lastName", "string", R, "At most 100 characters. " + NAME_RULE],
+        ["employeeCode", "string", O, "Letters, digits, - and _; at most 30; stored upper-case; unique (409)."],
+        ["department", "string", O, "At most 100 characters."], ["jobTitle", "string", O, "At most 100 characters."],
+        ...ADDRESS_FIELDS],
+      example: { userId: 20, firstName: "Priya", lastName: "Sharma", employeeCode: "emp-0042", department: "Operations",
+        jobTitle: "City Manager", addressLine1: "Flat 4, Road 12, Banjara Hills", landmark: "Near GVK Mall", city: "Hyderabad",
+        state: "Telangana", postalCode: "500034" }, returns: ADMIN_PROFILE_RESPONSE },
+    { id: "profiles-admins-update", method: "PUT", path: "/api/profiles/admins/update", title: "Update staff profile", success: 200, access: "owner or STAFF_MANAGE WRITE",
+      desc: "Send only what changes; <code>\"\"</code> clears an optional field. Owners may change their names and address; employee details need STAFF_MANAGE write, and only a super user can change another super user's profile.",
+      params: [["adminProfileId", "number", R, "Must exist."], ["firstName", "string", O, NAME_RULE], ["lastName", "string", O, NAME_RULE],
+        ["employeeCode", "string", O, "STAFF_MANAGE write; \"\" clears it."], ["department", "string", O, "STAFF_MANAGE write."],
+        ["jobTitle", "string", O, "STAFF_MANAGE write."], ...ADDRESS_FIELDS.map(([n, t, , d]) => [n, t, O, d]),
+        ["userId", "number", N, "The owner never changes."], ["publicId", "string", N, "Never changes."]],
+      example: { adminProfileId: 2, jobTitle: "Regional Manager" }, returns: { ...ADMIN_PROFILE_RESPONSE, jobTitle: "Regional Manager" } },
+    { id: "profiles-admins-me", method: "GET", path: "/api/profiles/admins/me", title: "My staff profile", success: 200, access: "token",
+      desc: "The signed-in user's staff profile; 404 until it is created.", params: [], returns: ADMIN_PROFILE_RESPONSE },
+    { id: "profiles-admins-get", method: "GET", path: "/api/profiles/admins/{adminProfileId}", title: "Get staff profile", success: 200, access: "owner or STAFF_MANAGE READ",
+      desc: "One staff profile.", params: [["adminProfileId", "number", P, "Must exist."]], pathDefaults: { adminProfileId: "2" },
+      returns: ADMIN_PROFILE_RESPONSE },
+    { id: "profiles-admins-list", method: "GET", path: "/api/profiles/admins", title: "All staff profiles", success: 200, access: "STAFF_MANAGE READ",
+      desc: "Staff profiles, newest first; <code>search</code> also matches the employee code. Allowed for SUPER_USER and ADMIN.",
+      params: PROFILE_LIST_PARAMS, returns: page(ADMIN_PROFILE_RESPONSE) }
+  ]},
+  { group: "Partner onboarding", items: [
+    { id: "partners-create", method: "POST", path: "/api/partners/profiles/create", title: "Start partner profile", success: 201, access: "self or PARTNER_ONBOARDING_MANAGE WRITE",
+      desc: "Starts the profile of an account holding the PARTNER role as a <b>DRAFT</b> (verification PENDING, OFFLINE); one per account, public id NHPART0001, .... Only the names are required now: save the rest with <a href=\"#partners-update\">Update</a>, then <a href=\"#partners-submit\">Submit</a>. <code>registeredBy</code> is whoever creates it (the partner, or the staff member registering them).",
+      params: [["userId", "number", R, "The partner's account."],
+        ["firstName", "string", R, "At most 80 characters. " + NAME_RULE],
+        ["lastName", "string", R, "At most 80 characters. " + NAME_RULE], ...PARTNER_PARAMS],
+      example: { userId: 22, firstName: "Suresh", lastName: "Babu", aadhaarNumber: "234567890123", emergencyContactName: "Lakshmi",
+        emergencyContactRelationship: "SPOUSE", emergencyContactNumber: "9000000001" }, returns: PARTNER_DRAFT },
+    { id: "partners-update", method: "PUT", path: "/api/partners/profiles/update", title: "Update partner profile", success: 200, access: "owner or PARTNER_ONBOARDING_MANAGE WRITE",
+      desc: "Saves profile fields; send only what changes. The partner can edit only while the profile is <b>DRAFT</b> or <b>PROFILE_INCOMPLETE</b>; staff can edit at any time. Once submitted, a profile must stay complete (same checks as Submit).",
+      params: [["partnerProfileId", "number", R, "Must exist."], ["firstName", "string", O, NAME_RULE], ["lastName", "string", O, NAME_RULE],
+        ...PARTNER_PARAMS, ["userId", "number", N, "The owner never changes."], ["publicId", "string", N, "Never changes."],
+        ["onboardingStatus", "string", N, "Use Submit and Review."], ["verificationStatus", "string", N, "Set by Review."],
+        ["availabilityStatus", "string", N, "Use Update availability."]],
+      example: { partnerProfileId: 3, ...PARTNER_FIELDS }, returns: PARTNER_PROFILE_RESPONSE },
+    { id: "partners-submit", method: "PUT", path: "/api/partners/profiles/submit", title: "Submit for review", success: 200, access: "owner or PARTNER_ONBOARDING_MANAGE WRITE",
+      desc: "Sends a DRAFT or PROFILE_INCOMPLETE profile for review: UNDER_REVIEW, verification IN_REVIEW. Needs every required field (the message lists what is missing), at least one service area and availability slot, <code>isAdult: true</code>, and a weekly grid that agrees with <code>weekendAvailability</code> (SATURDAY: Saturday slots and no Sunday; SUNDAY: the reverse; NEITHER: no weekend slots; VARIES: anything).",
+      params: [["partnerProfileId", "number", R, "Must exist."]], example: { partnerProfileId: 3 }, returns: PARTNER_SUBMITTED },
+    { id: "partners-review", method: "PUT", path: "/api/partners/profiles/review", title: "Review partner profile", success: 200, access: "PARTNER_ONBOARDING_MANAGE WRITE",
+      desc: "Staff decision. From UNDER_REVIEW: APPROVED, REJECTED, PROFILE_INCOMPLETE (back to the partner) or TRAINING_REQUIRED; from TRAINING_REQUIRED: APPROVED, REJECTED or PROFILE_INCOMPLETE; APPROVED &harr; SUSPENDED; REJECTED can be reopened as PROFILE_INCOMPLETE. APPROVED needs <code>isAdult</code>, records <code>approvedBy</code>/<code>approvedAt</code> and sets verification VERIFIED. Anything but APPROVED sets the partner OFFLINE. Nobody can review their own profile (403).",
+      params: [["partnerProfileId", "number", R, "Must exist."],
+        ["onboardingStatus", "string", R, "APPROVED, REJECTED, PROFILE_INCOMPLETE, TRAINING_REQUIRED or SUSPENDED."],
+        ["rejectionReason", "string", O, "Required for REJECTED, PROFILE_INCOMPLETE and SUSPENDED; shown to the partner. At most 2000 characters."]],
+      example: { partnerProfileId: 3, onboardingStatus: "APPROVED" }, returns: PARTNER_APPROVED },
+    { id: "partners-availability", method: "PUT", path: "/api/partners/profiles/availability/update", title: "Update availability", success: 200, access: "owner or PARTNER_ONBOARDING_MANAGE WRITE",
+      desc: "An APPROVED partner goes ONLINE, OFFLINE or BUSY.",
+      params: [["partnerProfileId", "number", R, "Must be APPROVED."], ["availabilityStatus", "string", R, "ONLINE, OFFLINE or BUSY."]],
+      example: { partnerProfileId: 3, availabilityStatus: "ONLINE" },
+      returns: { ...PARTNER_APPROVED, availabilityStatus: "ONLINE" } },
+    { id: "partners-me", method: "GET", path: "/api/partners/profiles/me", title: "My partner profile", success: 200, access: "token",
+      desc: "The signed-in partner's profile, including the emergency contact; 404 until it is created.", params: [],
+      returns: PARTNER_SUBMITTED },
+    { id: "partners-get", method: "GET", path: "/api/partners/profiles/{partnerProfileId}", title: "Get partner profile", success: 200, access: "owner or PARTNER_ONBOARDING_MANAGE READ",
+      desc: "One partner profile. The Aadhaar number is always masked; the emergency contact is null for anyone but the partner until the partner gives permission.",
+      params: [["partnerProfileId", "number", P, "Must exist."]], pathDefaults: { partnerProfileId: "3" }, returns: PARTNER_STAFF_VIEW },
+    { id: "partners-list", method: "GET", path: "/api/partners/profiles", title: "All partner profiles", success: 200, access: "PARTNER_ONBOARDING_MANAGE READ",
+      desc: "Partner profiles, newest first, e.g. the review queue with <code>onboardingStatus=UNDER_REVIEW</code>. Allowed for SUPER_USER, ADMIN and SUB_ADMIN. Leave a query field empty to skip it.",
+      params: [...PROFILE_LIST_PARAMS.slice(0, 2),
+        ["onboardingStatus", "string", Q, "DRAFT, PROFILE_INCOMPLETE, UNDER_REVIEW, TRAINING_REQUIRED, APPROVED, REJECTED or SUSPENDED."],
+        ["verificationStatus", "string", Q, "PENDING, IN_REVIEW, VERIFIED, REJECTED or EXPIRED."],
+        ["availabilityStatus", "string", Q, "ONLINE, OFFLINE or BUSY."],
+        ["city", "string", Q, "Exact city, any case."],
+        ["search", "string", Q, "Part of a name or the public id."]],
+      returns: page(PARTNER_STAFF_VIEW) }
+  ]},
+  { group: "Partner documents", items: [
+    { id: "partner-documents-list", method: "GET", path: "/api/partners/profiles/documents/{partnerProfileId}", title: "Documents of a partner", success: 200, access: "owner or PARTNER_ONBOARDING_MANAGE READ",
+      desc: "The partner's documents, newest first. Document numbers are masked.",
+      params: [["partnerProfileId", "number", P, "Must exist."]], pathDefaults: { partnerProfileId: "3" }, returns: [DOCUMENT_RESPONSE] },
+    { id: "partner-documents-add", method: "POST", path: "/api/partners/documents/add", title: "Add document", success: 201, access: "owner or PARTNER_ONBOARDING_MANAGE WRITE",
+      desc: "Records an identity or certification document, PENDING verification. Upload the file to protected storage first and send its key (there is no upload endpoint yet). The number is stored encrypted and returned masked.",
+      params: [["partnerProfileId", "number", R, "Must exist."],
+        ["documentType", "string", R, "GOVERNMENT_ID, ADDRESS_PROOF, POLICE_CHECK, CERTIFICATION or OTHER."],
+        ["documentNumber", "string", O, "4 to 30 letters, digits, spaces, / or -; stored upper-case and encrypted."],
+        ["fileStorageKey", "string", R, "Key of the uploaded file; at most 1024 characters."],
+        ["expiryDate", "string", O, "yyyy-MM-dd, today or later."]],
+      example: { partnerProfileId: 3, documentType: "GOVERNMENT_ID", documentNumber: "ABCDE1234F",
+        fileStorageKey: "partners/NHPART0003/pan.pdf", expiryDate: "2031-10-25" }, returns: DOCUMENT_RESPONSE },
+    { id: "partner-documents-update", method: "PUT", path: "/api/partners/documents/update", title: "Update document", success: 200, access: "owner or PARTNER_ONBOARDING_MANAGE WRITE",
+      desc: "Replaces the number, file or expiry date of a document that is not VERIFIED; it goes back to PENDING and loses the previous decision.",
+      params: [["partnerDocumentId", "number", R, "Must exist and not be VERIFIED."], ["documentNumber", "string", O, "\"\" clears it."],
+        ["fileStorageKey", "string", O, "Cannot be blanked."], ["expiryDate", "string", O, "yyyy-MM-dd, today or later."],
+        ["partnerProfileId", "number", N, "Never changes."], ["documentType", "string", N, "Add a new document instead."],
+        ["verificationStatus", "string", N, "Use Verify document."]],
+      example: { partnerDocumentId: 9, fileStorageKey: "partners/NHPART0003/pan-v2.pdf" },
+      returns: { ...DOCUMENT_RESPONSE, fileStorageKey: "partners/NHPART0003/pan-v2.pdf" } },
+    { id: "partner-documents-verify", method: "PUT", path: "/api/partners/documents/verify", title: "Verify document", success: 200, access: "PARTNER_ONBOARDING_MANAGE WRITE",
+      desc: "Staff decision. VERIFIED, REJECTED and EXPIRED record <code>verifiedBy</code>/<code>verifiedAt</code>; IN_REVIEW clears them. An expired document cannot be VERIFIED. Nobody can verify their own documents (403).",
+      params: [["partnerDocumentId", "number", R, "Must exist."],
+        ["verificationStatus", "string", R, "IN_REVIEW, VERIFIED, REJECTED or EXPIRED; not the current one."],
+        ["rejectionReason", "string", O, "Required for REJECTED; at most 2000 characters."]],
+      example: { partnerDocumentId: 9, verificationStatus: "VERIFIED" },
+      returns: { ...DOCUMENT_RESPONSE, verificationStatus: "VERIFIED", verifiedBy: 20, verifiedAt: DATE } },
+    { id: "partner-documents-delete", method: "DELETE", path: "/api/partners/documents/delete/{partnerDocumentId}", title: "Delete document", success: 204, access: "owner or PARTNER_ONBOARDING_MANAGE DELETE",
+      desc: "Deletes a document that is not VERIFIED (verified ones are kept as records).", danger: "This permanently deletes the document record (not the stored file).",
+      params: [["partnerDocumentId", "number", P, "Must exist and not be VERIFIED."]], pathDefaults: { partnerDocumentId: "" }, returns: "No body (204)." }
+  ]},
+  { group: "Partner bank accounts", items: [
+    { id: "partner-bank-accounts-list", method: "GET", path: "/api/partners/profiles/bank-accounts/{partnerProfileId}", title: "Bank accounts of a partner", success: 200, access: "owner or PARTNER_ONBOARDING_MANAGE READ",
+      desc: "The partner's payout accounts, the primary first. Only the last four digits of a number are ever returned.",
+      params: [["partnerProfileId", "number", P, "Must exist."]], pathDefaults: { partnerProfileId: "3" }, returns: [BANK_ACCOUNT_RESPONSE] },
+    { id: "partner-bank-accounts-add", method: "POST", path: "/api/partners/bank-accounts/add", title: "Add bank account", success: 201, access: "owner or PARTNER_ONBOARDING_MANAGE WRITE",
+      desc: "Adds a payout account, PENDING verification. The first account becomes primary; <code>isPrimary: true</code> makes a later one primary instead. The number is stored encrypted; adding the same number and IFSC twice gives 409.",
+      params: [["partnerProfileId", "number", R, "Must exist."], ["accountHolderName", "string", R, "At most 150 characters."],
+        ["accountNumber", "string", R, "9 to 18 digits. Never returned."],
+        ["ifscCode", "string", R, "4 letters, 0, then 6 letters or digits, e.g. SBIN0001234; stored upper-case."],
+        ["bankName", "string", O, "At most 150 characters."], ["isPrimary", "boolean", O, "Missing: primary only when the partner has none yet."]],
+      example: { partnerProfileId: 3, accountHolderName: "Suresh Babu", accountNumber: "123456784321", ifscCode: "SBIN0001234",
+        bankName: "State Bank of India" }, returns: BANK_ACCOUNT_RESPONSE },
+    { id: "partner-bank-accounts-update", method: "PUT", path: "/api/partners/bank-accounts/update", title: "Update bank account", success: 200, access: "owner or PARTNER_ONBOARDING_MANAGE WRITE",
+      desc: "Send only what changes. A new holder name sends the account back to PENDING. <code>isPrimary: true</code> makes it the primary account; <code>false</code> leaves the partner without one. The number and IFSC never change: add a new account.",
+      params: [["partnerBankAccountId", "number", R, "Must exist."], ["accountHolderName", "string", O, "Cannot be blanked."],
+        ["bankName", "string", O, "\"\" clears it."], ["isPrimary", "boolean", O, "true makes it primary; false removes that."],
+        ["partnerProfileId", "number", N, "Never changes."], ["accountNumber", "string", N, "Add a new account instead."],
+        ["ifscCode", "string", N, "Add a new account instead."], ["verificationStatus", "string", N, "Use Verify bank account."]],
+      example: { partnerBankAccountId: 4, bankName: "SBI" }, returns: { ...BANK_ACCOUNT_RESPONSE, bankName: "SBI" } },
+    { id: "partner-bank-accounts-verify", method: "PUT", path: "/api/partners/bank-accounts/verify", title: "Verify bank account", success: 200, access: "PARTNER_ONBOARDING_MANAGE WRITE",
+      desc: "Staff decision on a payout account. Nobody can verify their own accounts (403).",
+      params: [["partnerBankAccountId", "number", R, "Must exist."],
+        ["verificationStatus", "string", R, "IN_REVIEW, VERIFIED, REJECTED or EXPIRED; not the current one."]],
+      example: { partnerBankAccountId: 4, verificationStatus: "VERIFIED" },
+      returns: { ...BANK_ACCOUNT_RESPONSE, verificationStatus: "VERIFIED" } },
+    { id: "partner-bank-accounts-delete", method: "DELETE", path: "/api/partners/bank-accounts/delete/{partnerBankAccountId}", title: "Delete bank account", success: 204, access: "owner or PARTNER_ONBOARDING_MANAGE DELETE",
+      desc: "Deletes the account. Deleting the primary leaves the partner without one.", danger: "This permanently deletes the bank account.",
+      params: [["partnerBankAccountId", "number", P, "Must exist."]], pathDefaults: { partnerBankAccountId: "" }, returns: "No body (204)." }
+  ]},
   { group: "Lookups", items: [
     { id: "lookup-values-dropdown", method: "GET", path: "/api/lookups/values/{typeCode}", title: "Dropdown values", success: 200, access: "public",
       desc: "The active values of an active lookup type, in display order: the options of a UI dropdown. Business fields store the <code>valueCode</code>.",
-      params: [["typeCode", "string", P, "e.g. ACCOUNT_STATUS, FUNCTION_TYPE, BOOKING_STATUS."]], pathDefaults: { typeCode: "ACCOUNT_STATUS" },
+      params: [["typeCode", "string", P, "e.g. ACCOUNT_STATUS, ADDRESS_TYPE, PREFERRED_CONTACT_LANGUAGE, AVAILABILITY_SLOT."]], pathDefaults: { typeCode: "ACCOUNT_STATUS" },
       returns: ACCOUNT_STATUS_VALUES },
     { id: "lookup-types-list", method: "GET", path: "/api/lookups/types", title: "List lookup types", success: 200, access: "LOOKUP_MANAGE READ",
       desc: "Every lookup type, active or not, ordered by code.", params: [],
@@ -398,8 +763,8 @@ const API = [  { group: "Authentication", items: [
         ["description", "string", O, "Free text."],
         ["activeFlag", "boolean", O, "Defaults to true."],
         ["isSystemManaged", "boolean", O, "Defaults to false. True means application logic depends on it: it and its values can never be deactivated."]],
-      example: { typeCode: "PREFERRED_CONTACT_LANGUAGE", typeName: "Preferred Contact Language",
-        description: "Languages a partner can be contacted in" }, returns: LOOKUP_TYPE_RESPONSE },
+      example: { typeCode: "SERVICE_AREA", typeName: "Service Area", description: "Areas partners can serve" },
+      returns: LOOKUP_TYPE_RESPONSE },
     { id: "lookup-types-update", method: "PUT", path: "/api/lookups/types/update", title: "Update lookup type", success: 200, access: "LOOKUP_MANAGE WRITE",
       desc: "Renames or (de)activates a type. <code>description</code> is always replaced (leaving it out clears it).",
       params: [
@@ -409,8 +774,8 @@ const API = [  { group: "Authentication", items: [
         ["activeFlag", "boolean", O, "System-managed types cannot be deactivated."],
         ["typeCode", "string", N, "Never changes."],
         ["isSystemManaged", "boolean", N, "Never changes."]],
-      example: { lookupTypeId: 44, typeName: "Preferred Contact Language", description: "Languages partners and customers can be contacted in" },
-      returns: { ...LOOKUP_TYPE_RESPONSE, description: "Languages partners and customers can be contacted in" } },
+      example: { lookupTypeId: 51, typeName: "Service Area", description: "Areas partners and customers can choose" },
+      returns: { ...LOOKUP_TYPE_RESPONSE, description: "Areas partners and customers can choose" } },
     { id: "lookup-type-values", method: "GET", path: "/api/lookups/types/values/{lookupTypeId}", title: "All values of a type", success: 200, access: "LOOKUP_MANAGE READ",
       desc: "Every value of the type, including inactive ones, for maintenance screens.",
       params: [["lookupTypeId", "number", P, "Must exist."]], pathDefaults: { lookupTypeId: "1" }, returns: ACCOUNT_STATUS_VALUES },
@@ -425,8 +790,8 @@ const API = [  { group: "Authentication", items: [
         ["activeFlag", "boolean", O, "Defaults to true."],
         ["isDefault", "boolean", O, "Defaults to false; an inactive value cannot be the default."],
         ["metadata", "object", O, "Any JSON object, e.g. an icon or colour; defaults to {}."]],
-      example: { lookupTypeId: 44, valueCode: "te", displayName: "Telugu", displayOrder: 1, isDefault: true,
-        metadata: { nativeName: "తెలుగు" } }, returns: LOOKUP_VALUE_RESPONSE },
+      example: { lookupTypeId: 51, valueCode: "MADHAPUR", displayName: "Madhapur", displayOrder: 1, isDefault: true,
+        metadata: { city: "Hyderabad" } }, returns: LOOKUP_VALUE_RESPONSE },
     { id: "lookup-values-update", method: "PUT", path: "/api/lookups/values/update", title: "Update lookup value", success: 200, access: "LOOKUP_MANAGE WRITE",
       desc: "Send only what changes, except <code>description</code>, which is always replaced. Values of system-managed types cannot be deactivated.",
       params: [
@@ -439,8 +804,8 @@ const API = [  { group: "Authentication", items: [
         ["metadata", "object", O, "Replaces the whole object; missing keeps it."],
         ["lookupTypeId", "number", N, "Never changes."],
         ["valueCode", "string", N, "Never changes."]],
-      example: { lookupValueId: 260, displayName: "Telugu (తెలుగు)", displayOrder: 2 },
-      returns: { ...LOOKUP_VALUE_RESPONSE, displayName: "Telugu (తెలుగు)", displayOrder: 2 } }
+      example: { lookupValueId: 300, displayName: "Madhapur (Hyderabad)", displayOrder: 2 },
+      returns: { ...LOOKUP_VALUE_RESPONSE, displayName: "Madhapur (Hyderabad)", displayOrder: 2 } }
   ]},
   { group: "Roles", items: [
     { id: "roles-create", method: "POST", path: "/api/roles/create", title: "Create role", success: 201, access: "ROLE_MANAGE WRITE",
@@ -468,7 +833,7 @@ const API = [  { group: "Authentication", items: [
   ]},
   { group: "Role functions", items: [
     { id: "role-functions-add", method: "POST", path: "/api/roles/functions/add", title: "Add role function", success: 201, access: "ROLE_MANAGE WRITE",
-      desc: "Grants a role access to a function. <code>canWrite</code> or <code>canDelete</code> also turns on <code>canRead</code>. Seeded functions: LOOKUP_MANAGE 2, USER_MANAGE 3, ROLE_MANAGE 4, FUNCTION_MANAGE 5.",
+      desc: "Grants a role access to a function. <code>canWrite</code> or <code>canDelete</code> also turns on <code>canRead</code>. Seeded functions (dev database): LOOKUP_MANAGE 2, USER_MANAGE 3, ROLE_MANAGE 4, FUNCTION_MANAGE 5, STAFF_MANAGE 7, PROFILE_MANAGE 8, PARTNER_ONBOARDING_MANAGE 9.",
       params: [
         ["roleId", "number", R, "Role must exist (404)."],
         ["functionId", "number", R, "Function must exist (404); the same pair twice gives 409."],
@@ -523,6 +888,58 @@ const API = [  { group: "Authentication", items: [
   ]}
 ];
 const ALL = API.flatMap(g => g.items.map(e => ({ ...e, group: g.group })));
+
+// Role functions seeded by the migrations (V2, V5, V6): function -> access -> roles. SUPER_USER always has every
+// function. A super user can grant more through Role functions, so a database may differ from this.
+const GRANTS = {
+  LOOKUP_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: [] },
+  USER_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: [] },
+  ROLE_MANAGE: { READ: ["ADMIN"], WRITE: [], DELETE: [] },
+  FUNCTION_MANAGE: { READ: ["ADMIN"], WRITE: [], DELETE: [] },
+  STAFF_MANAGE: { READ: ["ADMIN"], WRITE: ["ADMIN"], DELETE: [] },
+  PROFILE_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: ["ADMIN"] },
+  PARTNER_ONBOARDING_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: ["ADMIN"] }
+};
+const ALL_ROLES = ["SUPER_USER", "ADMIN", "SUB_ADMIN", "CUSTOMER", "PARTNER"];
+// Who "self" / "owner" is, by URL
+const OWNERS = [
+  ["/api/users/", "The user themselves (their own account)"],
+  ["/api/profiles/customers/", "The customer themselves (their own profile; the account must hold CUSTOMER)"],
+  ["/api/addresses/", "The customer the address belongs to (the account must hold CUSTOMER)"],
+  ["/api/profiles/admins/", "The staff member themselves (SUPER_USER, ADMIN or SUB_ADMIN, their own profile)"],
+  ["/api/partners/", "The partner themselves (their own profile, documents and bank accounts; the account must hold PARTNER)"]];
+// Extra rules beyond the function check
+const WHO_NOTES = {
+  "auth-register": "Only CUSTOMER and PARTNER accounts can sign themselves up; staff accounts are created with Create user.",
+  "users-create": "Only a super user can create a SUPER_USER.",
+  "users-status": "Nobody can change their own status; only a super user can change a super user's.",
+  "users-roles-assign": "Only a super user can assign SUPER_USER.",
+  "users-roles-update": "Only a super user can change a SUPER_USER assignment.",
+  "profiles-admins-create": "Staff may create their own profile only without employee code, department and job title; those, and other people's profiles, need STAFF_MANAGE WRITE. Only a super user can create a super user's profile.",
+  "profiles-admins-update": "Owners may change their names and address only; employee details need STAFF_MANAGE WRITE. Only a super user can change another super user's profile.",
+  "partners-update": "The partner can edit only while the profile is DRAFT or PROFILE_INCOMPLETE, and cannot set the registration date; staff can edit at any time.",
+  "partners-create": "Only staff can set the registration date.",
+  "partners-review": "Nobody can review their own partner profile.",
+  "partner-documents-verify": "Nobody can verify their own documents.",
+  "partner-bank-accounts-verify": "Nobody can verify their own bank accounts."
+};
+
+/** The roles that may call an endpoint, from its access, as HTML list items. */
+function whoCanAccess(e) {
+  if (isPublic(e)) return ["Anyone, without signing in."];
+  if (e.access === "token") return ["Any signed-in user with an ACTIVE account: " + ALL_ROLES.join(", ") + "."];
+  if (e.access === "SUPER_USER only") return ["SUPER_USER only. This cannot be granted to other roles."];
+  const owner = /^(self|owner) or /.test(e.access);
+  const [functionCode, level] = e.access.replace(/^(self|owner) or /, "").split(" ");
+  const roles = ["SUPER_USER", ...((GRANTS[functionCode] || {})[level] || [])];
+  const lines = [];
+  if (owner) {
+    const match = OWNERS.find(([prefix]) => e.path.startsWith(prefix));
+    lines.push((match ? match[1] : "The owner of the record") + ".");
+  }
+  lines.push((owner ? "Anyone else: " : "") + roles.join(", ") + ` (through ${functionCode} ${level}).`);
+  return lines;
+}
 const LABEL = { required: "Required", optional: "Optional", "not-allowed": "Not allowed", path: "Path", query: "Query" };
 
 // ------------------------------------------------- helpers
@@ -627,7 +1044,14 @@ function overviewPage() {
     <table><tr><th>Mark</th><th>Meaning</th></tr>
       <tr><td><span class="access public">Public</span></td><td>No token needed</td></tr>
       <tr><td><span class="access">Signed in</span></td><td>Any valid access token (<code>Authorization: Bearer &lt;token&gt;</code>); otherwise 401</td></tr>
-      <tr><td><span class="access guarded">USER_MANAGE WRITE</span></td><td>One of your active roles must grant this function and flag (role functions); otherwise 403. SUPER_USER always may. Seeded: ADMIN has lookups and users read/write, staff (admin lists) read and roles/functions read; SUB_ADMIN has lookups and users read.</td></tr>
+      <tr><td><span class="access guarded">USER_MANAGE WRITE</span></td><td>One of your active roles must grant this function and flag (role functions); otherwise 403. SUPER_USER always may. Seeded: ADMIN has lookups, users and staff read/write, customer profiles and partner onboarding read/write/delete, and roles/functions read; SUB_ADMIN has lookups, users, customer profiles and partner onboarding read.</td></tr>
+      <tr><td><span class="access guarded">owner or PROFILE_MANAGE WRITE</span></td><td>Owners may always use it on their own record (profile, address, document, bank account); anyone else needs the function. Checked after the record is loaded, so an unknown id gives 404 first.</td></tr>
+    </table>
+    <h3>Who has which function</h3>
+    <p>Seeded grants (Role functions). SUPER_USER always has everything; CUSTOMER and PARTNER have no functions and only reach their own records.</p>
+    <table><tr><th>Function</th><th>Read</th><th>Write</th><th>Delete</th></tr>
+      ${Object.entries(GRANTS).map(([code, g]) => `<tr><td><code>${code}</code></td>`
+        + ["READ", "WRITE", "DELETE"].map(level => `<td>${["SUPER_USER", ...g[level]].join(", ")}</td>`).join("") + `</tr>`).join("")}
     </table>
     <h3>Field marks</h3>
     <table><tr><th>Mark</th><th>Meaning</th></tr>
@@ -640,7 +1064,7 @@ function overviewPage() {
     <ul>
       <li>Send only the fields you want to change. A missing or <code>null</code> field keeps its current value, except <code>description</code> fields, which are always replaced.</li>
       <li>A required field can be left out of an update but cannot be blanked.</li>
-      <li><code>""</code> clears an optional text field such as <code>email</code>.</li>
+      <li><code>""</code> clears an optional text field such as <code>email</code>. Numbers cannot be cleared once set.</li>
       <li>Nothing that other data refers to is deleted: deactivate it, or set a user's status to DEACTIVATED.</li>
     </ul>
     <p class="muted">Success codes: create/add 201, read/update 200, delete/logout 204. Dates look like <code>${DATE}</code>.</p>
@@ -711,6 +1135,9 @@ function endpointPage(e) {
     <div class="endpoint-head"><span class="m ${e.method}">${e.method}</span><span class="path">${esc(e.path)}</span>${accessBadge(e)}</div>
     <h2 style="margin-top:12px">${esc(e.title)}</h2>
     <p>${e.desc}</p>
+    <h3>Who can access</h3>
+    <ul class="who">${whoCanAccess(e).map(line => `<li>${esc(line)}</li>`).join("")}${WHO_NOTES[e.id] ? `<li>${esc(WHO_NOTES[e.id])}</li>` : ""}</ul>
+    ${!isPublic(e) ? `<p class="muted">Accounts that are not ACTIVE get 403 everywhere. Roles listed are the seeded grants; a super user can grant more through Role functions.</p>` : ""}
     ${e.danger ? `<div class="note">${esc(e.danger)}</div>` : ""}
     ${paramsSection}
     <h3>Responses</h3>

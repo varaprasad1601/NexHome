@@ -8,7 +8,6 @@ import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,9 +42,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class NexHomeUserServiceImpl implements NexHomeUserService {
-
-	private static final int DEFAULT_PAGE_SIZE = 10;
-	private static final int MAX_PAGE_SIZE = 100;
 
 	private final NexHomeUserRepository userRepository;
 	private final NexHomeRoleRepository roleRepository;
@@ -100,21 +96,13 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 	@Transactional(readOnly = true)
 	public NexHomePageResponse<NexHomeUserResponse> getUsersByRole(String roleCode, Integer page, Integer size,
 			String accountStatus, String search) {
-		int pageNumber = page == null ? 0 : page;
-		int pageSize = size == null ? DEFAULT_PAGE_SIZE : size;
-		if (pageNumber < 0) {
-			throw new InvalidRequestException("Page must be 0 or more.");
-		}
-		if (pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
-			throw new InvalidRequestException("Size must be between 1 and " + MAX_PAGE_SIZE + ".");
-		}
+		PageRequest pageRequest = NexHomePaging.newestFirst(page, size);
 		String status = accountStatus == null || accountStatus.isBlank() ? null
 				: lookupService.validateCode(Types.ACCOUNT_STATUS, accountStatus, "Account status");
 		// Emails are stored lower-cased
-		String text = search == null || search.isBlank() ? null : search.trim().toLowerCase(Locale.ROOT);
+		String text = NexHomePaging.searchText(search);
 
-		Page<NexHomeUser> users = userRepository.findByActiveRole(roleCode, status, text,
-				PageRequest.of(pageNumber, pageSize, Sort.by(Sort.Order.desc("creationDate"), Sort.Order.desc("id"))));
+		Page<NexHomeUser> users = userRepository.findByActiveRole(roleCode, status, text, pageRequest);
 
 		// All roles of the page's users in one query, not one per user
 		Map<Long, List<NexHomeUserRole>> rolesByUser = users.isEmpty() ? Map.of()
@@ -123,8 +111,7 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 		List<NexHomeUserResponse> content = users.stream()
 				.map(user -> userMapper.toUserDto(user, rolesByUser.getOrDefault(user.getId(), List.of())))
 				.toList();
-		return new NexHomePageResponse<>(content, pageNumber, pageSize, users.getTotalElements(),
-				users.getTotalPages());
+		return NexHomePaging.toPageResponse(pageRequest, users, content);
 	}
 
 	@Override
