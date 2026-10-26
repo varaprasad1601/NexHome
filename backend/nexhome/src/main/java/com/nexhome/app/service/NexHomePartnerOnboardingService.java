@@ -17,17 +17,20 @@ import com.nexhome.app.dto.NexHomePartnerProfileResponse;
 import com.nexhome.app.dto.NexHomePartnerProfileReviewRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileSubmitRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileUpdateRequest;
+import com.nexhome.app.dto.NexHomePartnerServiceCreateRequest;
+import com.nexhome.app.dto.NexHomePartnerServiceResponse;
+import com.nexhome.app.dto.NexHomePartnerServiceUpdateRequest;
 
 /**
- * Partner onboarding: the partner profile and its review, identity documents and payout bank accounts. Partners
- * manage their own records; acting on someone else's, reviewing and verifying need PARTNER_ONBOARDING_MANAGE, and
- * nobody can review or verify their own.
+ * Partner onboarding: the partner profile and its review, the services offered, identity documents and payout bank
+ * accounts. Partners manage their own records; acting on someone else's, reviewing and verifying need
+ * PARTNER_ONBOARDING_MANAGE, and nobody can review or verify their own.
  * <p>
  * Lifecycle: DRAFT -(submit)-> UNDER_REVIEW -(review)-> APPROVED, REJECTED, PROFILE_INCOMPLETE (back to the partner,
  * who submits again) or TRAINING_REQUIRED; APPROVED &lt;-&gt; SUSPENDED; REJECTED can be reopened as
  * PROFILE_INCOMPLETE.
  */
-public interface NexHomePartnerService {
+public interface NexHomePartnerOnboardingService {
 
 	/** Starts the DRAFT profile of an account holding the PARTNER role; one per account. */
 	NexHomePartnerProfileResponse createPartnerProfile(NexHomePartnerProfileCreateRequest request);
@@ -87,4 +90,18 @@ public interface NexHomePartnerService {
 
 	/** The bank accounts of a partner profile, the primary first. */
 	List<NexHomePartnerBankAccountResponse> getPartnerBankAccounts(Long partnerProfileId);
+
+	/**
+	 * Adds an active catalogue service the partner offers; the first one (or one added with isPrimaryService) becomes
+	 * primary. Like profile fields, the partner can change their services only while the profile is a DRAFT or
+	 * PROFILE_INCOMPLETE; staff at any time.
+	 */
+	NexHomePartnerServiceResponse addPartnerService(NexHomePartnerServiceCreateRequest request);
+
+	NexHomePartnerServiceResponse updatePartnerService(NexHomePartnerServiceUpdateRequest request);
+
+	void deletePartnerService(Long partnerServiceId);
+
+	/** The services a partner offers, the primary first. */
+	List<NexHomePartnerServiceResponse> getPartnerServices(Long partnerProfileId);
 }

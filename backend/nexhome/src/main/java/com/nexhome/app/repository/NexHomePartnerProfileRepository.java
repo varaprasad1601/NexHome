@@ -20,6 +20,8 @@ public interface NexHomePartnerProfileRepository extends JpaRepository<NexHomePa
 
 	boolean existsByUserId(Long userId);
 
+	boolean existsByMainServiceCategoryId(Long categoryId);
+
 	/**
 	 * Partner profiles matching every filter given: statuses (exact codes), city (lower-cased, matched
 	 * case-insensitively) and {@code search} (lower-cased; part of the name or public id). Null filters are left out

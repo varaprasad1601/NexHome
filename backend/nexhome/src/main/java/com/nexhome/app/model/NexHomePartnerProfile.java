@@ -124,9 +124,10 @@ public class NexHomePartnerProfile {
 	@Column(name = "years_experience")
 	private Short yearsExperience;
 
-	// Not used until the service catalogue (Module 3) adds service categories and the foreign key
-	@Column(name = "main_service_category_id")
-	private Long mainServiceCategoryId;
+	/** The category of the partner's main skill; required once the profile leaves DRAFT. */
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "main_service_category_id", referencedColumnName = "id")
+	private NexHomeServiceCategory mainServiceCategory;
 
 	/** A JSON array of skill codes as text, or null. */
 	@JdbcTypeCode(SqlTypes.JSON)

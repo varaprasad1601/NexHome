@@ -1,5 +1,6 @@
 package com.nexhome.app.mapper;
 
+import java.text.Normalizer;
 import java.util.Locale;
 
 /**
@@ -28,5 +29,14 @@ public final class NexHomeText {
 	public static String upperCase(String value) {
 		String trimmed = trimToNull(value);
 		return trimmed == null ? null : trimmed.toUpperCase(Locale.ROOT);
+	}
+
+	/**
+	 * A URL slug from a name: accents removed, lower-cased, and every run of other characters turned into one hyphen,
+	 * e.g. "Deep Cleaning (2 BHK)" -> deep-cleaning-2-bhk. Empty when the name has no letters a-z or digits.
+	 */
+	public static String slugOf(String name) {
+		String ascii = Normalizer.normalize(name, Normalizer.Form.NFD).replaceAll("\\p{M}", "");
+		return ascii.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("^-+|-+$", "");
 	}
 }

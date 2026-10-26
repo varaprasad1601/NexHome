@@ -35,9 +35,11 @@ import org.springframework.transaction.annotation.Transactional;
 import com.nexhome.app.config.NexHomeSecurityProperties;
 import com.nexhome.app.mapper.NexHomeAuthRefreshTokenMapper;
 import com.nexhome.app.mapper.NexHomeUserMapper;
+import com.nexhome.app.model.NexHomeServiceCategory;
 import com.nexhome.app.model.NexHomeUser;
 import com.nexhome.app.repository.NexHomeAuthRefreshTokenRepository;
 import com.nexhome.app.repository.NexHomeRoleRepository;
+import com.nexhome.app.repository.NexHomeServiceCategoryRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
 import com.nexhome.app.repository.NexHomeUserRoleRepository;
 
@@ -76,6 +78,8 @@ class NexHomeProfileFlowTest {
 	private NexHomeAuthRefreshTokenRepository refreshTokenRepository;
 	@Autowired
 	private NexHomeAuthRefreshTokenMapper refreshTokenMapper;
+	@Autowired
+	private NexHomeServiceCategoryRepository categoryRepository;
 	@Autowired
 	private EntityManager entityManager;
 
@@ -315,7 +319,7 @@ class NexHomeProfileFlowTest {
 				.andExpect(jsonPath("$.message").value("Weekly availability days must be MONDAY to SUNDAY."));
 
 		// Lists are deduplicated, the grid is normalized; the weekend answer must agree with it
-		perform(put("/api/partners/profiles/update"), partnerToken, completeProfile(profileId, "SUNDAY"))
+		perform(put("/api/partners/profiles/update"), partnerToken, completeProfile(profileId, newCategory().getId(), "SUNDAY"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.serviceAreas.length()").value(2))
 				.andExpect(jsonPath("$.serviceAreas[1]").value("Kondapur"))
@@ -518,15 +522,15 @@ class NexHomeProfileFlowTest {
 				 "city": "Hyderabad", "state": "Telangana", "postalCode": "500034"%s}""".formatted(userId, extra);
 	}
 
-	private static String completeProfile(long profileId, String weekend) {
+	private static String completeProfile(long profileId, long categoryId, String weekend) {
 		return """
-				{"partnerProfileId": %d, "isAdult": true, "preferredContactLanguage": "te",
+				{"partnerProfileId": %d, "mainServiceCategoryId": %d, "isAdult": true, "preferredContactLanguage": "te",
 				 "addressLine1": "H.No 1-2-3", "locality": "Madhapur", "city": "Hyderabad", "state": "Telangana",
 				 "postalCode": "500081", "skillCategory": "SKILLED", "yearsExperience": 6,
 				 "preferredArrangement": "FLEXIBLE_JOBS", "paymentBasis": "PER_JOB", "expectedEarningsInr": 800,
 				 "maxTravelKm": 12.5, "serviceAreas": ["Madhapur", " madhapur ", "Kondapur"],
 				 "weeklyAvailability": {"monday": ["evening", "MORNING", "EVENING"], "saturday": ["MORNING"]},
-				 "weekendAvailability": "%s"}""".formatted(profileId, weekend);
+				 "weekendAvailability": "%s"}""".formatted(profileId, categoryId, weekend);
 	}
 
 	private ResultActions perform(MockHttpServletRequestBuilder request, String accessToken, String body)
@@ -542,6 +546,14 @@ class NexHomeProfileFlowTest {
 
 	private JsonNode json(ResultActions result) throws Exception {
 		return jsonMapper.readTree(result.andReturn().getResponse().getContentAsString());
+	}
+
+	/** An active service category, created inside the test's transaction. */
+	private NexHomeServiceCategory newCategory() {
+		NexHomeServiceCategory category = new NexHomeServiceCategory();
+		category.setName("Test Category");
+		category.setSlug("test-category-" + UUID.randomUUID());
+		return categoryRepository.saveAndFlush(category);
 	}
 
 	/** An ACTIVE account with one role, created inside the test's transaction. */

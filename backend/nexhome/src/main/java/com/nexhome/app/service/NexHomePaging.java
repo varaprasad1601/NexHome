@@ -24,6 +24,11 @@ final class NexHomePaging {
 
 	/** Newest first: {@code creationDate} desc, then {@code id} desc. */
 	static PageRequest newestFirst(Integer page, Integer size) {
+		return of(page, size, Sort.by(Sort.Order.desc("creationDate"), Sort.Order.desc("id")));
+	}
+
+	/** A checked page request in another order, e.g. by name for catalogue browsing. */
+	static PageRequest of(Integer page, Integer size, Sort sort) {
 		int pageNumber = page == null ? 0 : page;
 		int pageSize = size == null ? DEFAULT_PAGE_SIZE : size;
 		if (pageNumber < 0) {
@@ -32,7 +37,7 @@ final class NexHomePaging {
 		if (pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
 			throw new InvalidRequestException("Size must be between 1 and " + MAX_PAGE_SIZE + ".");
 		}
-		return PageRequest.of(pageNumber, pageSize, Sort.by(Sort.Order.desc("creationDate"), Sort.Order.desc("id")));
+		return PageRequest.of(pageNumber, pageSize, sort);
 	}
 
 	/** The requested page number and size, with the totals of the result. */

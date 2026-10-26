@@ -49,6 +49,8 @@ public interface NexHomePartnerProfileFields {
 
 	Integer yearsExperience();
 
+	Long mainServiceCategoryId();
+
 	List<String> additionalSkills();
 
 	String preferredArrangement();

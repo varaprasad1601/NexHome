@@ -27,6 +27,13 @@ public final class NexHomeLookupCodes {
 		public static final String PAYMENT_BASIS = "PAYMENT_BASIS";
 		public static final String WEEKEND_AVAILABILITY = "WEEKEND_AVAILABILITY";
 		public static final String EMERGENCY_CONTACT_RELATIONSHIP = "EMERGENCY_CONTACT_RELATIONSHIP";
+		public static final String PRICING_TYPE = "PRICING_TYPE";
+		public static final String COMMISSION_TYPE = "COMMISSION_TYPE";
+		public static final String MEDIA_TYPE = "MEDIA_TYPE";
+		public static final String REQUIREMENT_TYPE = "REQUIREMENT_TYPE";
+		public static final String FAQ_AUDIENCE = "FAQ_AUDIENCE";
+		public static final String POLICY_AUDIENCE = "POLICY_AUDIENCE";
+		public static final String ACCEPTANCE_METHOD = "ACCEPTANCE_METHOD";
 		/** The daily slots of a partner's weekly availability grid. */
 		public static final String AVAILABILITY_SLOT = "AVAILABILITY_SLOT";
 
@@ -123,6 +130,43 @@ public final class NexHomeLookupCodes {
 		public static final String VARIES = "VARIES";
 
 		private WeekendAvailability() {
+		}
+	}
+
+	/** Values of {@link Types#PRICING_TYPE}: how a service's base price is applied. */
+	public static final class PricingType {
+
+		/** One price for the job. */
+		public static final String FIXED = "FIXED";
+		/** The base price is per hour, billed from a minimum in increments. */
+		public static final String HOURLY = "HOURLY";
+		/** The base price is per unit. */
+		public static final String PER_UNIT = "PER_UNIT";
+		/** The base price is an inspection fee; the work is quoted on site. */
+		public static final String INSPECTION = "INSPECTION";
+
+		private PricingType() {
+		}
+	}
+
+	/** Values of {@link Types#COMMISSION_TYPE}. */
+	public static final class CommissionType {
+
+		public static final String PERCENTAGE = "PERCENTAGE";
+		public static final String FIXED = "FIXED";
+
+		private CommissionType() {
+		}
+	}
+
+	/** Values of {@link Types#FAQ_AUDIENCE} and {@link Types#POLICY_AUDIENCE}; BOTH applies to everyone. */
+	public static final class Audience {
+
+		public static final String CUSTOMER = "CUSTOMER";
+		public static final String PARTNER = "PARTNER";
+		public static final String BOTH = "BOTH";
+
+		private Audience() {
 		}
 	}
 }

@@ -49,13 +49,18 @@ import com.nexhome.app.exception.InvalidRequestException;
 import com.nexhome.app.mapper.NexHomePartnerBankAccountMapper;
 import com.nexhome.app.mapper.NexHomePartnerDocumentMapper;
 import com.nexhome.app.mapper.NexHomePartnerProfileMapper;
+import com.nexhome.app.mapper.NexHomePartnerServiceMapper;
 import com.nexhome.app.model.NexHomePartnerBankAccount;
 import com.nexhome.app.model.NexHomePartnerDocument;
 import com.nexhome.app.model.NexHomePartnerProfile;
+import com.nexhome.app.model.NexHomeServiceCategory;
 import com.nexhome.app.model.NexHomeUser;
 import com.nexhome.app.repository.NexHomePartnerBankAccountRepository;
 import com.nexhome.app.repository.NexHomePartnerDocumentRepository;
 import com.nexhome.app.repository.NexHomePartnerProfileRepository;
+import com.nexhome.app.repository.NexHomePartnerServiceRepository;
+import com.nexhome.app.repository.NexHomeServiceCategoryRepository;
+import com.nexhome.app.repository.NexHomeServiceRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
 import com.nexhome.app.repository.NexHomeUserRoleRepository;
 
@@ -64,7 +69,7 @@ import jakarta.validation.Validation;
 import jakarta.validation.ValidatorFactory;
 import tools.jackson.databind.json.JsonMapper;
 
-class NexHomePartnerServiceImplTest {
+class NexHomePartnerOnboardingServiceImplTest {
 
 	private static final Long STAFF_ID = 1L;
 	private static final Long OWNER_ID = 20L;
@@ -92,7 +97,7 @@ class NexHomePartnerServiceImplTest {
 	private NexHomePartnerProfileMapper partnerProfileMapper;
 	private NexHomePartnerDocumentMapper partnerDocumentMapper;
 	private NexHomePartnerBankAccountMapper partnerBankAccountMapper;
-	private NexHomePartnerServiceImpl partnerService;
+	private NexHomePartnerOnboardingServiceImpl partnerService;
 	private NexHomeUser owner;
 
 	@BeforeEach
@@ -147,9 +152,11 @@ class NexHomePartnerServiceImplTest {
 		when(permissionService.currentUserId()).thenReturn(STAFF_ID);
 		when(permissionService.isSelfOrCan(any(), any(), any())).thenReturn(true);
 
-		partnerService = new NexHomePartnerServiceImpl(partnerProfileRepository, partnerDocumentRepository,
+		partnerService = new NexHomePartnerOnboardingServiceImpl(partnerProfileRepository, partnerDocumentRepository,
 				partnerBankAccountRepository, userRepository, userRoleRepository, lookupService, permissionService,
-				partnerProfileMapper, partnerDocumentMapper, partnerBankAccountMapper);
+				partnerProfileMapper, partnerDocumentMapper, partnerBankAccountMapper,
+				mock(NexHomeServiceCategoryRepository.class), mock(NexHomeServiceRepository.class),
+				mock(NexHomePartnerServiceRepository.class), new NexHomePartnerServiceMapper());
 	}
 
 	// ------------------------------------------------------------------------------------------------------------
@@ -283,7 +290,8 @@ class NexHomePartnerServiceImplTest {
 		assertThatThrownBy(() -> partnerService.submitPartnerProfile(new NexHomePartnerProfileSubmitRequest(PROFILE_ID)))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage("Complete these fields first: isAdult, preferredContactLanguage, addressLine1, locality, "
-						+ "city, state, postalCode, skillCategory, yearsExperience, preferredArrangement, paymentBasis, "
+						+ "city, state, postalCode, skillCategory, yearsExperience, mainServiceCategoryId, "
+						+ "preferredArrangement, paymentBasis, "
 						+ "expectedEarningsInr, maxTravelKm, weekendAvailability, serviceAreas, weeklyAvailability.");
 		assertThat(profile.getOnboardingStatus()).isEqualTo("DRAFT");
 	}
@@ -866,6 +874,9 @@ class NexHomePartnerServiceImplTest {
 		profile.setPostalCode("500081");
 		profile.setSkillCategory("SKILLED");
 		profile.setYearsExperience((short) 6);
+		NexHomeServiceCategory category = new NexHomeServiceCategory();
+		category.setId(3L);
+		profile.setMainServiceCategory(category);
 		profile.setPreferredArrangement("FLEXIBLE_JOBS");
 		profile.setPaymentBasis("PER_JOB");
 		profile.setExpectedEarningsInr(new BigDecimal("800"));
@@ -936,6 +947,7 @@ class NexHomePartnerServiceImplTest {
 		LocalDate registrationDate;
 		String skillCategory;
 		Integer yearsExperience;
+		Long mainServiceCategoryId;
 		List<String> additionalSkills;
 		String preferredArrangement;
 		String paymentBasis;
@@ -956,10 +968,10 @@ class NexHomePartnerServiceImplTest {
 			return new NexHomePartnerProfileCreateRequest(OWNER_ID, firstName, middleName, lastName, aadhaarNumber,
 					alternateContactNumber, isAdult, preferredContactLanguage, addressLine1, addressLine2, landmark,
 					locality, city, state, postalCode, latitude, longitude, registrationDate, skillCategory,
-					yearsExperience, additionalSkills, preferredArrangement, paymentBasis, expectedEarningsInr,
-					visitChargeInr, minimumJobPaymentInr, previousWorkDetails, serviceAreas, maxTravelKm,
-					weeklyAvailability(), weekendAvailability, emergencyContactName, emergencyContactRelationship,
-					emergencyContactNumber, emergencyContactPermission);
+					yearsExperience, mainServiceCategoryId, additionalSkills, preferredArrangement, paymentBasis,
+					expectedEarningsInr, visitChargeInr, minimumJobPaymentInr, previousWorkDetails, serviceAreas,
+					maxTravelKm, weeklyAvailability(), weekendAvailability, emergencyContactName,
+					emergencyContactRelationship, emergencyContactNumber, emergencyContactPermission);
 		}
 
 		/** The update leaves names alone unless a test set them to something else. */
@@ -968,9 +980,9 @@ class NexHomePartnerServiceImplTest {
 					verificationStatus, availabilityStatus, "Suresh".equals(firstName) ? null : firstName, middleName,
 					"Babu".equals(lastName) ? null : lastName, aadhaarNumber, alternateContactNumber, isAdult,
 					preferredContactLanguage, addressLine1, addressLine2, landmark, locality, city, state, postalCode,
-					latitude, longitude, registrationDate, skillCategory, yearsExperience, additionalSkills,
-					preferredArrangement, paymentBasis, expectedEarningsInr, visitChargeInr, minimumJobPaymentInr,
-					previousWorkDetails, serviceAreas, maxTravelKm, weeklyAvailability(), weekendAvailability,
+					latitude, longitude, registrationDate, skillCategory, yearsExperience, mainServiceCategoryId,
+					additionalSkills, preferredArrangement, paymentBasis, expectedEarningsInr, visitChargeInr,
+					minimumJobPaymentInr, previousWorkDetails, serviceAreas, maxTravelKm, weeklyAvailability(), weekendAvailability,
 					emergencyContactName, emergencyContactRelationship, emergencyContactNumber,
 					emergencyContactPermission);
 		}

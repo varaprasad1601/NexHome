@@ -54,8 +54,8 @@ public class NexHomePartnerProfileMapper {
 	/**
 	 * Applies the scalar fields of a create or update: a null field keeps its current value and an empty optional
 	 * text field is cleared. Names are whitespace-collapsed, the Aadhaar number is encrypted and coordinates are
-	 * rounded to 7 decimals (set only as a pair). Lookup codes are validated by the service beforehand; the JSON
-	 * fields (skills, service areas, weekly availability) are normalized and set by the service.
+	 * rounded to 7 decimals (set only as a pair). Lookup codes are validated by the service beforehand; the main
+	 * service category and the JSON fields (skills, service areas, weekly availability) are set by the service.
 	 */
 	public void applyPartnerProfileFields(NexHomePartnerProfile profile, NexHomePartnerProfileFields fields,
 			Long actingUserId) {
@@ -184,6 +184,7 @@ public class NexHomePartnerProfileMapper {
 				profile.getRegisteredBy(),
 				profile.getSkillCategory(),
 				profile.getYearsExperience(),
+				profile.getMainServiceCategory() == null ? null : profile.getMainServiceCategory().getId(),
 				profile.getAdditionalSkills() == null ? null : readList(profile.getAdditionalSkills()),
 				profile.getPreferredArrangement(),
 				profile.getPaymentBasis(),

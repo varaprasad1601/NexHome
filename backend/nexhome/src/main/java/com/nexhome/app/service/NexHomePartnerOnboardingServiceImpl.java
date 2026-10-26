@@ -38,12 +38,16 @@ import com.nexhome.app.dto.NexHomePartnerProfileResponse;
 import com.nexhome.app.dto.NexHomePartnerProfileReviewRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileSubmitRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileUpdateRequest;
+import com.nexhome.app.dto.NexHomePartnerServiceCreateRequest;
+import com.nexhome.app.dto.NexHomePartnerServiceResponse;
+import com.nexhome.app.dto.NexHomePartnerServiceUpdateRequest;
 import com.nexhome.app.exception.DuplicateResourceException;
 import com.nexhome.app.exception.InvalidRequestException;
 import com.nexhome.app.exception.ResourceNotFoundException;
 import com.nexhome.app.mapper.NexHomePartnerBankAccountMapper;
 import com.nexhome.app.mapper.NexHomePartnerDocumentMapper;
 import com.nexhome.app.mapper.NexHomePartnerProfileMapper;
+import com.nexhome.app.mapper.NexHomePartnerServiceMapper;
 import com.nexhome.app.mapper.NexHomeText;
 import com.nexhome.app.model.NexHomeAccess;
 import com.nexhome.app.model.NexHomeLookupCodes.PartnerAvailabilityStatus;
@@ -54,11 +58,17 @@ import com.nexhome.app.model.NexHomeLookupCodes.WeekendAvailability;
 import com.nexhome.app.model.NexHomePartnerBankAccount;
 import com.nexhome.app.model.NexHomePartnerDocument;
 import com.nexhome.app.model.NexHomePartnerProfile;
+import com.nexhome.app.model.NexHomePartnerService;
 import com.nexhome.app.model.NexHomeRole;
+import com.nexhome.app.model.NexHomeService;
+import com.nexhome.app.model.NexHomeServiceCategory;
 import com.nexhome.app.model.NexHomeUser;
 import com.nexhome.app.repository.NexHomePartnerBankAccountRepository;
 import com.nexhome.app.repository.NexHomePartnerDocumentRepository;
 import com.nexhome.app.repository.NexHomePartnerProfileRepository;
+import com.nexhome.app.repository.NexHomePartnerServiceRepository;
+import com.nexhome.app.repository.NexHomeServiceCategoryRepository;
+import com.nexhome.app.repository.NexHomeServiceRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
 import com.nexhome.app.repository.NexHomeUserRoleRepository;
 
@@ -68,7 +78,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class NexHomePartnerServiceImpl implements NexHomePartnerService {
+public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboardingService {
 
 	static final String PARTNER_ONBOARDING_MANAGE = "PARTNER_ONBOARDING_MANAGE";
 
@@ -105,6 +115,10 @@ public class NexHomePartnerServiceImpl implements NexHomePartnerService {
 	private final NexHomePartnerProfileMapper partnerProfileMapper;
 	private final NexHomePartnerDocumentMapper partnerDocumentMapper;
 	private final NexHomePartnerBankAccountMapper partnerBankAccountMapper;
+	private final NexHomeServiceCategoryRepository categoryRepository;
+	private final NexHomeServiceRepository serviceRepository;
+	private final NexHomePartnerServiceRepository partnerServiceRepository;
+	private final NexHomePartnerServiceMapper partnerServiceMapper;
 
 	// ------------------------------------------------------------------------------------------------------------
 	// Partner profiles
@@ -467,8 +481,100 @@ public class NexHomePartnerServiceImpl implements NexHomePartnerService {
 	}
 
 	// ------------------------------------------------------------------------------------------------------------
+	// Services offered
+	// ------------------------------------------------------------------------------------------------------------
+
+	@Override
+	@Transactional
+	public NexHomePartnerServiceResponse addPartnerService(NexHomePartnerServiceCreateRequest request) {
+		Long actingUserId = permissionService.currentUserId();
+		NexHomePartnerProfile partner = findPartnerProfile(request.partnerProfileId());
+		requireSelfOrCan(partner.getUser().getId(), NexHomeAccess.WRITE);
+		requireEditableByOwner(partner, actingUserId);
+		NexHomeService service = serviceRepository.findById(request.serviceId())
+				.filter(NexHomeService::isActive)
+				.orElseThrow(() -> new ResourceNotFoundException("Service does not exist or is inactive."));
+		if (partnerServiceRepository.existsByPartnerIdAndServiceId(partner.getId(), service.getId())) {
+			throw new DuplicateResourceException("The partner already offers this service.");
+		}
+
+		boolean hasPrimary = partnerServiceRepository.findByPartnerIdAndPrimaryServiceTrue(partner.getId()).isPresent();
+		boolean makePrimary = request.isPrimaryService() == null ? !hasPrimary : request.isPrimaryService();
+		if (makePrimary) {
+			clearCurrentPrimaryService(partner.getId(), actingUserId);
+		}
+		NexHomePartnerService partnerService = partnerServiceMapper.toPartnerServiceEntity(request, partner, service,
+				actingUserId);
+		partnerService.setPrimaryService(makePrimary);
+		partnerService = partnerServiceRepository.save(partnerService);
+
+		log.info("Service {} added to partner profile {}", service.getPublicId(), partner.getPublicId());
+		return partnerServiceMapper.toPartnerServiceDto(partnerService);
+	}
+
+	@Override
+	@Transactional
+	public NexHomePartnerServiceResponse updatePartnerService(NexHomePartnerServiceUpdateRequest request) {
+		Long actingUserId = permissionService.currentUserId();
+		NexHomePartnerService partnerService = findPartnerService(request.partnerServiceId());
+		NexHomePartnerProfile partner = partnerService.getPartner();
+		requireSelfOrCan(partner.getUser().getId(), NexHomeAccess.WRITE);
+		requireEditableByOwner(partner, actingUserId);
+
+		if (Boolean.TRUE.equals(request.isPrimaryService()) && !partnerService.isPrimaryService()) {
+			clearCurrentPrimaryService(partner.getId(), actingUserId);
+		}
+		partnerServiceMapper.updatePartnerServiceEntity(partnerService, request, actingUserId);
+		if (request.isPrimaryService() != null) {
+			partnerService.setPrimaryService(request.isPrimaryService());
+		}
+
+		log.info("Partner service {} updated", partnerService.getId());
+		return partnerServiceMapper.toPartnerServiceDto(partnerService);
+	}
+
+	@Override
+	@Transactional
+	public void deletePartnerService(Long partnerServiceId) {
+		NexHomePartnerService partnerService = findPartnerService(partnerServiceId);
+		requireSelfOrCan(partnerService.getPartner().getUser().getId(), NexHomeAccess.DELETE);
+		requireEditableByOwner(partnerService.getPartner(), permissionService.currentUserId());
+		partnerServiceRepository.delete(partnerService);
+		log.info("Partner service {} deleted", partnerServiceId);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<NexHomePartnerServiceResponse> getPartnerServices(Long partnerProfileId) {
+		NexHomePartnerProfile partner = findPartnerProfile(partnerProfileId);
+		requireSelfOrCan(partner.getUser().getId(), NexHomeAccess.READ);
+		return partnerServiceRepository.findByPartnerIdOrderByPrimaryServiceDescCreationDateDescIdDesc(partnerProfileId)
+				.stream()
+				.map(partnerServiceMapper::toPartnerServiceDto)
+				.toList();
+	}
+
+	// ------------------------------------------------------------------------------------------------------------
 	// Rules
 	// ------------------------------------------------------------------------------------------------------------
+
+	/** Like the profile itself, the partner changes their services only while it is a DRAFT or PROFILE_INCOMPLETE. */
+	private static void requireEditableByOwner(NexHomePartnerProfile partner, Long actingUserId) {
+		if (partner.getUser().getId().equals(actingUserId)
+				&& !EDITABLE_BY_PARTNER.contains(partner.getOnboardingStatus())) {
+			throw new InvalidRequestException("The profile is " + partner.getOnboardingStatus()
+					+ " and cannot be changed now. Contact support to update it.");
+		}
+	}
+
+	/** One primary service per partner: the current one is cleared and flushed first, like bank accounts. */
+	private void clearCurrentPrimaryService(Long partnerId, Long actingUserId) {
+		partnerServiceRepository.findByPartnerIdAndPrimaryServiceTrue(partnerId).ifPresent(current -> {
+			current.setPrimaryService(false);
+			current.setUpdatedBy(actingUserId);
+			partnerServiceRepository.saveAndFlush(current);
+		});
+	}
 
 	/** Validates the submitted fields and applies them, including the normalized JSON fields. */
 	private void applyFields(NexHomePartnerProfile profile, NexHomePartnerProfileFields fields, NexHomeUser owner,
@@ -494,6 +600,10 @@ public class NexHomePartnerServiceImpl implements NexHomePartnerService {
 		// Everything that queries is done before the entity changes, so no half-applied update is flushed
 		Map<String, List<String>> weekly = fields.weeklyAvailability() == null ? null
 				: normalizeWeeklyAvailability(fields.weeklyAvailability());
+		NexHomeServiceCategory mainCategory = fields.mainServiceCategoryId() == null ? null
+				: categoryRepository.findByIdAndActiveTrue(fields.mainServiceCategoryId())
+						.orElseThrow(() -> new InvalidRequestException(
+								"Main service category must be an active service category."));
 
 		partnerProfileMapper.applyPartnerProfileFields(profile, fields, actingUserId);
 		if (fields.additionalSkills() != null) {
@@ -505,6 +615,9 @@ public class NexHomePartnerServiceImpl implements NexHomePartnerService {
 		}
 		if (weekly != null) {
 			profile.setWeeklyAvailability(partnerProfileMapper.toJson(weekly));
+		}
+		if (mainCategory != null) {
+			profile.setMainServiceCategory(mainCategory);
 		}
 	}
 
@@ -524,6 +637,7 @@ public class NexHomePartnerServiceImpl implements NexHomePartnerService {
 		required.put("postalCode", profile.getPostalCode());
 		required.put("skillCategory", profile.getSkillCategory());
 		required.put("yearsExperience", profile.getYearsExperience());
+		required.put("mainServiceCategoryId", profile.getMainServiceCategory());
 		required.put("preferredArrangement", profile.getPreferredArrangement());
 		required.put("paymentBasis", profile.getPaymentBasis());
 		required.put("expectedEarningsInr", profile.getExpectedEarningsInr());
@@ -662,6 +776,11 @@ public class NexHomePartnerServiceImpl implements NexHomePartnerService {
 	private NexHomePartnerDocument findPartnerDocument(Long partnerDocumentId) {
 		return partnerDocumentRepository.findById(partnerDocumentId)
 				.orElseThrow(() -> new ResourceNotFoundException("Partner document does not exist."));
+	}
+
+	private NexHomePartnerService findPartnerService(Long partnerServiceId) {
+		return partnerServiceRepository.findById(partnerServiceId)
+				.orElseThrow(() -> new ResourceNotFoundException("Partner service does not exist."));
 	}
 
 	private NexHomePartnerBankAccount findPartnerBankAccount(Long partnerBankAccountId) {

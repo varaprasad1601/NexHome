@@ -50,18 +50,35 @@ public class NexHomePermissionServiceImpl implements NexHomePermissionService {
 	public boolean can(String functionCode, String access) {
 		NexHomeAccess requested = NexHomeAccess.valueOf(access);
 		Long userId = currentUserId();
+		boolean allowed = hasAccess(userId, functionCode, requested);
+		if (!allowed) {
+			log.info("User ID {} denied {} access to {}", userId, requested, functionCode);
+		}
+		return allowed;
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public boolean canIfSignedIn(String functionCode, String access) {
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		if (authentication == null || authentication instanceof AnonymousAuthenticationToken
+				|| !authentication.isAuthenticated()) {
+			return false;
+		}
+		// Not logged when denied: public endpoints ask this of every signed-in visitor
+		return hasAccess(currentUserId(), functionCode, NexHomeAccess.valueOf(access));
+	}
+
+	/** An ACTIVE super user, or an ACTIVE account with an active role function granting the access. */
+	private boolean hasAccess(Long userId, String functionCode, NexHomeAccess requested) {
 		if (!isActiveAccount(userId)) {
 			return false;
 		}
 		if (isSuperUser(userId)) {
 			return true;
 		}
-		boolean allowed = roleFunctionRepository.hasAccess(userId, functionCode, requested == NexHomeAccess.READ,
+		return roleFunctionRepository.hasAccess(userId, functionCode, requested == NexHomeAccess.READ,
 				requested == NexHomeAccess.WRITE, requested == NexHomeAccess.DELETE);
-		if (!allowed) {
-			log.info("User ID {} denied {} access to {}", userId, requested, functionCode);
-		}
-		return allowed;
 	}
 
 	@Override

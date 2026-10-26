@@ -25,6 +25,12 @@ public interface NexHomePermissionService {
 	 */
 	boolean can(String functionCode, String access);
 
+	/**
+	 * Like {@link #can}, but false instead of 401 when nobody is signed in: for public endpoints that show more to
+	 * staff, e.g. inactive catalogue entries.
+	 */
+	boolean canIfSignedIn(String functionCode, String access);
+
 	/** Whether the caller is the given user (and ACTIVE), or {@link #can} use the function. */
 	boolean isSelfOrCan(Long userId, String functionCode, String access);
 

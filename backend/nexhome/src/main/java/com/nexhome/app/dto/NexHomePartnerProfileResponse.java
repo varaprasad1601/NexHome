@@ -37,6 +37,7 @@ public record NexHomePartnerProfileResponse(
 		Long registeredBy,
 		String skillCategory,
 		Short yearsExperience,
+		Long mainServiceCategoryId,
 		List<String> additionalSkills,
 		String preferredArrangement,
 		String paymentBasis,

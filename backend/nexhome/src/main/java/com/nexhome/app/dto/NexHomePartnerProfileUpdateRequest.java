@@ -62,7 +62,8 @@ public record NexHomePartnerProfileUpdateRequest(
 		@Size(max = 80, message = "Last name must be at most 80 characters")
 		String lastName,
 
-		@Pattern(regexp = "^$|^[2-9][0-9]{11}$", message = "Aadhaar number must be 12 digits and cannot start with 0 or 1")
+		@Pattern(regexp = "^$|^[2-9][0-9]{11}$",
+				message = "Aadhaar number must be 12 digits and cannot start with 0 or 1")
 		String aadhaarNumber,
 
 		@Pattern(regexp = "^$|^[6-9][0-9]{9}$",
@@ -114,6 +115,9 @@ public record NexHomePartnerProfileUpdateRequest(
 		@Min(value = 0, message = "Years of experience must be between 0 and 60")
 		@Max(value = 60, message = "Years of experience must be between 0 and 60")
 		Integer yearsExperience,
+
+		// An active service category: the partner's main skill. Required to submit
+		Long mainServiceCategoryId,
 
 		@Size(max = 30, message = "Additional skills must have at most 30 items")
 		List<@NotBlank(message = "Additional skills cannot contain blank items")

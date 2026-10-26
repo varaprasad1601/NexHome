@@ -30,13 +30,16 @@ import com.nexhome.app.dto.NexHomePartnerProfileResponse;
 import com.nexhome.app.dto.NexHomePartnerProfileReviewRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileSubmitRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileUpdateRequest;
-import com.nexhome.app.service.NexHomePartnerService;
+import com.nexhome.app.dto.NexHomePartnerServiceCreateRequest;
+import com.nexhome.app.dto.NexHomePartnerServiceResponse;
+import com.nexhome.app.dto.NexHomePartnerServiceUpdateRequest;
+import com.nexhome.app.service.NexHomePartnerOnboardingService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Partner onboarding: profiles and their review, documents and bank accounts. Partners manage their own records;
+ * Partner onboarding: profiles and their review, services offered, documents and bank accounts. Partners manage their own records;
  * other partners' records, reviews and verification need PARTNER_ONBOARDING_MANAGE. Endpoints that take a record id
  * check the owner in the service, after loading the record.
  */
@@ -45,7 +48,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class NexHomePartnerController {
 
-	private final NexHomePartnerService partnerService;
+	private final NexHomePartnerOnboardingService partnerService;
 
 	@PostMapping("/profiles/create")
 	@ResponseStatus(HttpStatus.CREATED)
@@ -122,6 +125,34 @@ public class NexHomePartnerController {
 	@GetMapping("/profiles/bank-accounts/{partnerProfileId}")
 	public List<NexHomePartnerBankAccountResponse> getPartnerBankAccounts(@PathVariable Long partnerProfileId) {
 		return partnerService.getPartnerBankAccounts(partnerProfileId);
+	}
+
+	/** Owner or PARTNER_ONBOARDING_MANAGE read. */
+	@GetMapping("/profiles/services/{partnerProfileId}")
+	public List<NexHomePartnerServiceResponse> getPartnerServices(@PathVariable Long partnerProfileId) {
+		return partnerService.getPartnerServices(partnerProfileId);
+	}
+
+	/** Owner (while DRAFT or PROFILE_INCOMPLETE) or PARTNER_ONBOARDING_MANAGE write. */
+	@PostMapping("/services/add")
+	@ResponseStatus(HttpStatus.CREATED)
+	public NexHomePartnerServiceResponse addPartnerService(
+			@Valid @RequestBody NexHomePartnerServiceCreateRequest request) {
+		return partnerService.addPartnerService(request);
+	}
+
+	/** Owner (while DRAFT or PROFILE_INCOMPLETE) or PARTNER_ONBOARDING_MANAGE write. */
+	@PutMapping("/services/update")
+	public NexHomePartnerServiceResponse updatePartnerService(
+			@Valid @RequestBody NexHomePartnerServiceUpdateRequest request) {
+		return partnerService.updatePartnerService(request);
+	}
+
+	/** Owner (while DRAFT or PROFILE_INCOMPLETE) or PARTNER_ONBOARDING_MANAGE delete. */
+	@DeleteMapping("/services/delete/{partnerServiceId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void deletePartnerService(@PathVariable Long partnerServiceId) {
+		partnerService.deletePartnerService(partnerServiceId);
 	}
 
 	/** Owner or PARTNER_ONBOARDING_MANAGE write. */

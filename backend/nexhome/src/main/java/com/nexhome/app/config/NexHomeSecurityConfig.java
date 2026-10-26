@@ -48,6 +48,16 @@ public class NexHomeSecurityConfig {
 			"/api/auth/token/refresh",
 			"/api/auth/logout" };
 
+	/** Public reads. The services decide what anonymous callers see (e.g. only active, published entries). */
+	private static final String[] PUBLIC_GET_PATHS = {
+			"/api/catalog/categories",
+			"/api/catalog/services",
+			"/api/catalog/services/*",
+			"/api/catalog/services/slug/*",
+			"/api/faqs",
+			"/api/policies/current",
+			"/api/policies/current/*" };
+
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http, NexHomeSecurityErrorHandler errorHandler)
 			throws Exception {
@@ -64,6 +74,8 @@ public class NexHomeSecurityConfig {
 						.requestMatchers(HttpMethod.POST, PUBLIC_POST_PATHS).permitAll()
 						// Dropdown options, also needed by the sign-up forms
 						.requestMatchers(HttpMethod.GET, "/api/lookups/values/*").permitAll()
+						// Browsing the catalogue, published FAQs and current policies; staff see more with a token
+						.requestMatchers(HttpMethod.GET, PUBLIC_GET_PATHS).permitAll()
 						.requestMatchers("/error").permitAll()
 						.anyRequest().authenticated())
 				.oauth2ResourceServer(resourceServer -> resourceServer
