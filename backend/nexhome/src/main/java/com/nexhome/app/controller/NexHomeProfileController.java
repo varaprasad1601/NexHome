@@ -26,7 +26,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Customer profiles and staff (admin / sub-admin / super user) profiles. Owners manage their own; other users'
- * profiles need PROFILE_MANAGE (customers) or STAFF_MANAGE (staff). Endpoints that take a profile id check the owner
+ * profiles need CUSTOMER_MANAGE (customers) or ADMIN_MANAGE / SUB_ADMIN_MANAGE (staff, by the owner's role). Endpoints that take a profile id check the owner
  * in the service, after loading the profile.
  */
 @RestController
@@ -38,13 +38,13 @@ public class NexHomeProfileController {
 
 	@PostMapping("/customers/create")
 	@ResponseStatus(HttpStatus.CREATED)
-	@PreAuthorize("@permissions.isSelfOrCan(#request.userId(), 'PROFILE_MANAGE', 'WRITE')")
+	@PreAuthorize("@permissions.isSelfOrCan(#request.userId(), 'CUSTOMER_MANAGE', 'WRITE')")
 	public NexHomeCustomerProfileResponse createCustomerProfile(
 			@Valid @RequestBody NexHomeCustomerProfileCreateRequest request) {
 		return profileService.createCustomerProfile(request);
 	}
 
-	/** Owner or PROFILE_MANAGE write. */
+	/** Owner or CUSTOMER_MANAGE write. */
 	@PutMapping("/customers/update")
 	public NexHomeCustomerProfileResponse updateCustomerProfile(
 			@Valid @RequestBody NexHomeCustomerProfileUpdateRequest request) {
@@ -61,28 +61,31 @@ public class NexHomeProfileController {
 	 * default 10), {@code search} (part of the first or last name or the public id).
 	 */
 	@GetMapping("/customers")
-	@PreAuthorize("@permissions.can('PROFILE_MANAGE', 'READ')")
+	@PreAuthorize("@permissions.can('CUSTOMER_MANAGE', 'READ')")
 	public NexHomePageResponse<NexHomeCustomerProfileResponse> getCustomerProfiles(
 			@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer size,
 			@RequestParam(required = false) String search) {
 		return profileService.getCustomerProfiles(page, size, search);
 	}
 
-	/** Owner or PROFILE_MANAGE read. */
+	/** Owner or CUSTOMER_MANAGE read. */
 	@GetMapping("/customers/{customerProfileId}")
 	public NexHomeCustomerProfileResponse getCustomerProfile(@PathVariable Long customerProfileId) {
 		return profileService.getCustomerProfile(customerProfileId);
 	}
 
-	/** Staff may create their own profile; employee details and other users' profiles need STAFF_MANAGE write. */
+	/**
+	 * Staff may create their own profile; employee details and other users' profiles need write on the owner's staff
+	 * role function (ADMIN_MANAGE, SUB_ADMIN_MANAGE; a super user's: super users). The service checks.
+	 */
 	@PostMapping("/admins/create")
 	@ResponseStatus(HttpStatus.CREATED)
-	@PreAuthorize("@permissions.isSelfOrCan(#request.userId(), 'STAFF_MANAGE', 'WRITE')")
+	@PreAuthorize("isAuthenticated()")
 	public NexHomeAdminProfileResponse createAdminProfile(@Valid @RequestBody NexHomeAdminProfileCreateRequest request) {
 		return profileService.createAdminProfile(request);
 	}
 
-	/** Owner (names and address) or STAFF_MANAGE write. */
+	/** Owner (names and address) or write on the owner's staff role function. */
 	@PutMapping("/admins/update")
 	public NexHomeAdminProfileResponse updateAdminProfile(@Valid @RequestBody NexHomeAdminProfileUpdateRequest request) {
 		return profileService.updateAdminProfile(request);
@@ -94,18 +97,18 @@ public class NexHomeProfileController {
 	}
 
 	/**
-	 * Staff profiles, newest first; same query parameters as /customers, and {@code search} also matches the
-	 * employee code.
+	 * Staff profiles of every staff role, newest first; same query parameters as /customers, and {@code search} also
+	 * matches the employee code. Needs read on both ADMIN_MANAGE and SUB_ADMIN_MANAGE.
 	 */
 	@GetMapping("/admins")
-	@PreAuthorize("@permissions.can('STAFF_MANAGE', 'READ')")
+	@PreAuthorize("@permissions.can('ADMIN_MANAGE', 'READ') and @permissions.can('SUB_ADMIN_MANAGE', 'READ')")
 	public NexHomePageResponse<NexHomeAdminProfileResponse> getAdminProfiles(
 			@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer size,
 			@RequestParam(required = false) String search) {
 		return profileService.getAdminProfiles(page, size, search);
 	}
 
-	/** Owner or STAFF_MANAGE read. */
+	/** Owner or read on the owner's staff role function. */
 	@GetMapping("/admins/{adminProfileId}")
 	public NexHomeAdminProfileResponse getAdminProfile(@PathVariable Long adminProfileId) {
 		return profileService.getAdminProfile(adminProfileId);

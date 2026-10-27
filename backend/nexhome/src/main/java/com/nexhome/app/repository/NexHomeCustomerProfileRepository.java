@@ -1,5 +1,7 @@
 package com.nexhome.app.repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -19,6 +21,9 @@ public interface NexHomeCustomerProfileRepository extends JpaRepository<NexHomeC
 	Optional<NexHomeCustomerProfile> findByUserId(Long userId);
 
 	boolean existsByUserId(Long userId);
+
+	/** The profiles of a page of users, in one query. */
+	List<NexHomeCustomerProfile> findByUserIdIn(Collection<Long> userIds);
 
 	/**
 	 * All customer profiles, or those whose name or public id contains {@code search} (lower-cased). A null filter is

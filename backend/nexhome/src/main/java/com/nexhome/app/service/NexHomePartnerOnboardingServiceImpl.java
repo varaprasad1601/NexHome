@@ -134,18 +134,24 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 				NexHomeRole.PARTNER)) {
 			throw new InvalidRequestException("Partner profiles are only for accounts with the PARTNER role.");
 		}
-		if (partnerProfileRepository.existsByUserId(user.getId())) {
+		// Every partner account has an empty DRAFT from the start (V16): creating the profile fills it in, keeping its
+		// partner id. Only a profile that already has a name is a duplicate.
+		NexHomePartnerProfile existing = partnerProfileRepository.findByUserId(user.getId()).orElse(null);
+		if (existing != null && existing.getFirstName() != null) {
 			throw new DuplicateResourceException("This account already has a partner profile.");
 		}
 		if (user.getId().equals(actingUserId) && request.registrationDate() != null) {
 			throw new AccessDeniedException("Partners cannot set their own registration date.");
 		}
 
-		NexHomePartnerProfile profile = partnerProfileMapper.toPartnerProfileEntity(user, actingUserId);
+		NexHomePartnerProfile profile = existing != null ? existing
+				: partnerProfileMapper.toPartnerProfileEntity(user, actingUserId);
 		applyFields(profile, request, user, actingUserId);
-		profile = partnerProfileRepository.save(profile);
+		if (existing == null) {
+			profile = partnerProfileRepository.save(profile);
+		}
 
-		log.info("Partner profile {} created for User ID {}", profile.getPublicId(), user.getId());
+		log.info("Partner profile {} filled in for User ID {}", profile.getPublicId(), user.getId());
 		return toPartnerProfileDto(profile, actingUserId);
 	}
 
@@ -628,6 +634,9 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	 */
 	private void requireReadyForReview(NexHomePartnerProfile profile) {
 		Map<String, Object> required = new LinkedHashMap<>();
+		// Names are optional only on the DRAFT every partner account starts with (V16)
+		required.put("firstName", profile.getFirstName());
+		required.put("lastName", profile.getLastName());
 		required.put("isAdult", profile.getAdult());
 		required.put("preferredContactLanguage", profile.getPreferredContactLanguage());
 		required.put("addressLine1", profile.getAddressLine1());

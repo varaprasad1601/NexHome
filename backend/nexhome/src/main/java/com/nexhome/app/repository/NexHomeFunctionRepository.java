@@ -1,5 +1,6 @@
 package com.nexhome.app.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,4 +12,8 @@ import com.nexhome.app.model.NexHomeFunction;
 public interface NexHomeFunctionRepository extends JpaRepository<NexHomeFunction, Long> {
 
 	Optional<NexHomeFunction> findByFunctionCode(String functionCode);
+
+	List<NexHomeFunction> findAllByOrderByFunctionModuleAscFunctionCodeAsc();
+
+	List<NexHomeFunction> findByActiveFlagTrueOrderByFunctionModuleAscFunctionCodeAsc();
 }

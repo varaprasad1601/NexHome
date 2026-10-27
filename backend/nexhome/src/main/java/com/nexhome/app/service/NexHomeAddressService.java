@@ -7,7 +7,7 @@ import com.nexhome.app.dto.NexHomeAddressResponse;
 import com.nexhome.app.dto.NexHomeAddressUpdateRequest;
 
 /**
- * Customer service addresses. Customers manage their own; acting on someone else's needs PROFILE_MANAGE.
+ * Customer service addresses. Customers manage their own; acting on someone else's needs CUSTOMER_MANAGE.
  */
 public interface NexHomeAddressService {
 
@@ -17,13 +17,13 @@ public interface NexHomeAddressService {
 	 */
 	NexHomeAddressResponse createAddress(NexHomeAddressCreateRequest request);
 
-	/** Owner or PROFILE_MANAGE write. */
+	/** Owner or CUSTOMER_MANAGE write. */
 	NexHomeAddressResponse updateAddress(NexHomeAddressUpdateRequest request);
 
-	/** Owner or PROFILE_MANAGE delete. */
+	/** Owner or CUSTOMER_MANAGE delete. */
 	void deleteAddress(Long addressId);
 
-	/** Owner or PROFILE_MANAGE read. */
+	/** Owner or CUSTOMER_MANAGE read. */
 	NexHomeAddressResponse getAddress(Long addressId);
 
 	/** A customer's addresses, the default first, then newest first. */

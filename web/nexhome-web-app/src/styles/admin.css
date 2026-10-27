@@ -1,0 +1,90 @@
+/*
+ * Admin screens only (everything under .nh-admin). The public site's index.css styles h1-h4 with Manrope and
+ * tight letter-spacing as unlayered rules, which beat Tailwind utilities, so the admin font is reset here.
+ */
+.nh-admin,
+.nh-admin h1,
+.nh-admin h2,
+.nh-admin h3,
+.nh-admin h4,
+.nh-admin input,
+.nh-admin button,
+.nh-admin select,
+.nh-admin table {
+  font-family: 'Lato', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  letter-spacing: normal;
+}
+
+/*
+ * The admin screens are sized like the browser at 87.5% zoom: AdminRoot puts this class on <html> while they are
+ * shown, so every rem (Tailwind text, spacing and the converted sizes) is 87.5% of the website's. The body's fixed
+ * 16px from index.css is replaced by 1rem for text without its own size.
+ */
+html.nh-admin-scale {
+  font-size: 87.5%;
+}
+
+.nh-admin {
+  font-size: 1rem;
+}
+
+/*
+ * Clickable controls show the hand pointer (Tailwind 4 leaves buttons on the default arrow); disabled ones keep the
+ * not-allowed cursor of their disabled: classes.
+ */
+.nh-admin button:not(:disabled),
+.nh-admin select:not(:disabled),
+.nh-admin [role='button'],
+.nh-admin input[type='checkbox']:not(:disabled) {
+  cursor: pointer;
+}
+
+/*
+ * Thin, transparent scrollbars across the admin console (the page and every scrolling area), with a glass-like
+ * thumb: translucent brand blue with a soft white edge. Chrome and Edge ignore ::-webkit-scrollbar once
+ * scrollbar-width / scrollbar-color are set, so those standard properties are only for browsers without it (Firefox).
+ */
+html.nh-admin-scale::-webkit-scrollbar,
+.nh-admin ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+html.nh-admin-scale::-webkit-scrollbar-track,
+.nh-admin ::-webkit-scrollbar-track,
+html.nh-admin-scale::-webkit-scrollbar-corner,
+.nh-admin ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+html.nh-admin-scale::-webkit-scrollbar-thumb,
+.nh-admin ::-webkit-scrollbar-thumb {
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(22, 93, 184, 0.22), rgba(11, 67, 139, 0.3));
+  background-clip: padding-box;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+html.nh-admin-scale::-webkit-scrollbar-thumb:hover,
+.nh-admin ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(22, 93, 184, 0.38), rgba(11, 67, 139, 0.48));
+  background-clip: padding-box;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  html.nh-admin-scale,
+  .nh-admin * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(11, 67, 139, 0.28) transparent;
+  }
+}
+
+/* Scrolls without showing a scrollbar (the sidebar) */
+.nh-scroll-hidden {
+  scrollbar-width: none;
+}
+
+.nh-scroll-hidden::-webkit-scrollbar {
+  display: none;
+}

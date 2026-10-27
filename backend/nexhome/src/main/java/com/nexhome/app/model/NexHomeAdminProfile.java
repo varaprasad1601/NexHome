@@ -20,9 +20,11 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * Profile of a staff member (super user, admin or sub-admin) with their single registered address. Names live here,
- * not on {@link NexHomeUser}. One per account ({@code user_id} is unique); the employee code is unique when present
- * (partial index {@code ux_nexhome_admin_profiles_employee_code}).
+ * Profile of a staff member (super user, admin or sub-admin), created with the account (Create user; V9) and filled
+ * in later by its owner: the names are null until then, and the single registered address is optional (V8) but
+ * complete when given. Names live here, not on
+ * {@link NexHomeUser}. One per account ({@code user_id} is unique); the employee code is unique when present (partial
+ * index {@code ux_nexhome_admin_profiles_employee_code}).
  */
 @Entity
 @Table(name = "nexhome_admin_profiles")
@@ -46,10 +48,10 @@ public class NexHomeAdminProfile {
 	@JoinColumn(name = "user_id", referencedColumnName = "id", nullable = false, updatable = false)
 	private NexHomeUser user;
 
-	@Column(name = "first_name", nullable = false, length = 100)
+	@Column(name = "first_name", length = 100)
 	private String firstName;
 
-	@Column(name = "last_name", nullable = false, length = 100)
+	@Column(name = "last_name", length = 100)
 	private String lastName;
 
 	@Column(name = "employee_code", length = 30)
@@ -61,7 +63,7 @@ public class NexHomeAdminProfile {
 	@Column(name = "job_title", length = 100)
 	private String jobTitle;
 
-	@Column(name = "address_line1", nullable = false, length = 255)
+	@Column(name = "address_line1", length = 255)
 	private String addressLine1;
 
 	@Column(name = "address_line2")
@@ -70,13 +72,13 @@ public class NexHomeAdminProfile {
 	@Column(name = "landmark")
 	private String landmark;
 
-	@Column(name = "city", nullable = false, length = 100)
+	@Column(name = "city", length = 100)
 	private String city;
 
-	@Column(name = "state", nullable = false, length = 100)
+	@Column(name = "state", length = 100)
 	private String state;
 
-	@Column(name = "postal_code", nullable = false, length = 12)
+	@Column(name = "postal_code", length = 12)
 	private String postalCode;
 
 	/** ISO 3166 alpha-2 country, e.g. IN (not the phone country code). */

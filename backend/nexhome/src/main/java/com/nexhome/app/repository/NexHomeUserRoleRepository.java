@@ -27,4 +27,26 @@ public interface NexHomeUserRoleRepository extends JpaRepository<NexHomeUserRole
 
 	/** Whether the user currently holds any of the roles. */
 	boolean existsByUserIdAndRoleCodeInAndActiveTrueAndRoleActiveFlagTrue(Long userId, Collection<String> roleCodes);
+
+	/**
+	 * How many current holders of the role (active assignment of an active role) were given it in each month (IST),
+	 * oldest first; months without any are left out.
+	 */
+	@Query(nativeQuery = true, value = """
+			select to_char(ur.assigned_at at time zone 'Asia/Kolkata', 'YYYY-MM') as month, count(*) as total
+			from nexhome_user_roles ur
+			join nexhome_roles r on r.id = ur.role_id
+			where r.code = :roleCode and ur.is_active and r.active_flag
+			group by 1
+			order by 1""")
+	List<MonthlyCount> countActiveByRoleAndMonth(@Param("roleCode") String roleCode);
+
+	/** One row of {@link #countActiveByRoleAndMonth}. */
+	interface MonthlyCount {
+
+		/** {@code YYYY-MM}. */
+		String getMonth();
+
+		Long getTotal();
+	}
 }

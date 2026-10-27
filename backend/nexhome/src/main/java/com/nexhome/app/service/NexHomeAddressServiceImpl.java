@@ -146,8 +146,8 @@ public class NexHomeAddressServiceImpl implements NexHomeAddressService {
 	}
 
 	private void requireSelfOrCan(Long ownerId, NexHomeAccess access) {
-		if (!permissionService.isSelfOrCan(ownerId, NexHomeProfileServiceImpl.PROFILE_MANAGE, access.name())) {
-			throw new AccessDeniedException("Not the owner and no PROFILE_MANAGE " + access + " access.");
+		if (!permissionService.isSelfOrCan(ownerId, NexHomeProfileServiceImpl.CUSTOMER_MANAGE, access.name())) {
+			throw new AccessDeniedException("Not the owner and no CUSTOMER_MANAGE " + access + " access.");
 		}
 	}
 

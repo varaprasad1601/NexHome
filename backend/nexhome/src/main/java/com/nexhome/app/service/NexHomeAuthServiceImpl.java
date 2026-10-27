@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.nexhome.app.config.NexHomeOtpProperties;
 import com.nexhome.app.config.NexHomeSecurityProperties;
 import com.nexhome.app.config.NexHomeSessionTokenValidator;
+import com.nexhome.app.dto.NexHomeAuthAdminOtpRequest;
 import com.nexhome.app.dto.NexHomeAuthOtpCreateRequest;
 import com.nexhome.app.dto.NexHomeAuthOtpResponse;
 import com.nexhome.app.dto.NexHomeAuthOtpVerifyRequest;
@@ -41,6 +42,8 @@ import com.nexhome.app.exception.TooManyRequestsException;
 import com.nexhome.app.exception.UnauthorizedException;
 import com.nexhome.app.mapper.NexHomeAuthOtpRequestMapper;
 import com.nexhome.app.mapper.NexHomeAuthRefreshTokenMapper;
+import com.nexhome.app.mapper.NexHomeCustomerProfileMapper;
+import com.nexhome.app.mapper.NexHomePartnerProfileMapper;
 import com.nexhome.app.mapper.NexHomeUserMapper;
 import com.nexhome.app.model.NexHomeAuthOtpRequest;
 import com.nexhome.app.model.NexHomeAuthRefreshToken;
@@ -54,6 +57,8 @@ import com.nexhome.app.model.NexHomeUser;
 import com.nexhome.app.model.NexHomeUserRole;
 import com.nexhome.app.repository.NexHomeAuthOtpRequestRepository;
 import com.nexhome.app.repository.NexHomeAuthRefreshTokenRepository;
+import com.nexhome.app.repository.NexHomeCustomerProfileRepository;
+import com.nexhome.app.repository.NexHomePartnerProfileRepository;
 import com.nexhome.app.repository.NexHomeRoleRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
 import com.nexhome.app.repository.NexHomeUserRoleRepository;
@@ -68,6 +73,9 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 
 	private static final SecureRandom RANDOM = new SecureRandom();
 	private static final String INVALID_REFRESH_TOKEN = "The refresh token is invalid or has expired.";
+	private static final String INVALID_ADMIN_USER = "Invalid user. This mobile number does not have admin access.";
+	private static final List<String> STAFF_ROLES = List.of(NexHomeRole.SUPER_USER, NexHomeRole.ADMIN,
+			NexHomeRole.SUB_ADMIN);
 
 	private final NexHomeAuthOtpRequestRepository otpRequestRepository;
 	private final NexHomeAuthRefreshTokenRepository refreshTokenRepository;
@@ -83,6 +91,10 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 	private final JwtEncoder jwtEncoder;
 	private final NexHomeOtpProperties otpProperties;
 	private final NexHomeSecurityProperties securityProperties;
+	private final NexHomeCustomerProfileRepository customerProfileRepository;
+	private final NexHomeCustomerProfileMapper customerProfileMapper;
+	private final NexHomePartnerProfileRepository partnerProfileRepository;
+	private final NexHomePartnerProfileMapper partnerProfileMapper;
 
 	@Override
 	@Transactional
@@ -106,6 +118,14 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 		user.setCreatedBy(user.getId());
 		user.setUpdatedBy(user.getId());
 		userRoleRepository.save(userMapper.toUserRoleEntity(user, role, user.getId()));
+		// A customer gets the customer profile, and so the NHCUST customer id, at sign-up; the name comes later (V15)
+		if (NexHomeRole.CUSTOMER.equals(role.getCode())) {
+			customerProfileRepository.save(customerProfileMapper.toCustomerProfileEntity(user, user.getId()));
+		}
+		// A partner gets the DRAFT partner profile, and so the NHPART partner id, at sign-up (V16)
+		if (NexHomeRole.PARTNER.equals(role.getCode())) {
+			partnerProfileRepository.save(partnerProfileMapper.toPartnerProfileEntity(user, user.getId()));
+		}
 
 		log.info("User registered with User ID {} with Role {}", user.getId(), role.getCode());
 		return otpRequestMapper.toAuthOtpDto(issueOtp(countryCode, mobileNumber, OtpPurpose.REGISTRATION, user),
@@ -127,6 +147,22 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 		}
 
 		return otpRequestMapper.toAuthOtpDto(issueOtp(countryCode, mobileNumber, purpose, user), null, null);
+	}
+
+	@Override
+	@Transactional
+	public NexHomeAuthOtpResponse requestAdminOtp(NexHomeAuthAdminOtpRequest request) {
+		String countryCode = request.countryCode().trim();
+		String mobileNumber = request.mobileNumber().trim();
+
+		NexHomeUser user = userRepository.findByCountryCodeAndMobileNumber(countryCode, mobileNumber)
+				.filter(found -> AccountStatus.ACTIVE.equals(found.getAccountStatus()))
+				.filter(found -> userRoleRepository.existsByUserIdAndRoleCodeInAndActiveTrueAndRoleActiveFlagTrue(
+						found.getId(), STAFF_ROLES))
+				.orElseThrow(() -> new ResourceNotFoundException(INVALID_ADMIN_USER));
+
+		return otpRequestMapper.toAuthOtpDto(issueOtp(countryCode, mobileNumber, OtpPurpose.LOGIN, user), null,
+				null);
 	}
 
 	/**
@@ -284,9 +320,12 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 		Instant now = Instant.now();
 		otpRequestRepository.findFirstByCountryCodeAndMobileNumberAndPurposeOrderByCreationDateDesc(countryCode,
 				mobileNumber, purpose).ifPresent(latest -> {
-					if (latest.getCreationDate()
-							.isAfter(now.minusSeconds(otpProperties.resendCooldownSeconds()))) {
-						throw new TooManyRequestsException("Please wait before requesting another OTP.");
+					Instant resendAt = latest.getCreationDate().plusSeconds(otpProperties.resendCooldownSeconds());
+					if (resendAt.isAfter(now)) {
+						// Rounded up, so the client never retries a moment too early
+						long seconds = (Duration.between(now, resendAt).toMillis() + 999) / 1000;
+						throw new TooManyRequestsException("Please wait " + seconds
+								+ (seconds == 1 ? " second" : " seconds") + " before requesting another OTP.");
 					}
 				});
 		otpRequestRepository.findByCountryCodeAndMobileNumberAndPurposeAndRequestStatus(countryCode, mobileNumber,

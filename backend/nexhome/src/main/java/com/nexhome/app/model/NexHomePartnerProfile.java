@@ -52,13 +52,14 @@ public class NexHomePartnerProfile {
 	@JoinColumn(name = "user_id", referencedColumnName = "id", nullable = false, updatable = false)
 	private NexHomeUser user;
 
-	@Column(name = "first_name", nullable = false, length = 80)
+	// Optional for a DRAFT since V16: the profile is created with the account, the partner adds the name later
+	@Column(name = "first_name", length = 80)
 	private String firstName;
 
 	@Column(name = "middle_name", length = 80)
 	private String middleName;
 
-	@Column(name = "last_name", nullable = false, length = 80)
+	@Column(name = "last_name", length = 80)
 	private String lastName;
 
 	/** Encrypted with {@code NexHomeFieldEncryptor}; never logged or returned unmasked. */

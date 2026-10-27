@@ -10,17 +10,17 @@ import com.nexhome.app.dto.NexHomePageResponse;
 
 /**
  * Customer profiles and staff (admin) profiles. Owners manage their own profile; acting on someone else's needs
- * PROFILE_MANAGE (customers) or STAFF_MANAGE (staff).
+ * CUSTOMER_MANAGE (customers) or ADMIN_MANAGE / SUB_ADMIN_MANAGE (staff, by the owner's role).
  */
 public interface NexHomeProfileService {
 
 	/** Creates the profile of an account holding the CUSTOMER role; one per account. */
 	NexHomeCustomerProfileResponse createCustomerProfile(NexHomeCustomerProfileCreateRequest request);
 
-	/** Owner or PROFILE_MANAGE write. */
+	/** Owner or CUSTOMER_MANAGE write. */
 	NexHomeCustomerProfileResponse updateCustomerProfile(NexHomeCustomerProfileUpdateRequest request);
 
-	/** Owner or PROFILE_MANAGE read. */
+	/** Owner or CUSTOMER_MANAGE read. */
 	NexHomeCustomerProfileResponse getCustomerProfile(Long customerProfileId);
 
 	/** The caller's customer profile. */
@@ -36,14 +36,14 @@ public interface NexHomeProfileService {
 	/**
 	 * Creates the profile of an account holding SUPER_USER, ADMIN or SUB_ADMIN; one per account. Staff may create
 	 * their own without employee details; the employee code, department and job title, and anyone else's profile, need
-	 * STAFF_MANAGE write. Only a super user can create a super user's profile.
+	 * ADMIN_MANAGE / SUB_ADMIN_MANAGE write (by the owner's role). Only a super user can create a super user's profile.
 	 */
 	NexHomeAdminProfileResponse createAdminProfile(NexHomeAdminProfileCreateRequest request);
 
 	/** Same rules as {@link #createAdminProfile}. */
 	NexHomeAdminProfileResponse updateAdminProfile(NexHomeAdminProfileUpdateRequest request);
 
-	/** Owner or STAFF_MANAGE read. */
+	/** Owner or read on the owner's staff role function. */
 	NexHomeAdminProfileResponse getAdminProfile(Long adminProfileId);
 
 	/** The caller's staff profile. */

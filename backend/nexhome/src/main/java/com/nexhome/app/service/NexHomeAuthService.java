@@ -1,5 +1,6 @@
 package com.nexhome.app.service;
 
+import com.nexhome.app.dto.NexHomeAuthAdminOtpRequest;
 import com.nexhome.app.dto.NexHomeAuthOtpCreateRequest;
 import com.nexhome.app.dto.NexHomeAuthOtpResponse;
 import com.nexhome.app.dto.NexHomeAuthOtpVerifyRequest;
@@ -22,6 +23,13 @@ public interface NexHomeAuthService {
 	 * OTP. Any pending OTP for the same number and purpose expires.
 	 */
 	NexHomeAuthOtpResponse requestOtp(NexHomeAuthOtpCreateRequest request);
+
+	/**
+	 * Sends a LOGIN OTP for the admin sign-in. Only an ACTIVE account that currently holds SUPER_USER, ADMIN or
+	 * SUB_ADMIN gets one; an unknown number, any other account and an inactive one all get the same 404, so the
+	 * endpoint does not reveal which numbers have accounts. The OTP is verified through the usual LOGIN verify.
+	 */
+	NexHomeAuthOtpResponse requestAdminOtp(NexHomeAuthAdminOtpRequest request);
 
 	/**
 	 * Verifies and consumes a LOGIN or REGISTRATION OTP and starts a login session: the response carries the user

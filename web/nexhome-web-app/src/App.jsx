@@ -1,122 +1,80 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { Route, Routes } from 'react-router-dom';
 
-function App() {
-  const [count, setCount] = useState(0)
+import AdminLayout from './components/admin/AdminLayout';
+import AdminRoot from './components/admin/AdminRoot';
+import AdminRoute from './components/admin/AdminRoute';
+import Layout from './components/layout/Layout';
+import SiteStateProvider from './context/SiteStateProvider';
+import AboutPage from './pages/AboutPage';
+import AdminComingSoonPage from './pages/admin/AdminComingSoonPage';
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
+import AdminLoginPage from './pages/admin/AdminLoginPage';
+import AdminProfilePage from './pages/admin/AdminProfilePage';
+import AdminsPage from './pages/admin/AdminsPage';
+import CustomerProfilePage from './pages/admin/CustomerProfilePage';
+import CustomersPage from './pages/admin/CustomersPage';
+import PartnerProfilePage from './pages/admin/PartnerProfilePage';
+import PartnersPage from './pages/admin/PartnersPage';
+import FunctionsPage from './pages/admin/FunctionsPage';
+import RoleDetailPage from './pages/admin/RoleDetailPage';
+import RolesPage from './pages/admin/RolesPage';
+import ContactPage from './pages/ContactPage';
+import FaqsPage from './pages/FaqsPage';
+import HomePage from './pages/HomePage';
+import HowItWorksPage from './pages/HowItWorksPage';
+import JoinPage from './pages/JoinPage';
+import PoliciesPage from './pages/PoliciesPage';
+import ServiceDetailPage from './pages/ServiceDetailPage';
+import ServicesPage from './pages/ServicesPage';
+import TeamPage from './pages/TeamPage';
 
+export default function App() {
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+    <SiteStateProvider>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<HomePage />} />
+          <Route path="about" element={<AboutPage />} />
+          <Route path="services" element={<ServicesPage />} />
+          <Route path="services/:slug" element={<ServiceDetailPage />} />
+          <Route path="how-it-works" element={<HowItWorksPage />} />
+          <Route path="join" element={<JoinPage />} />
+          <Route path="team" element={<TeamPage />} />
+          <Route path="faqs" element={<FaqsPage />} />
+          <Route path="faq" element={<FaqsPage />} />
+          <Route path="contact" element={<ContactPage />} />
+          <Route path="policies" element={<PoliciesPage />} />
+          {/* The launch countdown plays over the home page (Layout shows it) */}
+          <Route path="launch" element={<HomePage />} />
+          {/* Any other address shows the home page */}
+          <Route path="*" element={<HomePage />} />
+        </Route>
+        {/* Admin screens, without the public site's header and footer */}
+        <Route path="admin" element={<AdminRoot />}>
+          <Route index element={<AdminLoginPage />} />
+          <Route element={<AdminRoute />}>
+            <Route element={<AdminLayout />}>
+              <Route path="dashboard" element={<AdminDashboardPage />} />
+              <Route path="users/admins" element={<AdminsPage key="admins" />} />
+              <Route path="users/super-admins" element={<AdminsPage key="super-admins" variant="superAdmins" />} />
+              <Route path="users/sub-admins" element={<AdminsPage key="sub-admins" variant="subAdmins" />} />
+              <Route path="users/customers" element={<CustomersPage />} />
+              <Route path="users/customers/:customerProfileId" element={<CustomerProfilePage />} />
+              <Route path="users/partners" element={<PartnersPage />} />
+              <Route path="users/partners/:partnerProfileId" element={<PartnerProfilePage />} />
+              <Route path="users/admins/:adminProfileId" element={<AdminProfilePage key="admins" list="admins" />} />
+              <Route path="users/sub-admins/:adminProfileId" element={<AdminProfilePage key="sub-admins" list="subAdmins" />} />
+              <Route path="users/super-admins/:adminProfileId" element={<AdminProfilePage key="super-admins" list="superAdmins" />} />
+              <Route path="system/roles" element={<RolesPage />} />
+              <Route path="system/roles/:roleId" element={<RoleDetailPage />} />
+              <Route path="system/functions" element={<FunctionsPage />} />
+              <Route path="profile" element={<AdminProfilePage self />} />
+              {/* Sidebar links whose screens are not built yet */}
+              <Route path="*" element={<AdminComingSoonPage />} />
+            </Route>
+          </Route>
+        </Route>
+      </Routes>
+    </SiteStateProvider>
+  );
 }
-
-export default App

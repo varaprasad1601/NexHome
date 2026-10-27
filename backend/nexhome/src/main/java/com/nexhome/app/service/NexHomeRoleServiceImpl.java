@@ -1,5 +1,9 @@
 package com.nexhome.app.service;
 
+import java.util.Comparator;
+import java.util.List;
+
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,6 +60,7 @@ public class NexHomeRoleServiceImpl implements NexHomeRoleService {
 		NexHomeRole role = roleRepository.findById(request.roleId())
 				.orElseThrow(() -> new ResourceNotFoundException("Role does not exist."));
 
+		requireSuperUserForSuperUserRole(role);
 		// The code is never updated (the request rejects it, and the column is not updatable)
 		roleMapper.updateRoleEntity(role, request, permissionService.currentUserId());
 
@@ -64,11 +69,39 @@ public class NexHomeRoleServiceImpl implements NexHomeRoleService {
 	}
 
 	@Override
-	@Transactional
-	public void deleteRole(Short roleId) {
+	@Transactional(readOnly = true)
+	public List<NexHomeRoleResponse> getRoles() {
+		return roleRepository.findAllByOrderByIdAsc().stream()
+				.map(roleMapper::toRoleDto)
+				.toList();
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public NexHomeRoleResponse getRole(Short roleId) {
+		return roleMapper.toRoleDto(roleRepository.findById(roleId)
+				.orElseThrow(() -> new ResourceNotFoundException("Role does not exist.")));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<NexHomeRoleFunctionResponse> getRoleFunctions(Short roleId) {
 		if (!roleRepository.existsById(roleId)) {
 			throw new ResourceNotFoundException("Role does not exist.");
 		}
+		return roleFunctionRepository.findByRoleId(roleId).stream()
+				.sorted(Comparator.comparing((NexHomeRoleFunction rf) -> rf.getFunction().getFunctionModule())
+						.thenComparing(rf -> rf.getFunction().getFunctionCode()))
+				.map(roleFunctionMapper::toRoleFunctionDto)
+				.toList();
+	}
+
+	@Override
+	@Transactional
+	public void deleteRole(Short roleId) {
+		NexHomeRole role = roleRepository.findById(roleId)
+				.orElseThrow(() -> new ResourceNotFoundException("Role does not exist."));
+		requireSuperUserForSuperUserRole(role);
 		// User roles and role functions reference the role with ON DELETE RESTRICT: deactivate a role in use
 		if (userRoleRepository.existsByRoleId(roleId) || roleFunctionRepository.existsByRoleId(roleId)) {
 			throw new DuplicateResourceException("Role is assigned to users or functions; deactivate it instead.");
@@ -85,6 +118,7 @@ public class NexHomeRoleServiceImpl implements NexHomeRoleService {
 				.orElseThrow(() -> new ResourceNotFoundException("Role does not exist."));
 		NexHomeFunction function = functionRepository.findById(request.functionId())
 				.orElseThrow(() -> new ResourceNotFoundException("Function does not exist."));
+		requireSuperUserForSuperUserRole(role);
 
 		// (role_id, function_id) is unique in nexhome_role_functions
 		if (roleFunctionRepository.findByRoleIdAndFunctionId(role.getId(), function.getId()).isPresent()) {
@@ -104,6 +138,7 @@ public class NexHomeRoleServiceImpl implements NexHomeRoleService {
 	public NexHomeRoleFunctionResponse updateRoleFunction(NexHomeRoleFunctionUpdateRequest request) {
 		NexHomeRoleFunction roleFunction = roleFunctionRepository.findById(request.roleFunctionId())
 				.orElseThrow(() -> new ResourceNotFoundException("Role function does not exist."));
+		requireSuperUserForSuperUserRole(roleFunction.getRole());
 
 		roleFunctionMapper.updateRoleFunctionEntity(roleFunction, request, permissionService.currentUserId());
 
@@ -114,11 +149,22 @@ public class NexHomeRoleServiceImpl implements NexHomeRoleService {
 	@Override
 	@Transactional
 	public void deleteRoleFunction(Long roleFunctionId) {
-		if (!roleFunctionRepository.existsById(roleFunctionId)) {
-			throw new ResourceNotFoundException("Role function does not exist.");
-		}
+		NexHomeRoleFunction roleFunction = roleFunctionRepository.findById(roleFunctionId)
+				.orElseThrow(() -> new ResourceNotFoundException("Role function does not exist."));
+		requireSuperUserForSuperUserRole(roleFunction.getRole());
 		roleFunctionRepository.deleteById(roleFunctionId);
 
 		log.info("Role function deleted with Role Function ID {}", roleFunctionId);
+	}
+
+	/**
+	 * The SUPER_USER role is changed (and given or stripped of grants) by super users only, so that ROLE_MANAGE write
+	 * cannot deactivate it and lock every super user out.
+	 */
+	private void requireSuperUserForSuperUserRole(NexHomeRole role) {
+		if (NexHomeRole.SUPER_USER.equals(role.getCode())
+				&& !permissionService.isSuperUser(permissionService.currentUserId())) {
+			throw new AccessDeniedException("Only a super user can change the SUPER_USER role.");
+		}
 	}
 }

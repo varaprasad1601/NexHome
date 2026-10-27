@@ -1,8 +1,11 @@
 package com.nexhome.app.controller;
 
+import java.util.List;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -31,6 +34,13 @@ public class NexHomeFunctionController {
 	@PreAuthorize("@permissions.can('FUNCTION_MANAGE', 'WRITE')")
 	public NexHomeFunctionResponse createFunction(@Valid @RequestBody NexHomeFunctionCreateRequest request) {
 		return functionService.createFunction(request);
+	}
+
+	/** Every function, active or not (for the admin console's Functions screen). */
+	@GetMapping
+	@PreAuthorize("@permissions.can('FUNCTION_MANAGE', 'READ')")
+	public List<NexHomeFunctionResponse> getFunctions() {
+		return functionService.getFunctions();
 	}
 
 	@PutMapping("/update")

@@ -1,5 +1,7 @@
 package com.nexhome.app.service;
 
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,6 +59,14 @@ public class NexHomeFunctionServiceImpl implements NexHomeFunctionService {
 
 		log.info("Function updated with Function ID {}", function.getId());
 		return functionMapper.toFunctionDto(function);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<NexHomeFunctionResponse> getFunctions() {
+		return functionRepository.findAllByOrderByFunctionModuleAscFunctionCodeAsc().stream()
+				.map(functionMapper::toFunctionDto)
+				.toList();
 	}
 
 	@Override

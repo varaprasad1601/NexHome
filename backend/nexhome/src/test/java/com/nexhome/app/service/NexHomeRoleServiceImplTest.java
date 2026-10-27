@@ -12,6 +12,7 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 
 import com.nexhome.app.dto.NexHomeRoleCreateRequest;
 import com.nexhome.app.dto.NexHomeRoleFunctionCreateRequest;
@@ -115,6 +116,19 @@ class NexHomeRoleServiceImplTest {
 					.extracting(ConstraintViolation::getMessage)
 					.containsExactlyInAnyOrder("Role code cannot be updated", "Role name cannot be blank");
 		}
+	}
+
+	@Test
+	void onlySuperUsersChangeTheSuperUserRole() {
+		NexHomeRole role = existingRole();
+		role.setCode("SUPER_USER");
+
+		assertThatThrownBy(() -> roleService.updateRole(new NexHomeRoleUpdateRequest(ROLE_ID, null, null, null, false)))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("Only a super user can change the SUPER_USER role.");
+		assertThatThrownBy(() -> roleService.deleteRole(ROLE_ID)).isInstanceOf(AccessDeniedException.class);
+		assertThat(role.isActiveFlag()).isTrue();
+		verify(roleRepository, never()).deleteById(any());
 	}
 
 	@Test

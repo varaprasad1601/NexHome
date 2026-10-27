@@ -3,17 +3,21 @@ package com.nexhome.app.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -24,16 +28,25 @@ import com.nexhome.app.dto.NexHomeUserCreateRequest;
 import com.nexhome.app.dto.NexHomeUserResponse;
 import com.nexhome.app.dto.NexHomeUserRoleAssignRequest;
 import com.nexhome.app.dto.NexHomeUserRoleUpdateRequest;
+import com.nexhome.app.dto.NexHomeUserStatsResponse;
 import com.nexhome.app.dto.NexHomeUserStatusUpdateRequest;
 import com.nexhome.app.dto.NexHomeUserUpdateRequest;
 import com.nexhome.app.exception.DuplicateResourceException;
 import com.nexhome.app.exception.InvalidRequestException;
 import com.nexhome.app.exception.ResourceNotFoundException;
+import com.nexhome.app.mapper.NexHomeAdminProfileMapper;
+import com.nexhome.app.mapper.NexHomeCustomerProfileMapper;
+import com.nexhome.app.mapper.NexHomePartnerProfileMapper;
 import com.nexhome.app.mapper.NexHomeUserMapper;
+import com.nexhome.app.model.NexHomeAdminProfile;
+import com.nexhome.app.model.NexHomePartnerProfile;
 import com.nexhome.app.model.NexHomeRole;
 import com.nexhome.app.model.NexHomeUser;
 import com.nexhome.app.model.NexHomeUserRole;
 import com.nexhome.app.model.NexHomeUserRoleId;
+import com.nexhome.app.repository.NexHomeAdminProfileRepository;
+import com.nexhome.app.repository.NexHomeCustomerProfileRepository;
+import com.nexhome.app.repository.NexHomePartnerProfileRepository;
 import com.nexhome.app.repository.NexHomeAuthRefreshTokenRepository;
 import com.nexhome.app.repository.NexHomeRoleRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
@@ -55,6 +68,10 @@ class NexHomeUserServiceImplTest {
 	private NexHomeLookupService lookupService;
 	private NexHomeAuthRefreshTokenRepository refreshTokenRepository;
 	private NexHomePermissionService permissionService;
+	private NexHomeAdminProfileRepository adminProfileRepository;
+	private NexHomeCustomerProfileRepository customerProfileRepository;
+	private NexHomePartnerProfileRepository partnerProfileRepository;
+	private NexHomePartnerProfileMapper partnerProfileMapper;
 	private NexHomeUserServiceImpl userService;
 
 	@BeforeEach
@@ -75,10 +92,31 @@ class NexHomeUserServiceImplTest {
 				.thenAnswer(invocation -> invocation.<String>getArgument(1).trim());
 		refreshTokenRepository = mock(NexHomeAuthRefreshTokenRepository.class);
 		permissionService = mock(NexHomePermissionService.class);
-		// The caller is user 1 unless a test says otherwise
+		adminProfileRepository = mock(NexHomeAdminProfileRepository.class);
+		customerProfileRepository = mock(NexHomeCustomerProfileRepository.class);
+		when(customerProfileRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		// A partner's empty DRAFT (V16)
+		partnerProfileRepository = mock(NexHomePartnerProfileRepository.class);
+		when(partnerProfileRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		partnerProfileMapper = mock(NexHomePartnerProfileMapper.class);
+		when(partnerProfileMapper.toPartnerProfileEntity(any(), any())).thenAnswer(invocation -> {
+			NexHomePartnerProfile profile = new NexHomePartnerProfile();
+			profile.setUser(invocation.getArgument(0));
+			return profile;
+		});
+		when(adminProfileRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		// The caller is user 1 unless a test says otherwise, with access to accounts of every role but SUPER_USER
+		// (which the service also checks with isSuperUser, false unless a test says otherwise)
 		when(permissionService.currentUserId()).thenReturn(1L);
+		when(permissionService.canManageRole(any(), anyString())).thenAnswer(invocation -> {
+			String roleCode = invocation.getArgument(0);
+			return roleCode != null && !"SUPER_USER".equals(roleCode);
+		});
+		when(permissionService.canManageAccount(any(), anyString())).thenReturn(true);
 		userService = new NexHomeUserServiceImpl(userRepository, roleRepository, userRoleRepository,
-				refreshTokenRepository, lookupService, permissionService, new NexHomeUserMapper());
+				refreshTokenRepository, lookupService, permissionService, new NexHomeUserMapper(),
+				adminProfileRepository, new NexHomeAdminProfileMapper(), customerProfileRepository, new NexHomeCustomerProfileMapper(),
+				partnerProfileRepository, partnerProfileMapper);
 	}
 
 	@Test
@@ -102,6 +140,45 @@ class NexHomeUserServiceImplTest {
 		assertThat(page.content()).singleElement().satisfies(listed ->
 				assertThat(listed.roles()).extracting("roleCode").containsExactly("CUSTOMER", "PARTNER"));
 		verify(userRoleRepository, never()).findByUserIdOrderByRoleIdAsc(any());
+	}
+
+	@Test
+	void statsRunTotalsOverTheLastTenMonths() {
+		YearMonth now = YearMonth.now(ZoneId.of("Asia/Kolkata"));
+		when(userRoleRepository.countActiveByRoleAndMonth("CUSTOMER")).thenReturn(List.of(
+				monthlyCount(now.minusMonths(14), 5), monthlyCount(now.minusMonths(1), 2), monthlyCount(now, 3)));
+		when(userRoleRepository.countActiveByRoleAndMonth("PARTNER")).thenReturn(List.of());
+
+		NexHomeUserStatsResponse stats = userService.getUserStats();
+
+		NexHomeUserStatsResponse.RoleStats customers = stats.customers();
+		assertThat(customers.total()).isEqualTo(10);
+		assertThat(customers.addedThisMonth()).isEqualTo(3);
+		assertThat(customers.months()).hasSize(10);
+		// Older additions are the starting total of the window
+		assertThat(customers.months().getFirst())
+				.isEqualTo(new NexHomeUserStatsResponse.MonthStats(now.minusMonths(9).toString(), 0, 5));
+		assertThat(customers.months().get(8))
+				.isEqualTo(new NexHomeUserStatsResponse.MonthStats(now.minusMonths(1).toString(), 2, 7));
+		assertThat(customers.months().getLast())
+				.isEqualTo(new NexHomeUserStatsResponse.MonthStats(now.toString(), 3, 10));
+
+		assertThat(stats.partners().total()).isZero();
+		assertThat(stats.partners().months()).hasSize(10).allMatch(month -> month.total() == 0);
+	}
+
+	private static NexHomeUserRoleRepository.MonthlyCount monthlyCount(YearMonth month, long total) {
+		return new NexHomeUserRoleRepository.MonthlyCount() {
+			@Override
+			public String getMonth() {
+				return month.toString();
+			}
+
+			@Override
+			public Long getTotal() {
+				return total;
+			}
+		};
 	}
 
 	@Test
@@ -137,8 +214,29 @@ class NexHomeUserServiceImplTest {
 		verify(userRoleRepository, never()).saveAndFlush(any());
 
 		when(permissionService.isSuperUser(1L)).thenReturn(true);
+		when(permissionService.canManageRole("SUPER_USER", "WRITE")).thenReturn(true);
 		userService.assignRole(new NexHomeUserRoleAssignRequest(10L, (short) 1));
 		verify(userRoleRepository).saveAndFlush(any());
+	}
+
+	@Test
+	void accountsNeedWriteOnTheirRolesFunction() {
+		existingUser();
+		activeRole((short) 3, "SUB_ADMIN");
+		when(permissionService.canManageRole("SUB_ADMIN", "WRITE")).thenReturn(false);
+
+		// Creating a sub-admin, or giving the role, takes SUB_ADMIN_MANAGE write
+		assertThatThrownBy(() -> userService.createUser(new NexHomeUserCreateRequest(
+				"+91", "9000000001", null, null, (short) 3)))
+				.isInstanceOf(AccessDeniedException.class);
+		assertThatThrownBy(() -> userService.assignRole(new NexHomeUserRoleAssignRequest(10L, (short) 3)))
+				.isInstanceOf(AccessDeniedException.class);
+		verify(userRoleRepository, never()).saveAndFlush(any());
+
+		// The status follows the account's own role function (canManageAccount)
+		when(permissionService.canManageAccount(10L, "WRITE")).thenReturn(false);
+		assertThatThrownBy(() -> userService.updateUserStatus(new NexHomeUserStatusUpdateRequest(10L, "BLOCKED")))
+				.isInstanceOf(AccessDeniedException.class);
 	}
 
 	@Test
@@ -192,6 +290,25 @@ class NexHomeUserServiceImplTest {
 			assertThat(role.isActive()).isTrue();
 		});
 		verify(userRoleRepository).saveAndFlush(any());
+		// A customer gets the empty customer profile (customer id), not a staff profile
+		verify(adminProfileRepository, never()).save(any());
+		verify(customerProfileRepository).save(org.mockito.ArgumentMatchers.argThat(profile ->
+				profile.getUser().getId().equals(10L) && profile.getFirstName() == null));
+	}
+
+	@Test
+	void staffAccountsGetTheirStaffProfileAtOnce() {
+		activeRole((short) 2, "ADMIN");
+
+		NexHomeUserResponse response = userService.createUser(new NexHomeUserCreateRequest(
+				"+91", "9876543210", "admin@nexhome.in", null, (short) 2));
+
+		ArgumentCaptor<NexHomeAdminProfile> profile = ArgumentCaptor.forClass(NexHomeAdminProfile.class);
+		verify(adminProfileRepository).save(profile.capture());
+		assertThat(profile.getValue().getUser().getId()).isEqualTo(response.userId());
+		// Names (and the address) are filled in later under My Profile
+		assertThat(profile.getValue().getFirstName()).isNull();
+		assertThat(profile.getValue().getCreatedBy()).isEqualTo(1L);
 	}
 
 	@Test
@@ -314,6 +431,8 @@ class NexHomeUserServiceImplTest {
 				userRole.getUser() == user && userRole.getRole().getCode().equals("PARTNER")
 						&& userRole.getId().equals(new NexHomeUserRoleId(10L, PARTNER_ROLE_ID))
 						&& userRole.isActive() && userRole.getAssignedBy().equals(1L)));
+		// Becoming a partner creates the empty DRAFT partner profile, with its partner id (V16)
+		verify(partnerProfileRepository).save(org.mockito.ArgumentMatchers.argThat(profile -> profile.getUser() == user));
 	}
 
 	@Test

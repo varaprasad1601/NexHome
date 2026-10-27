@@ -1,111 +1,351 @@
+@import "tailwindcss";
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --navy: #0b315f;
+  --navy-dark: #08264d;
+  --blue: #0b438b;
+  --blue-2: #165db8;
+  --green: #168f5b;
+  --green-2: #13774b;
+  --ink: #172b42;
+  --muted: #5f7084;
+  --line: #e2eaf1;
+  --light: #f4f8fc;
+  --light-2: #f0f7fb;
+  --white: #fff;
+  --radius: 18px;
+  --shadow: 0 14px 44px rgba(14, 51, 89, 0.08);
+  --font: 'DM Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+* {
+  box-sizing: border-box;
+}
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 90px;
 }
 
 body {
   margin: 0;
+  background: #ffffff;
+  color: var(--ink);
+  font: 400 16px/1.6 var(--font);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
+h1, h2, h3, h4 {
+  font-family: 'Manrope', var(--font);
+  line-height: 1.18;
+  letter-spacing: -0.035em;
+  margin-top: 0;
+}
+
+p {
+  color: #556980;
+  margin-top: 0;
+}
+
+.font-cursive {
+  font-family: 'Caveat', cursive, sans-serif;
+}
+
+.container {
+  width: min(1200px, calc(100% - 40px));
+  margin-inline: auto;
+}
+
+@font-face {
+  font-family: 'ManropeCustom';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggqxSuXd.woff2) format('woff2');
+}
+
+@font-face {
+  font-family: 'DMSansCustom';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/dmsans/v17/rP2Yp2ywxg089UriI5-g4vlH9VoD8Cmcqbu6-K6h9Q.woff2) format('woff2');
+}
+
+/* Header styles */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #ffffff;
+  border-bottom: none;
+  backdrop-filter: blur(12px);
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.header-inner {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.brand-logo-img {
+  height: 44px;
+  width: auto;
+  object-fit: contain;
+}
+
+.desktop-nav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.nav-link {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3b5168;
+  text-decoration: none;
+  padding: 6px 2px;
+  margin-bottom: 6px;
+  position: relative;
+  transition: color 0.2s;
+}
+
+.nav-link:hover {
+  color: var(--blue);
+}
+
+.nav-link.is-active {
+  color: var(--blue);
+  font-weight: 700;
+}
+
+.nav-link.is-active::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 100%;
+  height: 2.5px;
+  background: var(--blue);
+  border-radius: 99px;
+}
+
+.header-book-btn {
+  background: #168f5b;
+  color: white;
+  border-radius: 9999px;
+  padding: 7px 18px;
+  font-size: 12.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  text-decoration: none;
+  transition: background 0.2s, transform 0.2s;
+  box-shadow: 0 3px 10px rgba(22, 143, 91, 0.18);
+}
+
+.header-book-btn:hover {
+  background: #12774b;
+  transform: translateY(-1px);
+}
+
+/* Service Card Modern Style */
+.service-card-modern {
+  background: #ffffff;
+  border: 1px solid #e9f0f6;
+  border-radius: 16px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
+  transition: all 0.25s ease;
+  box-shadow: 0 2px 10px rgba(15, 34, 58, 0.03);
+  text-decoration: none;
+  position: relative;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+.service-card-modern:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px rgba(11, 67, 139, 0.08);
+  border-color: #b9d5ee;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+.service-card-img-wrap {
+  width: 100%;
+  height: 110px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f1f6fb;
+  margin-bottom: 12px;
+}
+
+.service-card-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.service-card-modern:hover .service-card-img-wrap img {
+  transform: scale(1.05);
+}
+
+.service-card-title {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #0b315f;
+  margin-bottom: 8px;
+}
+
+.service-card-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 14px 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #607387;
+  flex-grow: 1;
+}
+
+.service-card-bullets li {
+  position: relative;
+  padding-left: 10px;
+  margin-bottom: 2px;
+}
+
+.service-card-bullets li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: #168f5b;
+  font-weight: bold;
+}
+
+.service-card-arrow {
+  align-self: flex-end;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid #0b438b;
+  color: #0b438b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  background: white;
+}
+
+.service-card-modern:hover .service-card-arrow {
+  background: #0b438b;
+  color: white;
+}
+
+/* Floating WhatsApp button */
+.floating-whatsapp {
+  position: fixed;
+  z-index: 50;
+  bottom: 24px;
+  right: 24px;
+  padding: 12px 18px;
+  background: #168f5b;
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 9999px;
+  box-shadow: 0 10px 24px rgba(22, 143, 91, 0.35);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.floating-whatsapp:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(22, 143, 91, 0.45);
+}
+
+/* Map Card */
+.map-canvas-container {
+  width: 100%;
+  height: 240px;
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  background: #eef4e8;
+  border: 1px solid #dce8d6;
+}
+
+@media (max-width: 1023px) {
+  .desktop-nav {
+    display: none;
+  }
+  .header-book-btn {
+    display: none !important;
   }
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+@media (max-width: 639px) {
+  .container {
+    width: calc(100% - 28px);
   }
-}
-p {
-  margin: 0;
-}
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
+  .header-inner {
+    height: 60px;
+    gap: 8px;
+  }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  .brand-logo-img {
+    height: 36px;
+  }
+
+  .header-book-btn {
+    padding: 6px 12px;
+    font-size: 11.5px;
+    gap: 5px;
+    white-space: nowrap;
+  }
+
+  .service-card-modern {
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .service-card-img-wrap {
+    height: 96px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+  }
+
+  .service-card-title {
+    font-size: 13px;
+    margin-bottom: 5px;
+  }
+
+  .service-card-bullets {
+    font-size: 10.5px;
+    line-height: 1.4;
+    margin-bottom: 10px;
+  }
+
+  .map-canvas-container {
+    height: 210px;
+  }
 }

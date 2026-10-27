@@ -50,7 +50,7 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Module 2 end to end through HTTP and the security filters, against the dev database (rolled back): customer and
  * staff profiles, addresses, and partner onboarding with documents and bank accounts. Covers who may do what (owner,
- * PROFILE_MANAGE / STAFF_MANAGE / PARTNER_ONBOARDING_MANAGE, nobody on their own review) and the stored encryption.
+ * CUSTOMER_MANAGE / ADMIN_MANAGE / SUB_ADMIN_MANAGE / PARTNER_ONBOARDING_MANAGE, nobody on their own review) and the stored encryption.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -108,7 +108,7 @@ class NexHomeProfileFlowTest {
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.message").value("This account already has a customer profile."));
 
-		// Someone else's profile needs PROFILE_MANAGE
+		// Someone else's profile needs CUSTOMER_MANAGE
 		perform(get("/api/profiles/customers/" + profileId), otherCustomer, null).andExpect(status().isForbidden());
 		perform(put("/api/profiles/customers/update"), otherCustomer,
 				"{\"customerProfileId\": %d, \"lastName\": \"X\"}".formatted(profileId))
@@ -122,6 +122,20 @@ class NexHomeProfileFlowTest {
 				.andExpect(jsonPath("$.firstName").value("Ravi Teja"))
 				.andExpect(jsonPath("$.lastName").value("Varma"))
 				.andExpect(jsonPath("$.preferredLanguage").doesNotExist());
+
+		// The console's customer list shows the profile and finds it by name or public id; counts by status
+		perform(get("/api/users/customers?search=ravi teja varma"), subAdmin, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[?(@.userId == %d)].publicId".formatted(customer.getId())).value(publicId))
+				.andExpect(jsonPath("$.content[?(@.userId == %d)].firstName".formatted(customer.getId())).value("Ravi Teja"));
+		perform(get("/api/users/customers?search=" + publicId.toLowerCase()), subAdmin, null)
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].customerProfileId").value(profileId))
+				.andExpect(jsonPath("$.content[0].roles[0].roleCode").value("CUSTOMER"));
+		perform(get("/api/users/customers/stats"), subAdmin, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.total").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)));
+		perform(get("/api/users/customers/stats"), otherCustomer, null).andExpect(status().isForbidden());
 		perform(put("/api/profiles/customers/update"), customerToken,
 				"{\"customerProfileId\": %d, \"userId\": 1}".formatted(profileId))
 				.andExpect(status().isBadRequest())
@@ -141,7 +155,7 @@ class NexHomeProfileFlowTest {
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("Customer profiles are only for accounts with the CUSTOMER role."));
 
-		// The list is for PROFILE_MANAGE read (SUPER_USER, ADMIN, SUB_ADMIN)
+		// The list is for CUSTOMER_MANAGE read (SUPER_USER, ADMIN, SUB_ADMIN)
 		for (String token : List.of(subAdmin, admin)) {
 			perform(get("/api/profiles/customers?search=" + publicId.toLowerCase()), token, null)
 					.andExpect(status().isOk())
@@ -199,7 +213,7 @@ class NexHomeProfileFlowTest {
 		perform(get("/api/addresses/" + secondId), customerToken, null)
 				.andExpect(jsonPath("$.isDefault").value(false));
 
-		// Other customers cannot see or change it; staff with PROFILE_MANAGE can
+		// Other customers cannot see or change it; staff with CUSTOMER_MANAGE can
 		perform(get("/api/addresses/" + firstId), otherCustomer, null).andExpect(status().isForbidden());
 		perform(get("/api/addresses/users/" + customer.getId()), otherCustomer, null).andExpect(status().isForbidden());
 		perform(delete("/api/addresses/delete/" + firstId), otherCustomer, null).andExpect(status().isForbidden());
@@ -239,13 +253,21 @@ class NexHomeProfileFlowTest {
 				"{\"adminProfileId\": %d, \"jobTitle\": \"Head\"}".formatted(ownId))
 				.andExpect(status().isForbidden());
 
-		// Admins (STAFF_MANAGE write) set employee details; codes are unique
+		// Admins (ADMIN_MANAGE / SUB_ADMIN_MANAGE write) set employee details; codes are unique
 		NexHomeUser otherSubAdmin = newUser("SUB_ADMIN");
 		String code = "emp-" + ThreadLocalRandom.current().nextInt(100_000, 999_999);
-		perform(post("/api/profiles/admins/create"), admin,
+		long otherId = json(perform(post("/api/profiles/admins/create"), admin,
 				staffProfile(otherSubAdmin.getId(), ", \"employeeCode\": \"" + code + "\""))
 				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.employeeCode").value(code.toUpperCase()))).get("adminProfileId").asLong();
+		// Sub-admins read other staff profiles (ADMIN_MANAGE / SUB_ADMIN_MANAGE read) but do not change them
+		perform(get("/api/profiles/admins/" + otherId), subAdminToken, null)
+				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.employeeCode").value(code.toUpperCase()));
+		perform(get("/api/profiles/admins?search=" + code), subAdminToken, null).andExpect(status().isOk());
+		perform(put("/api/profiles/admins/update"), subAdminToken,
+				"{\"adminProfileId\": %d, \"city\": \"Guntur\"}".formatted(otherId))
+				.andExpect(status().isForbidden());
 		perform(put("/api/profiles/admins/update"), admin,
 				"{\"adminProfileId\": %d, \"employeeCode\": \"%s\"}".formatted(ownId, code.toUpperCase()))
 				.andExpect(status().isConflict())
@@ -259,12 +281,16 @@ class NexHomeProfileFlowTest {
 				"{\"adminProfileId\": %d, \"city\": \"Guntur\"}".formatted(superProfileId))
 				.andExpect(status().isForbidden());
 
-		perform(get("/api/profiles/admins/" + superProfileId), subAdminToken, null).andExpect(status().isForbidden());
+		perform(put("/api/profiles/admins/update"), subAdminToken,
+				"{\"adminProfileId\": %d, \"city\": \"Guntur\"}".formatted(superProfileId))
+				.andExpect(status().isForbidden());
 		perform(get("/api/profiles/admins/me"), subAdminToken, null)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.adminProfileId").value(ownId));
 		perform(get("/api/profiles/admins"), admin, null).andExpect(status().isOk());
-		perform(get("/api/profiles/admins"), subAdminToken, null).andExpect(status().isForbidden());
+		perform(get("/api/profiles/admins"), subAdminToken, null).andExpect(status().isOk());
+		perform(get("/api/profiles/admins"), accessToken(newUser("CUSTOMER").getId()), null)
+				.andExpect(status().isForbidden());
 
 		NexHomeUser customer = newUser("CUSTOMER");
 		perform(post("/api/profiles/admins/create"), accessToken(customer.getId()), staffProfile(customer.getId(), ""))
@@ -294,6 +320,29 @@ class NexHomeProfileFlowTest {
 		long profileId = draft.get("partnerProfileId").asLong();
 		String publicId = draft.get("publicId").asString();
 		assertThat(publicId).matches("NHPART\\d{4,}");
+
+		// The console's partner list shows the profile, finds it by name or public id, and filters by onboarding
+		// status, including partners who have not started (NOT_STARTED); counts by onboarding
+		NexHomeUser notStarted = newUser("PARTNER");
+		perform(get("/api/users/partners?search=suresh babu"), subAdmin, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[?(@.userId == %d)].publicId".formatted(partner.getId())).value(publicId))
+				.andExpect(jsonPath("$.content[?(@.userId == %d)].onboardingStatus".formatted(partner.getId())).value("DRAFT"));
+		perform(get("/api/users/partners?onboardingStatus=DRAFT&search=" + publicId.toLowerCase()), subAdmin, null)
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].availabilityStatus").value("OFFLINE"))
+				.andExpect(jsonPath("$.content[0].roles[0].roleCode").value("PARTNER"));
+		perform(get("/api/users/partners?onboardingStatus=NOT_STARTED&search=" + notStarted.getMobileNumber()), subAdmin,
+				null)
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].publicId").doesNotExist());
+		perform(get("/api/users/partners?onboardingStatus=APPROVED&search=" + publicId), subAdmin, null)
+				.andExpect(jsonPath("$.totalElements").value(0));
+		perform(get("/api/users/partners?onboardingStatus=SOMETHING"), subAdmin, null).andExpect(status().isBadRequest());
+		perform(get("/api/users/partners/stats"), subAdmin, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.notSubmitted").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)));
+		perform(get("/api/users/partners/stats"), partnerToken, null).andExpect(status().isForbidden());
 
 		// Only the ciphertext is stored
 		String stored = (String) entityManager.createNativeQuery(

@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.nexhome.app.dto.NexHomeAuthAdminOtpRequest;
 import com.nexhome.app.dto.NexHomeAuthOtpCreateRequest;
 import com.nexhome.app.dto.NexHomeAuthOtpResponse;
 import com.nexhome.app.dto.NexHomeAuthOtpVerifyRequest;
@@ -23,8 +24,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Sign-up and login. register, otp/request, otp/verify, token/refresh and logout are public (NexHomeSecurityConfig);
- * logout/all and the phone change endpoints need an access token.
+ * Sign-up and login. register, otp/request, admin/otp/request, otp/verify, token/refresh and logout are public
+ * (NexHomeSecurityConfig); logout/all and the phone change endpoints need an access token.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -45,6 +46,13 @@ public class NexHomeAuthController {
 	@ResponseStatus(HttpStatus.CREATED)
 	public NexHomeAuthOtpResponse requestOtp(@Valid @RequestBody NexHomeAuthOtpCreateRequest request) {
 		return authService.requestOtp(request);
+	}
+
+	/** Sends a LOGIN OTP for the admin sign-in, only to an active SUPER_USER, ADMIN or SUB_ADMIN account. */
+	@PostMapping("/admin/otp/request")
+	@ResponseStatus(HttpStatus.CREATED)
+	public NexHomeAuthOtpResponse requestAdminOtp(@Valid @RequestBody NexHomeAuthAdminOtpRequest request) {
+		return authService.requestAdminOtp(request);
 	}
 
 	/** Verifies a LOGIN or REGISTRATION OTP and returns the user with new tokens. */

@@ -39,6 +39,15 @@ public class NexHomeAdminProfileMapper {
 		return profile;
 	}
 
+	/** The empty staff profile created with a staff account; its owner fills in the names and address later. */
+	public NexHomeAdminProfile toAdminProfileEntity(NexHomeUser user, Long actingUserId) {
+		NexHomeAdminProfile profile = new NexHomeAdminProfile();
+		profile.setUser(user);
+		profile.setCreatedBy(actingUserId);
+		profile.setUpdatedBy(actingUserId);
+		return profile;
+	}
+
 	/**
 	 * Applies an update: a null field keeps its current value and an empty optional field is cleared. The owner is
 	 * never updated.

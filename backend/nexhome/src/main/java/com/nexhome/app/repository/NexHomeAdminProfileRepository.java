@@ -1,5 +1,7 @@
 package com.nexhome.app.repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -19,6 +21,9 @@ public interface NexHomeAdminProfileRepository extends JpaRepository<NexHomeAdmi
 	Optional<NexHomeAdminProfile> findByUserId(Long userId);
 
 	boolean existsByUserId(Long userId);
+
+	/** The staff profiles of several accounts in one query (for the staff list). */
+	List<NexHomeAdminProfile> findByUserIdIn(Collection<Long> userIds);
 
 	/** Employee codes are stored upper-cased and are unique when present. */
 	Optional<NexHomeAdminProfile> findByEmployeeCode(String employeeCode);

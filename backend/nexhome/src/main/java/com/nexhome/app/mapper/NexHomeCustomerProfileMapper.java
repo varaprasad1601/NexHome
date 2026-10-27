@@ -27,6 +27,25 @@ public class NexHomeCustomerProfileMapper {
 		return profile;
 	}
 
+	/** The empty profile every customer account gets (V15), with its NHCUST public id; the customer adds the rest. */
+	public NexHomeCustomerProfile toCustomerProfileEntity(NexHomeUser user, Long actingUserId) {
+		NexHomeCustomerProfile profile = new NexHomeCustomerProfile();
+		profile.setUser(user);
+		profile.setCreatedBy(actingUserId);
+		profile.setUpdatedBy(actingUserId);
+		return profile;
+	}
+
+	/** Fills in a customer's empty profile (created with the account) from a create request. */
+	public void fillCustomerProfileEntity(NexHomeCustomerProfile profile, NexHomeCustomerProfileCreateRequest request,
+			Long actingUserId) {
+		profile.setFirstName(collapseWhitespace(request.firstName()));
+		profile.setLastName(collapseWhitespace(request.lastName()));
+		profile.setDateOfBirth(request.dateOfBirth());
+		profile.setMarketingConsent(Boolean.TRUE.equals(request.marketingConsent()));
+		profile.setUpdatedBy(actingUserId);
+	}
+
 	/**
 	 * Applies an update: a null field keeps its current value. The owner is never updated; the preferred language is
 	 * applied by the service.

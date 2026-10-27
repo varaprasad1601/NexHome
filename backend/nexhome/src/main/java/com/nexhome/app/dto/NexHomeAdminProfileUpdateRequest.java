@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Size;
 /**
  * Updates a staff profile. A null (or missing) field keeps its current value; required fields cannot be blanked, and
  * an empty employee code, department, job title, address line 2 or landmark clears it. Staff may update their own
- * names and address; the employee code, department and job title need STAFF_MANAGE write. The owner and public id
+ * names and address; the employee code, department and job title need write on the owner's staff role function (ADMIN_MANAGE, SUB_ADMIN_MANAGE). The owner and public id
  * are fixed: they are only declared here so that a request containing them is rejected with a clear message.
  */
 public record NexHomeAdminProfileUpdateRequest(

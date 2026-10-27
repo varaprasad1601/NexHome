@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.nexhome.app.config.NexHomeOtpProperties;
 import com.nexhome.app.config.NexHomeSecurityProperties;
+import com.nexhome.app.dto.NexHomeAuthAdminOtpRequest;
 import com.nexhome.app.dto.NexHomeAuthOtpCreateRequest;
 import com.nexhome.app.dto.NexHomeAuthOtpResponse;
 import com.nexhome.app.dto.NexHomeAuthOtpVerifyRequest;
@@ -46,6 +47,8 @@ import com.nexhome.app.exception.TooManyRequestsException;
 import com.nexhome.app.exception.UnauthorizedException;
 import com.nexhome.app.mapper.NexHomeAuthOtpRequestMapper;
 import com.nexhome.app.mapper.NexHomeAuthRefreshTokenMapper;
+import com.nexhome.app.mapper.NexHomeCustomerProfileMapper;
+import com.nexhome.app.mapper.NexHomePartnerProfileMapper;
 import com.nexhome.app.mapper.NexHomeUserMapper;
 import com.nexhome.app.model.NexHomeAuthOtpRequest;
 import com.nexhome.app.model.NexHomeAuthRefreshToken;
@@ -53,6 +56,8 @@ import com.nexhome.app.model.NexHomeRole;
 import com.nexhome.app.model.NexHomeUser;
 import com.nexhome.app.repository.NexHomeAuthOtpRequestRepository;
 import com.nexhome.app.repository.NexHomeAuthRefreshTokenRepository;
+import com.nexhome.app.repository.NexHomeCustomerProfileRepository;
+import com.nexhome.app.repository.NexHomePartnerProfileRepository;
 import com.nexhome.app.repository.NexHomeRoleRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
 import com.nexhome.app.repository.NexHomeUserRoleRepository;
@@ -71,6 +76,7 @@ class NexHomeAuthServiceImplTest {
 	private NexHomeUserRepository userRepository;
 	private NexHomeUserRoleRepository userRoleRepository;
 	private NexHomeRoleRepository roleRepository;
+	private NexHomeCustomerProfileRepository customerProfileRepository;
 	private NexHomeLookupService lookupService;
 	private NexHomePermissionService permissionService;
 	private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
@@ -83,6 +89,7 @@ class NexHomeAuthServiceImplTest {
 		userRepository = mock(NexHomeUserRepository.class);
 		userRoleRepository = mock(NexHomeUserRoleRepository.class);
 		roleRepository = mock(NexHomeRoleRepository.class);
+		customerProfileRepository = mock(NexHomeCustomerProfileRepository.class);
 		lookupService = mock(NexHomeLookupService.class);
 		permissionService = mock(NexHomePermissionService.class);
 		when(userRepository.findByCountryCodeAndMobileNumber(any(), any())).thenReturn(Optional.empty());
@@ -108,7 +115,9 @@ class NexHomeAuthServiceImplTest {
 				userRoleRepository, roleRepository, lookupService, permissionService, new NexHomeAuthOtpRequestMapper(),
 				new NexHomeAuthRefreshTokenMapper(), new NexHomeUserMapper(), passwordEncoder,
 				new NimbusJwtEncoder(new ImmutableSecret<>(KEY)), new NexHomeOtpProperties(6, 5, 3, 60, false),
-				new NexHomeSecurityProperties("unused", "nexhome", 15, 30, List.of(), "unused"));
+				new NexHomeSecurityProperties("unused", "nexhome", 15, 30, List.of(), "unused"),
+				customerProfileRepository, new NexHomeCustomerProfileMapper(), mock(NexHomePartnerProfileRepository.class),
+				mock(NexHomePartnerProfileMapper.class));
 	}
 
 	@Test
@@ -132,6 +141,9 @@ class NexHomeAuthServiceImplTest {
 		assertThat(user.getValue().getCreatedBy()).isEqualTo(10L);
 		verify(userRoleRepository).save(org.mockito.ArgumentMatchers.argThat(userRole ->
 				userRole.getRole() == customer && userRole.getAssignedBy().equals(10L)));
+		// A customer gets the (empty) customer profile with its customer id at sign-up
+		verify(customerProfileRepository).save(org.mockito.ArgumentMatchers.argThat(profile ->
+				profile.getUser() == user.getValue() && profile.getFirstName() == null));
 		assertThat(response.purpose()).isEqualTo("REGISTRATION");
 		assertThat(response.tokens()).isNull();
 	}
@@ -179,6 +191,38 @@ class NexHomeAuthServiceImplTest {
 	}
 
 	@Test
+	void adminOtpIsSentOnlyToActiveStaff() {
+		NexHomeAuthAdminOtpRequest request = new NexHomeAuthAdminOtpRequest(CC, MOBILE);
+		String invalidUser = "Invalid user. This mobile number does not have admin access.";
+
+		// Unknown number
+		assertThatThrownBy(() -> authService.requestAdminOtp(request))
+				.isInstanceOf(ResourceNotFoundException.class).hasMessage(invalidUser);
+
+		// Customer or partner account
+		NexHomeUser user = existingUser();
+		assertThatThrownBy(() -> authService.requestAdminOtp(request))
+				.isInstanceOf(ResourceNotFoundException.class).hasMessage(invalidUser);
+
+		// Staff account that is not active: the same answer
+		when(userRoleRepository.existsByUserIdAndRoleCodeInAndActiveTrueAndRoleActiveFlagTrue(eq(10L),
+				eq(List.of("SUPER_USER", "ADMIN", "SUB_ADMIN")))).thenReturn(true);
+		user.setAccountStatus("BLOCKED");
+		assertThatThrownBy(() -> authService.requestAdminOtp(request))
+				.isInstanceOf(ResourceNotFoundException.class).hasMessage(invalidUser);
+		verify(otpRequestRepository, never()).save(any());
+
+		user.setAccountStatus("ACTIVE");
+		NexHomeAuthOtpResponse response = authService.requestAdminOtp(request);
+
+		ArgumentCaptor<NexHomeAuthOtpRequest> saved = ArgumentCaptor.forClass(NexHomeAuthOtpRequest.class);
+		verify(otpRequestRepository).save(saved.capture());
+		assertThat(saved.getValue().getUser()).isSameAs(user);
+		assertThat(saved.getValue().getPurpose()).isEqualTo("LOGIN");
+		assertThat(response.requestStatus()).isEqualTo("PENDING");
+	}
+
+	@Test
 	void phoneChangeAndBookingPurposesAreRejectedOnPublicEndpoints() {
 		assertThatThrownBy(() -> authService.requestOtp(new NexHomeAuthOtpCreateRequest(CC, MOBILE,
 				"PHONE_CHANGE")))
@@ -198,7 +242,8 @@ class NexHomeAuthServiceImplTest {
 				"LOGIN")).thenReturn(Optional.of(latest));
 
 		assertThatThrownBy(() -> authService.requestOtp(new NexHomeAuthOtpCreateRequest(CC, MOBILE, "LOGIN")))
-				.isInstanceOf(TooManyRequestsException.class);
+				.isInstanceOf(TooManyRequestsException.class)
+				.hasMessage("Please wait 50 seconds before requesting another OTP.");
 	}
 
 	@Test

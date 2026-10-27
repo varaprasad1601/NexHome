@@ -2,16 +2,20 @@ package com.nexhome.app.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.Map;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.nexhome.app.dto.NexHomeLookupTypeCreateRequest;
@@ -41,6 +45,11 @@ import jakarta.persistence.EntityManager;
 @WithMockUser(username = "1")
 class NexHomeIdentitySchemaTest {
 
+	// Permissions are not what this class tests (NexHomeAuthFlowTest does): user 1 may do everything here, although
+	// the dev database's system account may hold no role
+	@MockitoBean
+	private NexHomePermissionService permissionService;
+
 	@Autowired
 	private NexHomeLookupService lookupService;
 	@Autowired
@@ -55,6 +64,12 @@ class NexHomeIdentitySchemaTest {
 	private NexHomeAuthOtpRequestRepository otpRequestRepository;
 	@Autowired
 	private EntityManager entityManager;
+
+	@BeforeEach
+	void actAsSystemUser() {
+		when(permissionService.currentUserId()).thenReturn(1L);
+		when(permissionService.canManageRole(any(), any())).thenReturn(true);
+	}
 
 	@Test
 	void seedsRolesSystemUserAndLookups() {

@@ -1,5 +1,6 @@
 package com.nexhome.app.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,4 +14,6 @@ public interface NexHomeRoleRepository extends JpaRepository<NexHomeRole, Short>
 	Optional<NexHomeRole> findByIdAndActiveFlagTrue(Short id);
 
 	Optional<NexHomeRole> findByCode(String code);
+
+	List<NexHomeRole> findAllByOrderByIdAsc();
 }

@@ -1,10 +1,13 @@
 package com.nexhome.app.repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
@@ -17,6 +20,10 @@ public interface NexHomePartnerProfileRepository extends JpaRepository<NexHomePa
 
 	/** user_id is unique: one partner profile per account. */
 	Optional<NexHomePartnerProfile> findByUserId(Long userId);
+
+	/** The profiles of a page of users, with their main service category, in one query. */
+	@EntityGraph(attributePaths = "mainServiceCategory")
+	List<NexHomePartnerProfile> findByUserIdIn(Collection<Long> userIds);
 
 	boolean existsByUserId(Long userId);
 

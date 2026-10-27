@@ -224,8 +224,8 @@ class NexHomeAddressServiceImplTest {
 	@Test
 	void someoneElsesAddressNeedsProfileManage() {
 		NexHomeAddress address = existingAddress(71L, false);
-		when(permissionService.isSelfOrCan(OWNER_ID, "PROFILE_MANAGE", "WRITE")).thenReturn(false);
-		when(permissionService.isSelfOrCan(OWNER_ID, "PROFILE_MANAGE", "DELETE")).thenReturn(false);
+		when(permissionService.isSelfOrCan(OWNER_ID, "CUSTOMER_MANAGE", "WRITE")).thenReturn(false);
+		when(permissionService.isSelfOrCan(OWNER_ID, "CUSTOMER_MANAGE", "DELETE")).thenReturn(false);
 
 		assertThatThrownBy(() -> addressService.updateAddress(update(71L, true, "Office", null, null)))
 				.isInstanceOf(AccessDeniedException.class);

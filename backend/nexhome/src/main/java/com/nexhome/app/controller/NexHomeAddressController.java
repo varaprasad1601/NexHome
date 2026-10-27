@@ -23,7 +23,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Customer service addresses. Customers manage their own; other users' addresses need PROFILE_MANAGE. Endpoints that
+ * Customer service addresses. Customers manage their own; other users' addresses need CUSTOMER_MANAGE. Endpoints that
  * take an address id check the owner in the service, after loading the address.
  */
 @RestController
@@ -35,18 +35,18 @@ public class NexHomeAddressController {
 
 	@PostMapping("/create")
 	@ResponseStatus(HttpStatus.CREATED)
-	@PreAuthorize("@permissions.isSelfOrCan(#request.userId(), 'PROFILE_MANAGE', 'WRITE')")
+	@PreAuthorize("@permissions.isSelfOrCan(#request.userId(), 'CUSTOMER_MANAGE', 'WRITE')")
 	public NexHomeAddressResponse createAddress(@Valid @RequestBody NexHomeAddressCreateRequest request) {
 		return addressService.createAddress(request);
 	}
 
-	/** Owner or PROFILE_MANAGE write. */
+	/** Owner or CUSTOMER_MANAGE write. */
 	@PutMapping("/update")
 	public NexHomeAddressResponse updateAddress(@Valid @RequestBody NexHomeAddressUpdateRequest request) {
 		return addressService.updateAddress(request);
 	}
 
-	/** Owner or PROFILE_MANAGE delete. */
+	/** Owner or CUSTOMER_MANAGE delete. */
 	@DeleteMapping("/delete/{addressId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void deleteAddress(@PathVariable Long addressId) {
@@ -61,12 +61,12 @@ public class NexHomeAddressController {
 
 	/** A customer's addresses, the default first. */
 	@GetMapping("/users/{userId}")
-	@PreAuthorize("@permissions.isSelfOrCan(#userId, 'PROFILE_MANAGE', 'READ')")
+	@PreAuthorize("@permissions.isSelfOrCan(#userId, 'CUSTOMER_MANAGE', 'READ')")
 	public List<NexHomeAddressResponse> getUserAddresses(@PathVariable Long userId) {
 		return addressService.getUserAddresses(userId);
 	}
 
-	/** Owner or PROFILE_MANAGE read. */
+	/** Owner or CUSTOMER_MANAGE read. */
 	@GetMapping("/{addressId}")
 	public NexHomeAddressResponse getAddress(@PathVariable Long addressId) {
 		return addressService.getAddress(addressId);

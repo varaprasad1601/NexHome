@@ -1,6 +1,8 @@
 package com.nexhome.app.service;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -40,8 +42,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class NexHomeProfileServiceImpl implements NexHomeProfileService {
 
-	static final String PROFILE_MANAGE = "PROFILE_MANAGE";
-	static final String STAFF_MANAGE = "STAFF_MANAGE";
+	static final String CUSTOMER_MANAGE = "CUSTOMER_MANAGE";
 	private static final List<String> STAFF_ROLES = List.of(NexHomeRole.SUPER_USER, NexHomeRole.ADMIN,
 			NexHomeRole.SUB_ADMIN);
 
@@ -63,15 +64,29 @@ public class NexHomeProfileServiceImpl implements NexHomeProfileService {
 				NexHomeRole.CUSTOMER)) {
 			throw new InvalidRequestException("Customer profiles are only for accounts with the CUSTOMER role.");
 		}
-		if (customerProfileRepository.existsByUserId(user.getId())) {
+		// Checked before the profile changes (a lookup query would flush a half-applied change)
+		String language = language(request.preferredLanguage());
+
+		// Every customer account has an empty profile from the start (V15): creating the profile fills it in, keeping
+		// its customer id. Only a profile that already has a name is a duplicate.
+		NexHomeCustomerProfile existing = customerProfileRepository.findByUserId(user.getId()).orElse(null);
+		if (existing != null && existing.getFirstName() != null) {
 			throw new DuplicateResourceException("This account already has a customer profile.");
 		}
+		NexHomeCustomerProfile profile;
+		if (existing != null) {
+			profile = existing;
+			customerProfileMapper.fillCustomerProfileEntity(profile, request, actingUserId);
+		}
+		else {
+			profile = customerProfileMapper.toCustomerProfileEntity(request, user, actingUserId);
+		}
+		profile.setPreferredLanguage(language);
+		if (existing == null) {
+			profile = customerProfileRepository.save(profile);
+		}
 
-		NexHomeCustomerProfile profile = customerProfileMapper.toCustomerProfileEntity(request, user, actingUserId);
-		profile.setPreferredLanguage(language(request.preferredLanguage()));
-		profile = customerProfileRepository.save(profile);
-
-		log.info("Customer profile {} created for User ID {}", profile.getPublicId(), user.getId());
+		log.info("Customer profile {} filled in for User ID {}", profile.getPublicId(), user.getId());
 		return customerProfileMapper.toCustomerProfileDto(profile);
 	}
 
@@ -79,7 +94,7 @@ public class NexHomeProfileServiceImpl implements NexHomeProfileService {
 	@Transactional
 	public NexHomeCustomerProfileResponse updateCustomerProfile(NexHomeCustomerProfileUpdateRequest request) {
 		NexHomeCustomerProfile profile = findCustomerProfile(request.customerProfileId());
-		requireSelfOrCan(profile.getUser().getId(), PROFILE_MANAGE, NexHomeAccess.WRITE);
+		requireSelfOrCan(profile.getUser().getId(), CUSTOMER_MANAGE, NexHomeAccess.WRITE);
 
 		customerProfileMapper.updateCustomerProfileEntity(profile, request, permissionService.currentUserId());
 		if (request.preferredLanguage() != null) {
@@ -94,7 +109,7 @@ public class NexHomeProfileServiceImpl implements NexHomeProfileService {
 	@Transactional(readOnly = true)
 	public NexHomeCustomerProfileResponse getCustomerProfile(Long customerProfileId) {
 		NexHomeCustomerProfile profile = findCustomerProfile(customerProfileId);
-		requireSelfOrCan(profile.getUser().getId(), PROFILE_MANAGE, NexHomeAccess.READ);
+		requireSelfOrCan(profile.getUser().getId(), CUSTOMER_MANAGE, NexHomeAccess.READ);
 		return customerProfileMapper.toCustomerProfileDto(profile);
 	}
 
@@ -147,7 +162,6 @@ public class NexHomeProfileServiceImpl implements NexHomeProfileService {
 		Long actingUserId = permissionService.currentUserId();
 		NexHomeAdminProfile profile = findAdminProfile(request.adminProfileId());
 		Long ownerId = profile.getUser().getId();
-		requireSelfOrCan(ownerId, STAFF_MANAGE, NexHomeAccess.WRITE);
 		requireStaffManagerFor(ownerId, actingUserId, request.employeeCode() != null || request.department() != null
 				|| request.jobTitle() != null);
 
@@ -156,7 +170,10 @@ public class NexHomeProfileServiceImpl implements NexHomeProfileService {
 			requireUniqueEmployeeCode(NexHomeText.upperCase(request.employeeCode()), profile.getId());
 		}
 		adminProfileMapper.updateAdminProfileEntity(profile, request, actingUserId);
-		requirePostalCodeForCountry(profile.getCountryCode(), profile.getPostalCode());
+		requireCompleteAddressOrNone(profile);
+		if (profile.getPostalCode() != null) {
+			requirePostalCodeForCountry(profile.getCountryCode(), profile.getPostalCode());
+		}
 
 		log.info("Staff profile {} updated", profile.getPublicId());
 		return adminProfileMapper.toAdminProfileDto(profile);
@@ -166,7 +183,11 @@ public class NexHomeProfileServiceImpl implements NexHomeProfileService {
 	@Transactional(readOnly = true)
 	public NexHomeAdminProfileResponse getAdminProfile(Long adminProfileId) {
 		NexHomeAdminProfile profile = findAdminProfile(adminProfileId);
-		requireSelfOrCan(profile.getUser().getId(), STAFF_MANAGE, NexHomeAccess.READ);
+		Long ownerId = profile.getUser().getId();
+		if (!ownerId.equals(permissionService.currentUserId())
+				&& !permissionService.canManageStaff(ownerId, NexHomeAccess.READ.name())) {
+			throw new AccessDeniedException("No read access to this staff profile.");
+		}
 		return adminProfileMapper.toAdminProfileDto(profile);
 	}
 
@@ -190,16 +211,14 @@ public class NexHomeProfileServiceImpl implements NexHomeProfileService {
 	}
 
 	/**
-	 * Staff may maintain their own names and address. Employee details, and anyone else's profile, need STAFF_MANAGE
-	 * write; a super user's profile can only be changed by a super user (other than by its owner).
+	 * Staff may maintain their own names and address. Employee details, and anyone else's profile, need write on the
+	 * owner's staff role function: ADMIN_MANAGE for an admin, SUB_ADMIN_MANAGE for a sub-admin; a super user's
+	 * profile can only be changed by a super user (other than by its owner).
 	 */
 	private void requireStaffManagerFor(Long ownerId, Long actingUserId, boolean employeeDetails) {
 		boolean self = ownerId.equals(actingUserId);
-		if ((!self || employeeDetails) && !permissionService.can(STAFF_MANAGE, NexHomeAccess.WRITE.name())) {
-			throw new AccessDeniedException("Employee details need STAFF_MANAGE write.");
-		}
-		if (!self && permissionService.isSuperUser(ownerId) && !permissionService.isSuperUser(actingUserId)) {
-			throw new AccessDeniedException("Only a super user can change a super user's staff profile.");
+		if ((!self || employeeDetails) && !permissionService.canManageStaff(ownerId, NexHomeAccess.WRITE.name())) {
+			throw new AccessDeniedException("No write access to this staff profile's employee details.");
 		}
 	}
 
@@ -224,6 +243,18 @@ public class NexHomeProfileServiceImpl implements NexHomeProfileService {
 	private String language(String code) {
 		return NexHomeText.trimToNull(code) == null ? null
 				: lookupService.validateCode(Types.PREFERRED_CONTACT_LANGUAGE, code, "Preferred language");
+	}
+
+	/**
+	 * A staff profile created from the admin console has no address yet (V8); once one is given, its four required
+	 * parts must all be there (also {@code ck_nexhome_admin_profiles_address}).
+	 */
+	private static void requireCompleteAddressOrNone(NexHomeAdminProfile profile) {
+		long given = Stream.of(profile.getAddressLine1(), profile.getCity(), profile.getState(),
+				profile.getPostalCode()).filter(Objects::nonNull).count();
+		if (given != 0 && given != 4) {
+			throw new InvalidRequestException("Address line 1, city, state and postal code must be given together.");
+		}
 	}
 
 	/** Indian addresses need a 6-digit PIN code; other countries keep the general format checked by the request. */

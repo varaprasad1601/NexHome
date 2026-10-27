@@ -225,21 +225,24 @@ const ERRORS = {
   "auth-otp-request": [[400, "Purpose must be one of: LOGIN, REGISTRATION, PHONE_CHANGE, SERVICE_START, SERVICE_COMPLETION."],
     [400, "Use the phone change endpoints to change a mobile number."], [400, NOT_ACTIVE],
     [400, "This mobile number is already verified. Log in instead."], [404, "No account exists with this mobile number."],
-    [429, "Please wait before requesting another OTP."]],
+    [429, "Please wait 42 seconds before requesting another OTP."]],
+  "auth-admin-otp-request": [[400, "Mobile number must be 6 to 15 digits"],
+    [404, "Invalid user. This mobile number does not have admin access."],
+    [429, "Please wait 42 seconds before requesting another OTP."]],
   "auth-otp-verify": [[400, "OTP must be 4 to 8 digits"], [400, NO_PENDING], [400, "OTP is incorrect."],
     [400, "Too many wrong attempts. Request a new OTP."], [400, "OTP has expired. Request a new one."], [400, NOT_ACTIVE]],
   "auth-refresh": [[400, "Refresh token is required"], [401, "The refresh token is invalid or has expired."], [401, NOT_ACTIVE]],
   "auth-logout": [[400, "Refresh token is required"]],
   "auth-logout-all": [],
   "auth-phone-request": [[400, NOT_ACTIVE], [409, "An account already exists with this mobile number"],
-    [429, "Please wait before requesting another OTP."]],
+    [429, "Please wait 42 seconds before requesting another OTP."]],
   "auth-phone-verify": [[400, NO_PENDING], [400, "OTP is incorrect."], [400, "OTP has expired. Request a new one."],
     [409, "An account already exists with this mobile number"]],
   "users-create": [[400, "Mobile number must be 6 to 15 digits"], [400, "Role is required"],
     [404, "Role Not Found or Inactive"], [409, "An account already exists with this mobile number"],
     [409, "An account already exists with this email"]],
   "users-me": [],
-  "users-customers": LIST_ERRORS, "users-partners": LIST_ERRORS, "users-admins": LIST_ERRORS, "users-sub-admins": LIST_ERRORS, "users-super-users": LIST_ERRORS,
+  "users-customers": LIST_ERRORS, "users-partners": [...LIST_ERRORS, [400, "Onboarding status must be one of: DRAFT, PROFILE_INCOMPLETE, UNDER_REVIEW, TRAINING_REQUIRED, APPROVED, REJECTED, SUSPENDED."]], "users-admins": LIST_ERRORS, "users-sub-admins": LIST_ERRORS, "users-super-users": LIST_ERRORS,
   "users-get": [[404, "User does not exist."]],
   "users-update": [[400, "Mobile number can only be changed with a phone change OTP"], [400, "Account status cannot be updated here"],
     [404, "User does not exist."], [409, "An account already exists with this email"]],
@@ -273,8 +276,12 @@ const ERRORS = {
     [400, "Country code must be a 2-letter ISO country code, e.g. IN"], [404, "User does not exist."],
     [409, "This account already has a staff profile."], [409, "Another staff profile has this employee code."]],
   "profiles-admins-update": [[400, "Admin profile ID is required"], [400, "User cannot be updated"], [400, "City cannot be blank"],
-    [400, "Postal code must be a 6-digit PIN code for India."], [404, "Staff profile does not exist."],
+    [400, "Postal code must be a 6-digit PIN code for India."],
+    [400, "Address line 1, city, state and postal code must be given together."], [404, "Staff profile does not exist."],
     [409, "Another staff profile has this employee code."]],
+  "users-staff": [[400, "Page must be 0 or more."], [400, "Size must be between 1 and 100."],
+    [400, "Role must be one of: SUPER_USER, ADMIN, SUB_ADMIN."],
+    [400, "Account status must be one of: ACTIVE, SUSPENDED, BLOCKED, DEACTIVATED."]],
   "profiles-admins-me": [[404, "You do not have a staff profile yet."]],
   "profiles-admins-get": [[404, "Staff profile does not exist."]],
   "profiles-admins-list": PROFILE_LIST_ERRORS,
@@ -431,7 +438,13 @@ const LIST_PARAMS = [
   ["search", "string", Q, "Part of the mobile number or email, e.g. 98765."]];
 const CUSTOMER_RESPONSE = { userId: 21, countryCode: "+91", mobileNumber: "9876543210", email: "ravi.kumar@example.com",
   profilePhotoUrl: null, accountStatus: "ACTIVE", accountVerifiedDate: DATE, lastLoginAt: DATE, roles: [ROLE_CUSTOMER], creationDate: DATE };
+const CUSTOMER_ROW = { userId: 21, customerProfileId: 7, publicId: "NHCUST0007", firstName: "Ravi", lastName: "Kumar",
+  countryCode: "+91", mobileNumber: "9876543210", email: "ravi.kumar@example.com", profilePhotoUrl: null, accountStatus: "ACTIVE",
+  accountVerifiedDate: DATE, lastLoginAt: DATE, roles: [ROLE_CUSTOMER], creationDate: DATE };
 const userPage = (user) => ({ content: [user], page: 0, size: 10, totalElements: 1, totalPages: 1 });
+const STAFF_RESPONSE = { userId: 31, adminProfileId: 12, publicId: "NHADMI0012", firstName: "Rahul", lastName: "Mehta",
+  email: "rahul@nexhome.com", countryCode: "+91", mobileNumber: "9876543210", roleCode: "ADMIN", roleName: "Admin",
+  accountStatus: "ACTIVE", lastLoginAt: null, creationDate: DATE };
 
 const NAME_RULE = "Letters of any script, spaces, dots, apostrophes and hyphens; repeated spaces are collapsed.";
 const PROFILE_LIST_PARAMS = [
@@ -573,7 +586,7 @@ const SERVICE_FIELDS = (update) => [
 
 const API = [  { group: "Authentication", items: [
     { id: "auth-register", method: "POST", path: "/api/auth/register", title: "Sign up (customer / partner)", success: 201, access: "public",
-      desc: "Creates an ACTIVE account for a new mobile number with the CUSTOMER or PARTNER role and sends a <b>REGISTRATION</b> OTP. Then call <a href=\"#auth-otp-verify\">Verify OTP</a> with purpose <code>REGISTRATION</code>, which verifies the number and signs the user in. Staff accounts are created by an admin with <a href=\"#users-create\">Create user</a>.",
+      desc: "Creates an ACTIVE account for a new mobile number with the CUSTOMER or PARTNER role, with its empty customer profile (NHCUST id) or DRAFT partner profile (NHPART id), and sends a <b>REGISTRATION</b> OTP. Then call <a href=\"#auth-otp-verify\">Verify OTP</a> with purpose <code>REGISTRATION</code>, which verifies the number and signs the user in. Staff accounts are created by an admin with <a href=\"#users-create\">Create user</a>.",
       params: [...PHONE_RULES,
         ["email", "string", O, "Valid email with a dotted domain; stored lower-case; must be unused (409)."],
         ["roleCode", "string", R, "CUSTOMER or PARTNER."]],
@@ -583,6 +596,10 @@ const API = [  { group: "Authentication", items: [
       desc: "Sends a 6-digit OTP, valid for 5 minutes. <b>LOGIN</b> needs an existing ACTIVE account; <b>REGISTRATION</b> resends the sign-up OTP while the number is unverified. A new OTP replaces the pending one; wait 60 seconds between requests. <br><b>No SMS provider yet:</b> with the <code>dev</code> profile the OTP is printed in the backend log as <code>OTP &lt;id&gt; for +91 &lt;number&gt; (LOGIN): &lt;otp&gt;</code>.",
       params: [...PHONE_RULES, ["purpose", "string", R, "LOGIN or REGISTRATION. (PHONE_CHANGE has its own endpoints; booking OTPs come later.)"]],
       example: { countryCode: "+91", mobileNumber: SUPER_USER_MOBILE, purpose: "LOGIN" }, returns: OTP_PENDING },
+    { id: "auth-admin-otp-request", method: "POST", path: "/api/auth/admin/otp/request", title: "Request admin login OTP", success: 201, access: "public",
+      desc: "The admin sign-in (web <code>/admin</code>): sends a LOGIN OTP <b>only</b> when the number belongs to an ACTIVE account holding SUPER_USER, ADMIN or SUB_ADMIN. An unknown number, a customer or partner account and an inactive staff account all get the same 404, so the endpoint does not reveal which numbers have accounts. Verify the code with <b>Verify OTP</b> (purpose LOGIN). Same 5-minute expiry and 60-second resend wait as Request OTP.",
+      params: PHONE_RULES,
+      example: { countryCode: "+91", mobileNumber: SUPER_USER_MOBILE }, returns: OTP_PENDING },
     { id: "auth-otp-verify", method: "POST", path: "/api/auth/otp/verify", title: "Verify OTP (log in)", success: 200, access: "public", savesTokens: "tokens",
       desc: "Checks the OTP and signs the user in: the response has the user and <code>tokens</code>. <b>This page saves the access token</b> (sidebar) and refresh token, so the protected endpoints work right after. 5 wrong attempts lock the OTP.",
       params: [...PHONE_RULES,
@@ -613,18 +630,47 @@ const API = [  { group: "Authentication", items: [
         user: { ...SUPER_USER_RESPONSE, mobileNumber: "9000012345" }, tokens: null } }
   ]},
   { group: "Users", items: [
-    { id: "users-customers", method: "GET", path: "/api/users/customers", title: "All customers", success: 200, access: "USER_MANAGE READ",
-      desc: "Users who currently hold the CUSTOMER role, newest first, 10 per page unless <code>size</code> says otherwise. Allowed for SUPER_USER, ADMIN and SUB_ADMIN. Leave a query field empty to skip it.",
-      params: LIST_PARAMS, returns: userPage(CUSTOMER_RESPONSE) },
-    { id: "users-partners", method: "GET", path: "/api/users/partners", title: "All partners", success: 200, access: "USER_MANAGE READ",
-      desc: "Users who currently hold the PARTNER role, newest first. Allowed for SUPER_USER, ADMIN and SUB_ADMIN.",
-      params: LIST_PARAMS, returns: userPage({ ...CUSTOMER_RESPONSE, userId: 22, mobileNumber: "9988776655", email: null,
-        roles: [{ roleId: 5, roleCode: "PARTNER", roleName: "Partner", isActive: true, assignedAt: DATE }] }) },
-    { id: "users-admins", method: "GET", path: "/api/users/admins", title: "All admins", success: 200, access: "STAFF_MANAGE READ",
-      desc: "Users who currently hold the ADMIN role, newest first. Allowed for SUPER_USER and ADMIN only (SUB_ADMIN gets 403).",
+    { id: "users-customers", method: "GET", path: "/api/users/customers", title: "All customers", success: 200, access: "CUSTOMER_MANAGE READ",
+      desc: "Users who currently hold the CUSTOMER role, newest first, 10 per page unless <code>size</code> says otherwise, with their customer profile's id, public id and name (null until the customer creates the profile). Used by the console's Manage Customers. Leave a query field empty to skip it.",
+      params: [...LIST_PARAMS.slice(0, 3), ["search", "string", Q, "Part of the mobile number, email, \"first last\" name or customer id, e.g. NHCUST0007."]],
+      returns: userPage(CUSTOMER_ROW) },
+    { id: "users-customers-stats", method: "GET", path: "/api/users/customers/stats", title: "Customer counts", success: 200, access: "CUSTOMER_MANAGE READ",
+      desc: "Current customers in total and by account status; inactive = DEACTIVATED.", params: [],
+      returns: { total: 120, active: 112, inactive: 5, suspended: 2, blocked: 1 } },
+    { id: "users-stats", method: "GET", path: "/api/users/stats", title: "Customer and partner stats", success: 200, access: "CUSTOMER_MANAGE or PARTNER_MANAGE READ",
+      desc: "For the admin dashboard: how many users currently hold CUSTOMER and PARTNER (active assignment of an active role), how many were given the role this calendar month (IST), and the last 10 months oldest first, each with that month's additions and the total at its end (this month: now). Users whose role was withdrawn do not count in any month.",
+      params: [],
+      returns: { customers: { roleCode: "CUSTOMER", total: 12840, addedThisMonth: 1420,
+          months: [{ month: "2026-01", added: 980, total: 6210 }, "…", { month: "2026-10", added: 1420, total: 12840 }] },
+        partners: { roleCode: "PARTNER", total: 845, addedThisMonth: 65,
+          months: [{ month: "2026-01", added: 40, total: 412 }, "…", { month: "2026-10", added: 65, total: 845 }] } } },
+    { id: "users-staff", method: "GET", path: "/api/users/staff", title: "Staff list (admin console)", success: 200, access: "ADMIN_MANAGE or SUB_ADMIN_MANAGE READ",
+      desc: "Users who currently hold SUPER_USER, ADMIN or SUB_ADMIN (active assignment of an active role), newest first, with their staff profile's name and public id (names null until filled in) and their highest staff role. Only the staff roles the caller may read are listed: ADMIN with ADMIN_MANAGE read, SUB_ADMIN with SUB_ADMIN_MANAGE read; <b>super users for super users only</b>. Asking for another <code>roleCode</code> is 403.",
+      params: [["page", "number", Q, "Zero-based page number; default 0."],
+        ["size", "number", Q, "Staff per page, 1 to 100; default 10."],
+        ["roleCode", "string", Q, "Only holders of SUPER_USER, ADMIN or SUB_ADMIN."],
+        ["accountStatus", "string", Q, "ACTIVE, SUSPENDED, BLOCKED or DEACTIVATED."],
+        ["search", "string", Q, "Part of the mobile number, email, name (first, last or \"first last\") or public id, e.g. rahul."]],
+      returns: { content: [STAFF_RESPONSE], page: 0, size: 10, totalElements: 1, totalPages: 1 } },
+    { id: "users-staff-stats", method: "GET", path: "/api/users/staff/stats", title: "Staff counts", success: 200, access: "ADMIN_MANAGE or SUB_ADMIN_MANAGE READ",
+      desc: "The staff accounts the caller may see (as Staff list), in total and by account status; inactive = DEACTIVATED.",
+      params: [["roleCode", "string", Q, "Only holders of SUPER_USER, ADMIN or SUB_ADMIN, e.g. ADMIN for the Admins tab."]], returns: { total: 12, active: 10, inactive: 1, suspended: 1, blocked: 0 } },
+    { id: "users-partners", method: "GET", path: "/api/users/partners", title: "All partners", success: 200, access: "PARTNER_MANAGE READ",
+      desc: "Users who currently hold the PARTNER role, newest first, with their onboarding profile's id, public id, name, city, main service category and statuses (null until the partner starts the profile). Used by the console's Manage Partners.",
+      params: [...LIST_PARAMS.slice(0, 3), ["onboardingStatus", "string", Q, "A PARTNER_ONBOARDING_STATUS code, or NOT_STARTED for partners without a profile."],
+        ["search", "string", Q, "Part of the mobile number, email, \"first last\" name or partner id, e.g. NHPART0004."]],
+      returns: userPage({ userId: 22, partnerProfileId: 4, publicId: "NHPART0004", firstName: "Suresh", lastName: "Babu", countryCode: "+91",
+        mobileNumber: "9988776655", email: null, profilePhotoUrl: null, accountStatus: "ACTIVE", accountVerifiedDate: DATE, lastLoginAt: DATE,
+        city: "Nuzvid", mainServiceCategoryId: 3, mainServiceCategoryName: "Plumbing", onboardingStatus: "APPROVED", verificationStatus: "VERIFIED",
+        availabilityStatus: "ONLINE", roles: [{ roleId: 5, roleCode: "PARTNER", roleName: "Partner", isActive: true, assignedAt: DATE }], creationDate: DATE }) },
+    { id: "users-partners-stats", method: "GET", path: "/api/users/partners/stats", title: "Partner counts", success: 200, access: "PARTNER_MANAGE READ",
+      desc: "Partners in total; approved; awaiting review (UNDER_REVIEW or TRAINING_REQUIRED); not submitted (no profile, DRAFT or PROFILE_INCOMPLETE); and approved partners who are ONLINE.",
+      params: [], returns: { total: 48, approved: 31, awaitingReview: 6, notSubmitted: 11, online: 9 } },
+    { id: "users-admins", method: "GET", path: "/api/users/admins", title: "All admins", success: 200, access: "ADMIN_MANAGE READ",
+      desc: "Users who currently hold the ADMIN role, newest first.",
       params: LIST_PARAMS, returns: userPage(ADMIN_RESPONSE) },
-    { id: "users-sub-admins", method: "GET", path: "/api/users/sub-admins", title: "All sub-admins", success: 200, access: "STAFF_MANAGE READ",
-      desc: "Users who currently hold the SUB_ADMIN role, newest first. Allowed for SUPER_USER and ADMIN only (SUB_ADMIN gets 403).",
+    { id: "users-sub-admins", method: "GET", path: "/api/users/sub-admins", title: "All sub-admins", success: 200, access: "SUB_ADMIN_MANAGE READ",
+      desc: "Users who currently hold the SUB_ADMIN role, newest first.",
       params: LIST_PARAMS, returns: userPage({ ...ADMIN_RESPONSE, userId: 23, mobileNumber: "9123456781", email: "kiran.ops@nexhome.in",
         roles: [{ roleId: 3, roleCode: "SUB_ADMIN", roleName: "Sub Admin", isActive: true, assignedAt: DATE }] }) },
     { id: "users-super-users", method: "GET", path: "/api/users/super-users", title: "All super users", success: 200, access: "SUPER_USER only",
@@ -632,17 +678,22 @@ const API = [  { group: "Authentication", items: [
       params: LIST_PARAMS, returns: userPage(SUPER_USER_RESPONSE) },
     { id: "users-me", method: "GET", path: "/api/users/me", title: "My account", success: 200, access: "token",
       desc: "The signed-in user with their roles.", params: [], returns: SUPER_USER_RESPONSE },
-    { id: "users-create", method: "POST", path: "/api/users/create", title: "Create user (staff)", success: 201, access: "USER_MANAGE WRITE",
-      desc: "Creates an ACTIVE account with one role, e.g. an admin. The person then logs in with a LOGIN OTP, which also verifies the number. Only a super user can create a SUPER_USER (403 otherwise).",
+    { id: "users-me-permissions", method: "GET", path: "/api/users/me/permissions", title: "My permissions", success: 200, access: "token",
+      desc: "What the signed-in user may do, function by function: the union of the grants of their active roles (active role functions of active functions). A super user gets every active function with full access. An account that is not ACTIVE gets none. The admin console uses it to hide menus without read and actions without write or delete; the backend still checks every request.",
+      params: [], returns: { isSuperUser: false, functions: [
+        { functionModule: "USER_MANAGEMENT", functionCode: "ADMIN_MANAGE", canRead: true, canWrite: false, canDelete: false },
+        { functionModule: "USER_MANAGEMENT", functionCode: "CUSTOMER_MANAGE", canRead: true, canWrite: false, canDelete: false }] } },
+    { id: "users-create", method: "POST", path: "/api/users/create", title: "Create user (staff)", success: 201, access: "role's function WRITE",
+      desc: "Creates an ACTIVE account with one role, e.g. an admin (the admin console's Add Admin uses this with roleId 2). The person then logs in with a LOGIN OTP, which also verifies the number. <b>The account also gets its profile at once</b>, with its public id and no names yet: a staff profile (NHADMI) for SUPER_USER / ADMIN / SUB_ADMIN, filled in with Update staff profile (My Profile); a customer profile (NHCUST) for CUSTOMER; a DRAFT partner profile (NHPART) for PARTNER. Needs write on the role's function (ADMIN_MANAGE, SUB_ADMIN_MANAGE, CUSTOMER_MANAGE, PARTNER_MANAGE); only a super user can create a SUPER_USER (403 otherwise).",
       params: [...PHONE_RULES,
         ["email", "string", O, "Valid email; stored lower-case; must be unused (409)."],
         ["profilePhotoUrl", "string", O, "http or https URL."],
         ["roleId", "number", R, "Active role: SUPER_USER 1, ADMIN 2, SUB_ADMIN 3, CUSTOMER 4, PARTNER 5."]],
       example: { countryCode: "+91", mobileNumber: "9123456780", email: "priya.admin@nexhome.in", roleId: 2 }, returns: ADMIN_RESPONSE },
-    { id: "users-get", method: "GET", path: "/api/users/{userId}", title: "Get user", success: 200, access: "self or USER_MANAGE READ",
+    { id: "users-get", method: "GET", path: "/api/users/{userId}", title: "Get user", success: 200, access: "self or account's function READ",
       desc: "One user with their roles. Anyone may read their own account.",
       params: [["userId", "number", P, "Must exist."]], pathDefaults: { userId: "13" }, returns: SUPER_USER_RESPONSE },
-    { id: "users-update", method: "PUT", path: "/api/users/update", title: "Update user", success: 200, access: "self or USER_MANAGE WRITE",
+    { id: "users-update", method: "PUT", path: "/api/users/update", title: "Update user", success: 200, access: "self or account's function WRITE",
       desc: "Updates email and profile photo. Send only what changes; <code>\"\"</code> clears a field. Users may update themselves.",
       params: [
         ["userId", "number", R, "Must exist; otherwise 404."],
@@ -654,17 +705,17 @@ const API = [  { group: "Authentication", items: [
         ["roleId", "number", N, "Use the role endpoints."]],
       example: { userId: 13, email: "admin@nexhome.in", profilePhotoUrl: "https://cdn.nexhome.in/users/13.png" },
       returns: { ...SUPER_USER_RESPONSE, email: "admin@nexhome.in", profilePhotoUrl: "https://cdn.nexhome.in/users/13.png" } },
-    { id: "users-status", method: "PUT", path: "/api/users/status/update", title: "Update account status", success: 200, access: "USER_MANAGE WRITE",
+    { id: "users-status", method: "PUT", path: "/api/users/status/update", title: "Update account status", success: 200, access: "account's function WRITE",
       desc: "Sets the account status. Leaving ACTIVE ends all the user's sessions and removes their permissions at once. Users are never deleted: use DEACTIVATED. You cannot change your own status, and only a super user can change a super user's.",
       params: [
         ["userId", "number", R, "Must exist; not yourself."],
         ["accountStatus", "string", R, "ACTIVE, SUSPENDED, BLOCKED or DEACTIVATED (ACCOUNT_STATUS lookup)."]],
       example: { userId: 20, accountStatus: "SUSPENDED" }, returns: { ...ADMIN_RESPONSE, accountStatus: "SUSPENDED" } },
-    { id: "users-roles-assign", method: "POST", path: "/api/users/roles/assign", title: "Assign role", success: 201, access: "USER_MANAGE WRITE",
+    { id: "users-roles-assign", method: "POST", path: "/api/users/roles/assign", title: "Assign role", success: 201, access: "role's function WRITE",
       desc: "Gives the user another role; one account can hold several, e.g. CUSTOMER and PARTNER. Only a super user can assign SUPER_USER.",
       params: [["userId", "number", R, "Must exist."], ["roleId", "number", R, "Active role the user does not have yet."]],
       example: { userId: 20, roleId: 4 }, returns: { ...ADMIN_RESPONSE, roles: [ROLE_ADMIN, ROLE_CUSTOMER] } },
-    { id: "users-roles-update", method: "PUT", path: "/api/users/roles/update", title: "Activate / withdraw role", success: 200, access: "USER_MANAGE WRITE",
+    { id: "users-roles-update", method: "PUT", path: "/api/users/roles/update", title: "Activate / withdraw role", success: 200, access: "role's function WRITE",
       desc: "Turns one of the user's roles off or on again. Only a super user can change a SUPER_USER assignment.",
       params: [["userId", "number", R, "Must have the role."], ["roleId", "number", R, "The role."],
         ["isActive", "boolean", R, "false withdraws the role; true restores it (the role itself must be active)."]],
@@ -672,8 +723,8 @@ const API = [  { group: "Authentication", items: [
       returns: { ...ADMIN_RESPONSE, roles: [ROLE_ADMIN, { ...ROLE_CUSTOMER, isActive: false }] } }
   ]},
   { group: "Customer profiles", items: [
-    { id: "profiles-customers-create", method: "POST", path: "/api/profiles/customers/create", title: "Create customer profile", success: 201, access: "self or PROFILE_MANAGE WRITE",
-      desc: "Names and preferences of an account that holds the CUSTOMER role; one per account. The public id (NHCUST0001, ...) is generated. Customers create their own; staff need PROFILE_MANAGE write.",
+    { id: "profiles-customers-create", method: "POST", path: "/api/profiles/customers/create", title: "Create customer profile", success: 201, access: "self or CUSTOMER_MANAGE WRITE",
+      desc: "Names and preferences of an account that holds the CUSTOMER role. Every customer account already has an empty profile with its customer id (NHCUST0001, ...) from sign-up; this fills it in and keeps the id. A profile that already has a name answers 409. Customers create their own; staff need CUSTOMER_MANAGE write.",
       params: [["userId", "number", R, "The customer's account (yours, from My account)."],
         ["firstName", "string", R, "At most 100 characters. " + NAME_RULE],
         ["lastName", "string", R, "At most 100 characters. " + NAME_RULE],
@@ -682,7 +733,7 @@ const API = [  { group: "Authentication", items: [
         ["marketingConsent", "boolean", O, "Defaults to false."]],
       example: { userId: 21, firstName: "Ravi Teja", lastName: "Kumar", dateOfBirth: "1994-03-12", preferredLanguage: "te" },
       returns: CUSTOMER_PROFILE_RESPONSE },
-    { id: "profiles-customers-update", method: "PUT", path: "/api/profiles/customers/update", title: "Update customer profile", success: 200, access: "owner or PROFILE_MANAGE WRITE",
+    { id: "profiles-customers-update", method: "PUT", path: "/api/profiles/customers/update", title: "Update customer profile", success: 200, access: "owner or CUSTOMER_MANAGE WRITE",
       desc: "Send only what changes. Names cannot be blanked; <code>\"\"</code> clears the preferred language.",
       params: [["customerProfileId", "number", R, "From the create response or My customer profile."],
         ["firstName", "string", O, NAME_RULE], ["lastName", "string", O, NAME_RULE],
@@ -693,15 +744,15 @@ const API = [  { group: "Authentication", items: [
       returns: { ...CUSTOMER_PROFILE_RESPONSE, lastName: "Varma", marketingConsent: true } },
     { id: "profiles-customers-me", method: "GET", path: "/api/profiles/customers/me", title: "My customer profile", success: 200, access: "token",
       desc: "The signed-in user's customer profile; 404 until it is created.", params: [], returns: CUSTOMER_PROFILE_RESPONSE },
-    { id: "profiles-customers-get", method: "GET", path: "/api/profiles/customers/{customerProfileId}", title: "Get customer profile", success: 200, access: "owner or PROFILE_MANAGE READ",
+    { id: "profiles-customers-get", method: "GET", path: "/api/profiles/customers/{customerProfileId}", title: "Get customer profile", success: 200, access: "owner or CUSTOMER_MANAGE READ",
       desc: "One customer profile.", params: [["customerProfileId", "number", P, "Must exist."]], pathDefaults: { customerProfileId: "5" },
       returns: CUSTOMER_PROFILE_RESPONSE },
-    { id: "profiles-customers-list", method: "GET", path: "/api/profiles/customers", title: "All customer profiles", success: 200, access: "PROFILE_MANAGE READ",
-      desc: "Customer profiles, newest first. Allowed for SUPER_USER, ADMIN and SUB_ADMIN.", params: PROFILE_LIST_PARAMS,
+    { id: "profiles-customers-list", method: "GET", path: "/api/profiles/customers", title: "All customer profiles", success: 200, access: "CUSTOMER_MANAGE READ",
+      desc: "Customer profiles, newest first.", params: PROFILE_LIST_PARAMS,
       returns: page(CUSTOMER_PROFILE_RESPONSE) }
   ]},
   { group: "Addresses", items: [
-    { id: "addresses-create", method: "POST", path: "/api/addresses/create", title: "Add address", success: 201, access: "self or PROFILE_MANAGE WRITE",
+    { id: "addresses-create", method: "POST", path: "/api/addresses/create", title: "Add address", success: 201, access: "self or CUSTOMER_MANAGE WRITE",
       desc: "A service address of an account holding the CUSTOMER role; customers may have many. The first one becomes the default; <code>isDefault: true</code> makes a later one the default instead (the previous default is cleared).",
       params: [["userId", "number", R, "The customer's account."],
         ["contactName", "string", R, "At most 150 characters."],
@@ -715,7 +766,7 @@ const API = [  { group: "Authentication", items: [
       example: { userId: 21, contactName: "Ravi Teja", mobileNumber: "9876543210", addressType: "HOME", label: "Home",
         addressLine1: "Plot 12, Road 3, Jubilee Hills", landmark: "Opp. KBR Park", city: "Hyderabad", state: "Telangana",
         postalCode: "500033", latitude: 17.4325, longitude: 78.4071 }, returns: ADDRESS_RESPONSE },
-    { id: "addresses-update", method: "PUT", path: "/api/addresses/update", title: "Update address", success: 200, access: "owner or PROFILE_MANAGE WRITE",
+    { id: "addresses-update", method: "PUT", path: "/api/addresses/update", title: "Update address", success: 200, access: "owner or CUSTOMER_MANAGE WRITE",
       desc: "Send only what changes; <code>\"\"</code> clears the label, address line 2 or landmark. <code>isDefault: true</code> makes this the default; <code>false</code> leaves the customer without one.",
       params: [["addressId", "number", R, "Must exist."], ["contactName", "string", O, "Cannot be blanked."],
         ["mobileNumber", "string", O, "6 to 15 digits."], ["addressType", "string", O, "ADDRESS_TYPE code."],
@@ -724,20 +775,20 @@ const API = [  { group: "Authentication", items: [
         ["isDefault", "boolean", O, "true makes it the default; false removes it."],
         ["userId", "number", N, "The owner never changes."], ["publicId", "string", N, "Never changes."]],
       example: { addressId: 11, label: "", isDefault: true }, returns: { ...ADDRESS_RESPONSE, label: null } },
-    { id: "addresses-delete", method: "DELETE", path: "/api/addresses/delete/{addressId}", title: "Delete address", success: 204, access: "owner or PROFILE_MANAGE DELETE",
+    { id: "addresses-delete", method: "DELETE", path: "/api/addresses/delete/{addressId}", title: "Delete address", success: 204, access: "owner or CUSTOMER_MANAGE DELETE",
       desc: "Deletes the address. Deleting the default leaves the customer without one.", danger: "This permanently deletes the address.",
       params: [["addressId", "number", P, "Must exist."]], pathDefaults: { addressId: "" }, returns: "No body (204)." },
     { id: "addresses-me", method: "GET", path: "/api/addresses/me", title: "My addresses", success: 200, access: "token",
       desc: "The signed-in user's addresses: the default first, then newest first.", params: [], returns: [ADDRESS_RESPONSE] },
-    { id: "addresses-user", method: "GET", path: "/api/addresses/users/{userId}", title: "Addresses of a user", success: 200, access: "self or PROFILE_MANAGE READ",
+    { id: "addresses-user", method: "GET", path: "/api/addresses/users/{userId}", title: "Addresses of a user", success: 200, access: "self or CUSTOMER_MANAGE READ",
       desc: "A customer's addresses, the default first.", params: [["userId", "number", P, "Must exist."]], pathDefaults: { userId: "21" },
       returns: [ADDRESS_RESPONSE] },
-    { id: "addresses-get", method: "GET", path: "/api/addresses/{addressId}", title: "Get address", success: 200, access: "owner or PROFILE_MANAGE READ",
+    { id: "addresses-get", method: "GET", path: "/api/addresses/{addressId}", title: "Get address", success: 200, access: "owner or CUSTOMER_MANAGE READ",
       desc: "One address.", params: [["addressId", "number", P, "Must exist."]], pathDefaults: { addressId: "11" }, returns: ADDRESS_RESPONSE }
   ]},
   { group: "Staff profiles", items: [
-    { id: "profiles-admins-create", method: "POST", path: "/api/profiles/admins/create", title: "Create staff profile", success: 201, access: "self or STAFF_MANAGE WRITE",
-      desc: "Names and registered address of a super user, admin or sub-admin; one per account (public id NHADMI0001, ...). Staff may create their own <b>without</b> employee details; the employee code, department and job title, and anyone else's profile, need STAFF_MANAGE write (SUPER_USER, ADMIN). Only a super user can create a super user's profile.",
+    { id: "profiles-admins-create", method: "POST", path: "/api/profiles/admins/create", title: "Create staff profile", success: 201, access: "self or account's function WRITE",
+      desc: "Names and registered address of a super user, admin or sub-admin; one per account (public id NHADMI0001, ...). Staff may create their own <b>without</b> employee details; the employee code, department and job title, and anyone else's profile, need write on the owner's staff role function (ADMIN_MANAGE, SUB_ADMIN_MANAGE) (SUPER_USER, ADMIN). Only a super user can create a super user's profile.",
       params: [["userId", "number", R, "A staff account."],
         ["firstName", "string", R, "At most 100 characters. " + NAME_RULE],
         ["lastName", "string", R, "At most 100 characters. " + NAME_RULE],
@@ -747,25 +798,25 @@ const API = [  { group: "Authentication", items: [
       example: { userId: 20, firstName: "Priya", lastName: "Sharma", employeeCode: "emp-0042", department: "Operations",
         jobTitle: "City Manager", addressLine1: "Flat 4, Road 12, Banjara Hills", landmark: "Near GVK Mall", city: "Hyderabad",
         state: "Telangana", postalCode: "500034" }, returns: ADMIN_PROFILE_RESPONSE },
-    { id: "profiles-admins-update", method: "PUT", path: "/api/profiles/admins/update", title: "Update staff profile", success: 200, access: "owner or STAFF_MANAGE WRITE",
-      desc: "Send only what changes; <code>\"\"</code> clears an optional field. Owners may change their names and address; employee details need STAFF_MANAGE write, and only a super user can change another super user's profile.",
+    { id: "profiles-admins-update", method: "PUT", path: "/api/profiles/admins/update", title: "Update staff profile", success: 200, access: "owner or account's function WRITE",
+      desc: "Send only what changes; <code>\"\"</code> clears an optional field. Owners may change their names and address; employee details need write on the owner's staff role function (ADMIN_MANAGE, SUB_ADMIN_MANAGE), and only a super user can change another super user's profile.",
       params: [["adminProfileId", "number", R, "Must exist."], ["firstName", "string", O, NAME_RULE], ["lastName", "string", O, NAME_RULE],
-        ["employeeCode", "string", O, "STAFF_MANAGE write; \"\" clears it."], ["department", "string", O, "STAFF_MANAGE write."],
-        ["jobTitle", "string", O, "STAFF_MANAGE write."], ...ADDRESS_FIELDS.map(([n, t, , d]) => [n, t, O, d]),
+        ["employeeCode", "string", O, "write on the owner's staff role function (ADMIN_MANAGE, SUB_ADMIN_MANAGE); \"\" clears it."], ["department", "string", O, "write on the owner's staff role function (ADMIN_MANAGE, SUB_ADMIN_MANAGE)."],
+        ["jobTitle", "string", O, "write on the owner's staff role function (ADMIN_MANAGE, SUB_ADMIN_MANAGE)."], ...ADDRESS_FIELDS.map(([n, t, , d]) => [n, t, O, d]),
         ["userId", "number", N, "The owner never changes."], ["publicId", "string", N, "Never changes."]],
       example: { adminProfileId: 2, jobTitle: "Regional Manager" }, returns: { ...ADMIN_PROFILE_RESPONSE, jobTitle: "Regional Manager" } },
     { id: "profiles-admins-me", method: "GET", path: "/api/profiles/admins/me", title: "My staff profile", success: 200, access: "token",
       desc: "The signed-in user's staff profile; 404 until it is created.", params: [], returns: ADMIN_PROFILE_RESPONSE },
-    { id: "profiles-admins-get", method: "GET", path: "/api/profiles/admins/{adminProfileId}", title: "Get staff profile", success: 200, access: "owner or STAFF_MANAGE READ",
+    { id: "profiles-admins-get", method: "GET", path: "/api/profiles/admins/{adminProfileId}", title: "Get staff profile", success: 200, access: "owner or account's function READ",
       desc: "One staff profile.", params: [["adminProfileId", "number", P, "Must exist."]], pathDefaults: { adminProfileId: "2" },
       returns: ADMIN_PROFILE_RESPONSE },
-    { id: "profiles-admins-list", method: "GET", path: "/api/profiles/admins", title: "All staff profiles", success: 200, access: "STAFF_MANAGE READ",
-      desc: "Staff profiles, newest first; <code>search</code> also matches the employee code. Allowed for SUPER_USER and ADMIN.",
+    { id: "profiles-admins-list", method: "GET", path: "/api/profiles/admins", title: "All staff profiles", success: 200, access: "ADMIN_MANAGE and SUB_ADMIN_MANAGE READ",
+      desc: "Staff profiles, newest first; <code>search</code> also matches the employee code. Needs read on both ADMIN_MANAGE and SUB_ADMIN_MANAGE.",
       params: PROFILE_LIST_PARAMS, returns: page(ADMIN_PROFILE_RESPONSE) }
   ]},
   { group: "Partner onboarding", items: [
     { id: "partners-create", method: "POST", path: "/api/partners/profiles/create", title: "Start partner profile", success: 201, access: "self or PARTNER_ONBOARDING_MANAGE WRITE",
-      desc: "Starts the profile of an account holding the PARTNER role as a <b>DRAFT</b> (verification PENDING, OFFLINE); one per account, public id NHPART0001, .... Only the names are required now: save the rest with <a href=\"#partners-update\">Update</a>, then <a href=\"#partners-submit\">Submit</a>. <code>registeredBy</code> is whoever creates it (the partner, or the staff member registering them).",
+      desc: "Every partner account already has an empty <b>DRAFT</b> profile with its partner id (NHPART0001, ...) from sign-up (V16); this fills it in (verification PENDING, OFFLINE) and keeps the id. A profile that already has a name answers 409. Only the names are required now: save the rest with <a href=\"#partners-update\">Update</a>, then <a href=\"#partners-submit\">Submit</a>. <code>registeredBy</code> is whoever creates it (the partner, or the staff member registering them).",
       params: [["userId", "number", R, "The partner's account."],
         ["firstName", "string", R, "At most 80 characters. " + NAME_RULE],
         ["lastName", "string", R, "At most 80 characters. " + NAME_RULE], ...PARTNER_PARAMS],
@@ -799,7 +850,7 @@ const API = [  { group: "Authentication", items: [
       desc: "One partner profile. The Aadhaar number is always masked; the emergency contact is null for anyone but the partner until the partner gives permission.",
       params: [["partnerProfileId", "number", P, "Must exist."]], pathDefaults: { partnerProfileId: "3" }, returns: PARTNER_STAFF_VIEW },
     { id: "partners-list", method: "GET", path: "/api/partners/profiles", title: "All partner profiles", success: 200, access: "PARTNER_ONBOARDING_MANAGE READ",
-      desc: "Partner profiles, newest first, e.g. the review queue with <code>onboardingStatus=UNDER_REVIEW</code>. Allowed for SUPER_USER, ADMIN and SUB_ADMIN. Leave a query field empty to skip it.",
+      desc: "Partner profiles, newest first, e.g. the review queue with <code>onboardingStatus=UNDER_REVIEW</code>. Leave a query field empty to skip it.",
       params: [...PROFILE_LIST_PARAMS.slice(0, 2),
         ["onboardingStatus", "string", Q, "DRAFT, PROFILE_INCOMPLETE, UNDER_REVIEW, TRAINING_REQUIRED, APPROVED, REJECTED or SUSPENDED."],
         ["verificationStatus", "string", Q, "PENDING, IN_REVIEW, VERIFIED, REJECTED or EXPIRED."],
@@ -1131,6 +1182,17 @@ const API = [  { group: "Authentication", items: [
       returns: { ...LOOKUP_VALUE_RESPONSE, displayName: "Madhapur (Hyderabad)", displayOrder: 2 } }
   ]},
   { group: "Roles", items: [
+    { id: "roles-list", method: "GET", path: "/api/roles", title: "List roles", success: 200, access: "ROLE_MANAGE READ",
+      desc: "Every role, active or not, in id order (the seeded roles first). Used by System Configuration > Roles.", params: [],
+      returns: [{ roleId: 1, code: "SUPER_USER", name: "Super User", description: null, activeFlag: true, creationDate: DATE }] },
+    { id: "roles-get", method: "GET", path: "/api/roles/{roleId}", title: "Get role", success: 200, access: "ROLE_MANAGE READ",
+      desc: "One role, active or not.", params: [["roleId", "number", P, "Must exist."]], pathDefaults: { roleId: "2" },
+      returns: { roleId: 2, code: "ADMIN", name: "Admin", description: null, activeFlag: true, creationDate: DATE } },
+    { id: "role-functions-list", method: "GET", path: "/api/roles/functions/{roleId}", title: "A role's permissions", success: 200, access: "ROLE_MANAGE READ",
+      desc: "The functions granted to the role (active or not), by function module and code. Used by System Configuration > Roles > a role.",
+      params: [["roleId", "number", P, "Must exist."]], pathDefaults: { roleId: "2" },
+      returns: [{ roleFunctionId: 1, roleId: 2, roleCode: "ADMIN", functionId: 1, functionCode: "LOOKUP_MANAGE", functionName: "Manage Lookups",
+        canRead: true, canWrite: false, canDelete: false, activeFlag: true, creationDate: DATE }] },
     { id: "roles-create", method: "POST", path: "/api/roles/create", title: "Create role", success: 201, access: "ROLE_MANAGE WRITE",
       desc: "A new role. Give it permissions with <a href=\"#role-functions-add\">Add role function</a>.",
       params: [
@@ -1156,7 +1218,7 @@ const API = [  { group: "Authentication", items: [
   ]},
   { group: "Role functions", items: [
     { id: "role-functions-add", method: "POST", path: "/api/roles/functions/add", title: "Add role function", success: 201, access: "ROLE_MANAGE WRITE",
-      desc: "Grants a role access to a function. <code>canWrite</code> or <code>canDelete</code> also turns on <code>canRead</code>. Seeded functions (dev database): LOOKUP_MANAGE 2, USER_MANAGE 3, ROLE_MANAGE 4, FUNCTION_MANAGE 5, STAFF_MANAGE 7, PROFILE_MANAGE 8, PARTNER_ONBOARDING_MANAGE 9, CATALOG_MANAGE 10, FAQ_MANAGE 11, POLICY_MANAGE 12.",
+      desc: "Grants a role access to a function. <code>canWrite</code> or <code>canDelete</code> also turns on <code>canRead</code>. Look up function ids with <code>GET /api/functions</code>.",
       params: [
         ["roleId", "number", R, "Role must exist (404)."],
         ["functionId", "number", R, "Function must exist (404); the same pair twice gives 409."],
@@ -1181,6 +1243,10 @@ const API = [  { group: "Authentication", items: [
       params: [["roleFunctionId", "number", P, "Must exist."]], pathDefaults: { roleFunctionId: "" }, returns: "No body (204)." }
   ]},
   { group: "Functions", items: [
+    { id: "functions-list", method: "GET", path: "/api/functions", title: "List functions", success: 200, access: "FUNCTION_MANAGE READ",
+      desc: "Every function, active or not, ordered by module and code. Used by System Configuration > Functions.", params: [],
+      returns: [{ functionId: 1, functionModule: "IDENTITY", functionCode: "FUNCTION_MANAGE", functionName: "Manage Functions",
+        functionType: "FEATURE", description: null, activeFlag: true, creationDate: DATE }] },
     { id: "functions-create", method: "POST", path: "/api/functions/create", title: "Create function", success: 201, access: "FUNCTION_MANAGE WRITE",
       desc: "A module, screen, feature, API or action that roles can be granted. Module and code never change. A new admin endpoint is protected by its function code.",
       params: [
@@ -1215,17 +1281,20 @@ const ALL = API.flatMap(g => g.items.map(e => ({ ...e, group: g.group })));
 // Role functions seeded by the migrations (V2, V5, V6): function -> access -> roles. SUPER_USER always has every
 // function. A super user can grant more through Role functions, so a database may differ from this.
 const GRANTS = {
-  LOOKUP_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: [] },
-  USER_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: [] },
+  LOOKUP_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: [], DELETE: [] },
+  CUSTOMER_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: ["ADMIN"] },
+  PARTNER_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: [] },
   ROLE_MANAGE: { READ: ["ADMIN"], WRITE: [], DELETE: [] },
   FUNCTION_MANAGE: { READ: ["ADMIN"], WRITE: [], DELETE: [] },
-  STAFF_MANAGE: { READ: ["ADMIN"], WRITE: ["ADMIN"], DELETE: [] },
-  PROFILE_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: ["ADMIN"] },
+  ADMIN_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: [] },
+  SUB_ADMIN_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: [] },
   PARTNER_ONBOARDING_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: ["ADMIN"] },
   CATALOG_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: ["ADMIN"] },
   FAQ_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: ["ADMIN"] },
   POLICY_MANAGE: { READ: ["ADMIN", "SUB_ADMIN"], WRITE: ["ADMIN"], DELETE: ["ADMIN"] }
 };
+/** The function that guards accounts of each role (NexHomePermissionService.canManageRole). */
+const ACCOUNT_FUNCTIONS = { ADMIN: "ADMIN_MANAGE", SUB_ADMIN: "SUB_ADMIN_MANAGE", CUSTOMER: "CUSTOMER_MANAGE", PARTNER: "PARTNER_MANAGE" };
 const ALL_ROLES = ["SUPER_USER", "ADMIN", "SUB_ADMIN", "CUSTOMER", "PARTNER"];
 // Who "self" / "owner" is, by URL
 const OWNERS = [
@@ -1239,11 +1308,13 @@ const OWNERS = [
 const WHO_NOTES = {
   "auth-register": "Only CUSTOMER and PARTNER accounts can sign themselves up; staff accounts are created with Create user.",
   "users-create": "Only a super user can create a SUPER_USER.",
+  "users-staff": "Only the staff roles the caller may read are listed (ADMIN_MANAGE / SUB_ADMIN_MANAGE read); super users appear only when the caller is a super user.",
+  "users-staff-stats": "Super users are counted only when the caller is a super user.",
   "users-status": "Nobody can change their own status; only a super user can change a super user's.",
   "users-roles-assign": "Only a super user can assign SUPER_USER.",
   "users-roles-update": "Only a super user can change a SUPER_USER assignment.",
-  "profiles-admins-create": "Staff may create their own profile only without employee code, department and job title; those, and other people's profiles, need STAFF_MANAGE WRITE. Only a super user can create a super user's profile.",
-  "profiles-admins-update": "Owners may change their names and address only; employee details need STAFF_MANAGE WRITE. Only a super user can change another super user's profile.",
+  "profiles-admins-create": "Staff may create their own profile only without employee code, department and job title; those, and other people's profiles, need write on the owner's staff role function (ADMIN_MANAGE, SUB_ADMIN_MANAGE). Only a super user can create a super user's profile.",
+  "profiles-admins-update": "Owners may change their names and address only; employee details need write on the owner's staff role function (ADMIN_MANAGE, SUB_ADMIN_MANAGE). Only a super user can change another super user's profile.",
   "partners-update": "The partner can edit only while the profile is DRAFT or PROFILE_INCOMPLETE, and cannot set the registration date; staff can edit at any time.",
   "partners-create": "Only staff can set the registration date.",
   "partners-review": "Nobody can review their own partner profile.",
@@ -1265,6 +1336,22 @@ function whoCanAccess(e) {
   if (isPublic(e)) return ["Anyone, without signing in."];
   if (e.access === "token") return ["Any signed-in user with an ACTIVE account: " + ALL_ROLES.join(", ") + "."];
   if (e.access === "SUPER_USER only") return ["SUPER_USER only. This cannot be granted to other roles."];
+  const accountRule = /^(?:(self|owner) or )?(role's|account's) function (READ|WRITE|DELETE)$/.exec(e.access);
+  if (accountRule) {
+    const [, who, kind, level] = accountRule;
+    const lines = who ? [(OWNERS.find(([prefix]) => e.path.startsWith(prefix))?.[1] ?? "The owner of the record") + "."] : [];
+    lines.push((who ? "Anyone else: " : "") + `${level} on the function of the ${kind === "role's" ? "role given" : "account's role"}: `
+      + Object.entries(ACCOUNT_FUNCTIONS).map(([role, fn]) => `${role} through ${fn} (${["SUPER_USER", ...((GRANTS[fn] || {})[level] || [])].join(", ")})`).join("; ")
+      + ". SUPER_USER accounts and roles without a function: super users only." + (kind === "account's" ? " A staff account goes by its highest staff role." : ""));
+    return lines;
+  }
+  const anyOf = /^(\w+) (or|and) (\w+) (READ|WRITE|DELETE)$/.exec(e.access);
+  if (anyOf) {
+    const [, a, joiner, b, level] = anyOf;
+    const of = (fn) => ["SUPER_USER", ...((GRANTS[fn] || {})[level] || [])];
+    const roles = joiner === "or" ? [...new Set([...of(a), ...of(b)])] : of(a).filter((role) => of(b).includes(role));
+    return [roles.join(", ") + ` (${level} on ${a} ${joiner} ${b}).`];
+  }
   const owner = /^(self|owner) or /.test(e.access);
   const [functionCode, level] = e.access.replace(/^(self|owner) or /, "").split(" ");
   const roles = ["SUPER_USER", ...((GRANTS[functionCode] || {})[level] || [])];
@@ -1380,8 +1467,9 @@ function overviewPage() {
     <table><tr><th>Mark</th><th>Meaning</th></tr>
       <tr><td><span class="access public">Public</span></td><td>No token needed</td></tr>
       <tr><td><span class="access">Signed in</span></td><td>Any valid access token (<code>Authorization: Bearer &lt;token&gt;</code>); otherwise 401</td></tr>
-      <tr><td><span class="access guarded">USER_MANAGE WRITE</span></td><td>One of your active roles must grant this function and flag (role functions); otherwise 403. SUPER_USER always may. Seeded: ADMIN has lookups, users and staff read/write, customer profiles, partner onboarding, catalogue, FAQs and policies read/write/delete, and roles/functions read; SUB_ADMIN has read on everything except staff, roles and functions.</td></tr>
-      <tr><td><span class="access guarded">owner or PROFILE_MANAGE WRITE</span></td><td>Owners may always use it on their own record (profile, address, document, bank account); anyone else needs the function. Checked after the record is loaded, so an unknown id gives 404 first.</td></tr>
+      <tr><td><span class="access guarded">CUSTOMER_MANAGE WRITE</span></td><td>One of your active roles must grant this function and flag (role functions); otherwise 403. SUPER_USER always may. Seeded: ADMIN has admins, sub-admins and partners read/write, customers (with their profiles and addresses), partner onboarding, catalogue, FAQs and policies read/write/delete, and lookups, roles and functions read; SUB_ADMIN has read on everything except roles and functions. Grants change under System Configuration.</td></tr>
+      <tr><td><span class="access guarded">account's function WRITE</span></td><td>Accounts go by their role: ADMIN_MANAGE (admins), SUB_ADMIN_MANAGE (sub-admins), CUSTOMER_MANAGE (customers), PARTNER_MANAGE (partners); a staff account by its highest staff role. Super users' accounts, and roles without a function, are for super users only. <code>role's function</code> is the same for the role being given.</td></tr>
+      <tr><td><span class="access guarded">owner or CUSTOMER_MANAGE WRITE</span></td><td>Owners may always use it on their own record (profile, address, document, bank account); anyone else needs the function. Checked after the record is loaded, so an unknown id gives 404 first.</td></tr>
     </table>
     <h3>Who has which function</h3>
     <p>Seeded grants (Role functions). SUPER_USER always has everything; CUSTOMER and PARTNER have no functions and only reach their own records.</p>

@@ -516,10 +516,35 @@ class NexHomePartnerOnboardingServiceImplTest {
 
 		when(userRoleRepository.existsByUserIdAndRoleCodeAndActiveTrueAndRoleActiveFlagTrue(OWNER_ID, "PARTNER"))
 				.thenReturn(true);
-		when(partnerProfileRepository.existsByUserId(OWNER_ID)).thenReturn(true);
+		// A profile with a name already is a duplicate
+		NexHomePartnerProfile named = new NexHomePartnerProfile();
+		named.setFirstName("Suresh");
+		when(partnerProfileRepository.findByUserId(OWNER_ID)).thenReturn(Optional.of(named));
 		assertThatThrownBy(() -> partnerService.createPartnerProfile(new PartnerFields().toCreate()))
 				.isInstanceOf(DuplicateResourceException.class)
 				.hasMessage("This account already has a partner profile.");
+		verify(partnerProfileRepository, never()).save(any());
+	}
+
+	@Test
+	void createFillsInTheDraftOfTheAccount() {
+		when(userRoleRepository.existsByUserIdAndRoleCodeAndActiveTrueAndRoleActiveFlagTrue(OWNER_ID, "PARTNER"))
+				.thenReturn(true);
+		// The empty DRAFT every partner account gets (V16)
+		NexHomePartnerProfile draft = new NexHomePartnerProfile();
+		draft.setId(90L);
+		draft.setPublicId("NHPART0090");
+		draft.setUser(userRepository.findById(OWNER_ID).orElseThrow());
+		draft.setOnboardingStatus("DRAFT");
+		draft.setVerificationStatus("PENDING");
+		draft.setAvailabilityStatus("OFFLINE");
+		when(partnerProfileRepository.findByUserId(OWNER_ID)).thenReturn(Optional.of(draft));
+
+		var filled = partnerService.createPartnerProfile(new PartnerFields().toCreate());
+
+		// The partner id stays; the draft is updated in place, not saved as a second profile
+		assertThat(filled.publicId()).isEqualTo("NHPART0090");
+		assertThat(draft.getFirstName()).isNotNull();
 		verify(partnerProfileRepository, never()).save(any());
 	}
 

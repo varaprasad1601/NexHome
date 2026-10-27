@@ -98,12 +98,31 @@ class NexHomeProfileServiceImplTest {
 		assertThat(response.preferredLanguage()).isEqualTo("te");
 		assertThat(response.marketingConsent()).isFalse();
 
-		when(customerProfileRepository.existsByUserId(OWNER_ID)).thenReturn(false);
+		when(customerProfileRepository.findByUserId(OWNER_ID)).thenReturn(Optional.empty());
 		NexHomeCustomerProfileResponse blank = profileService.createCustomerProfile(
 				new NexHomeCustomerProfileCreateRequest(OWNER_ID, "Ravi", "Kumar", null, "   ", true));
 		assertThat(blank.preferredLanguage()).isNull();
 		assertThat(blank.marketingConsent()).isTrue();
 		verify(lookupService, never()).validateCode(any(), eq("   "), any());
+	}
+
+	@Test
+	void createFillsInTheEmptyProfileOfTheAccount() {
+		customerUser();
+		NexHomeCustomerProfile empty = new NexHomeCustomerProfile();
+		empty.setId(70L);
+		empty.setPublicId("NHCUST0070");
+		empty.setUser(user(OWNER_ID));
+		when(customerProfileRepository.findByUserId(OWNER_ID)).thenReturn(Optional.of(empty));
+
+		NexHomeCustomerProfileResponse response = profileService.createCustomerProfile(
+				new NexHomeCustomerProfileCreateRequest(OWNER_ID, " Ravi  Teja ", "Kumar", null, null, true));
+
+		// The customer id stays; the empty profile is updated in place, not saved as a second one
+		assertThat(response.publicId()).isEqualTo("NHCUST0070");
+		assertThat(empty.getFirstName()).isEqualTo("Ravi Teja");
+		assertThat(empty.isMarketingConsent()).isTrue();
+		verify(customerProfileRepository, never()).save(any());
 	}
 
 	@Test
@@ -116,8 +135,11 @@ class NexHomeProfileServiceImplTest {
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage("Customer profiles are only for accounts with the CUSTOMER role.");
 
+		// A profile with a name already is a duplicate
 		customerUser();
-		when(customerProfileRepository.existsByUserId(OWNER_ID)).thenReturn(true);
+		NexHomeCustomerProfile named = new NexHomeCustomerProfile();
+		named.setFirstName("Ravi");
+		when(customerProfileRepository.findByUserId(OWNER_ID)).thenReturn(Optional.of(named));
 		assertThatThrownBy(() -> profileService.createCustomerProfile(
 				new NexHomeCustomerProfileCreateRequest(OWNER_ID, "Ravi", "Kumar", null, null, null)))
 				.isInstanceOf(DuplicateResourceException.class);
@@ -147,8 +169,8 @@ class NexHomeProfileServiceImplTest {
 	@Test
 	void customerProfileOfSomeoneElseNeedsProfileManage() {
 		NexHomeCustomerProfile profile = existingCustomerProfile();
-		when(permissionService.isSelfOrCan(OWNER_ID, "PROFILE_MANAGE", "WRITE")).thenReturn(false);
-		when(permissionService.isSelfOrCan(OWNER_ID, "PROFILE_MANAGE", "READ")).thenReturn(false);
+		when(permissionService.isSelfOrCan(OWNER_ID, "CUSTOMER_MANAGE", "WRITE")).thenReturn(false);
+		when(permissionService.isSelfOrCan(OWNER_ID, "CUSTOMER_MANAGE", "READ")).thenReturn(false);
 
 		assertThatThrownBy(() -> profileService.updateCustomerProfile(new NexHomeCustomerProfileUpdateRequest(50L,
 				null, null, null, "Varma", null, null, null)))
@@ -183,41 +205,39 @@ class NexHomeProfileServiceImplTest {
 	}
 
 	@Test
-	void employeeDetailsNeedStaffManageWriteEvenForOwnProfile() {
+	void employeeDetailsNeedStaffRoleWriteEvenForOwnProfile() {
 		staffUser();
 		when(permissionService.currentUserId()).thenReturn(OWNER_ID);
 
 		assertThatThrownBy(() -> profileService.createAdminProfile(staffCreate("emp-1", "500034", null)))
 				.isInstanceOf(AccessDeniedException.class)
-				.hasMessage("Employee details need STAFF_MANAGE write.");
+				.hasMessage("No write access to this staff profile's employee details.");
 		verify(adminProfileRepository, never()).save(any());
 
-		when(permissionService.can("STAFF_MANAGE", "WRITE")).thenReturn(true);
+		when(permissionService.canManageStaff(OWNER_ID, "WRITE")).thenReturn(true);
 		assertThat(profileService.createAdminProfile(staffCreate("emp-1", "500034", null)).employeeCode())
 				.isEqualTo("EMP-1");
 	}
 
 	@Test
-	void someoneElsesStaffProfileNeedsStaffManageWrite() {
+	void someoneElsesStaffProfileNeedsStaffRoleWrite() {
 		staffUser();
 
 		assertThatThrownBy(() -> profileService.createAdminProfile(staffCreate(null, "500034", null)))
 				.isInstanceOf(AccessDeniedException.class);
 
-		when(permissionService.can("STAFF_MANAGE", "WRITE")).thenReturn(true);
+		when(permissionService.canManageStaff(OWNER_ID, "WRITE")).thenReturn(true);
 		assertThatCode(() -> profileService.createAdminProfile(staffCreate(null, "500034", null)))
 				.doesNotThrowAnyException();
 	}
 
 	@Test
 	void onlySuperUserChangesSuperUsersStaffProfile() {
+		// canManageStaff is false for a super user's account unless the caller is a super user
 		NexHomeAdminProfile profile = existingAdminProfile();
-		when(permissionService.can("STAFF_MANAGE", "WRITE")).thenReturn(true);
-		when(permissionService.isSuperUser(OWNER_ID)).thenReturn(true);
 
 		assertThatThrownBy(() -> profileService.updateAdminProfile(staffUpdate(null, "Guntur")))
-				.isInstanceOf(AccessDeniedException.class)
-				.hasMessage("Only a super user can change a super user's staff profile.");
+				.isInstanceOf(AccessDeniedException.class);
 		assertThat(profile.getCity()).isEqualTo("Hyderabad");
 
 		// The super user may still change their own profile
@@ -227,7 +247,7 @@ class NexHomeProfileServiceImplTest {
 
 		// And another super user may change it
 		when(permissionService.currentUserId()).thenReturn(ACTING_USER_ID);
-		when(permissionService.isSuperUser(ACTING_USER_ID)).thenReturn(true);
+		when(permissionService.canManageStaff(OWNER_ID, "WRITE")).thenReturn(true);
 		profileService.updateAdminProfile(staffUpdate(null, "Vijayawada"));
 		assertThat(profile.getCity()).isEqualTo("Vijayawada");
 	}
@@ -236,7 +256,7 @@ class NexHomeProfileServiceImplTest {
 	void duplicateEmployeeCodeIsRejectedBeforeTheProfileChanges() {
 		NexHomeAdminProfile profile = existingAdminProfile();
 		profile.setEmployeeCode("EMP-1");
-		when(permissionService.can("STAFF_MANAGE", "WRITE")).thenReturn(true);
+		when(permissionService.canManageStaff(OWNER_ID, "WRITE")).thenReturn(true);
 		NexHomeAdminProfile other = new NexHomeAdminProfile();
 		other.setId(61L);
 		when(adminProfileRepository.findByEmployeeCode("EMP-2")).thenReturn(Optional.of(other));
@@ -256,7 +276,7 @@ class NexHomeProfileServiceImplTest {
 	@Test
 	void duplicateEmployeeCodeOnCreateIsRejected() {
 		staffUser();
-		when(permissionService.can("STAFF_MANAGE", "WRITE")).thenReturn(true);
+		when(permissionService.canManageStaff(OWNER_ID, "WRITE")).thenReturn(true);
 		NexHomeAdminProfile other = new NexHomeAdminProfile();
 		other.setId(61L);
 		when(adminProfileRepository.findByEmployeeCode("EMP-2")).thenReturn(Optional.of(other));
@@ -267,9 +287,9 @@ class NexHomeProfileServiceImplTest {
 	}
 
 	@Test
-	void staffProfileOfSomeoneElseNeedsSelfOrStaffManage() {
+	void staffProfileOfSomeoneElseNeedsWriteOnTheirStaffRole() {
 		NexHomeAdminProfile profile = existingAdminProfile();
-		when(permissionService.isSelfOrCan(OWNER_ID, "STAFF_MANAGE", "WRITE")).thenReturn(false);
+		when(permissionService.canManageStaff(OWNER_ID, "WRITE")).thenReturn(false);
 
 		assertThatThrownBy(() -> profileService.updateAdminProfile(staffUpdate(null, "Guntur")))
 				.isInstanceOf(AccessDeniedException.class);

@@ -44,6 +44,7 @@ public class NexHomeSecurityConfig {
 	private static final String[] PUBLIC_POST_PATHS = {
 			"/api/auth/register",
 			"/api/auth/otp/request",
+			"/api/auth/admin/otp/request",
 			"/api/auth/otp/verify",
 			"/api/auth/token/refresh",
 			"/api/auth/logout" };

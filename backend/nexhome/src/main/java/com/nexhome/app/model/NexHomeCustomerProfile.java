@@ -46,10 +46,11 @@ public class NexHomeCustomerProfile {
 	@JoinColumn(name = "user_id", referencedColumnName = "id", nullable = false, updatable = false)
 	private NexHomeUser user;
 
-	@Column(name = "first_name", nullable = false, length = 100)
+	// Optional since V15: the profile is created with the account, the customer adds the name later
+	@Column(name = "first_name", length = 100)
 	private String firstName;
 
-	@Column(name = "last_name", nullable = false, length = 100)
+	@Column(name = "last_name", length = 100)
 	private String lastName;
 
 	@Column(name = "date_of_birth")
