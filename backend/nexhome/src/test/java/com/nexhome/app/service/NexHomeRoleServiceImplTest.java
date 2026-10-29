@@ -67,7 +67,7 @@ class NexHomeRoleServiceImplTest {
 		});
 		NexHomePermissionService permissionService = mock(NexHomePermissionService.class);
 		when(permissionService.currentUserId()).thenReturn(1L);
-		roleService = new NexHomeRoleServiceImpl(permissionService, roleRepository, functionRepository,
+		roleService = new NexHomeRoleServiceImpl(permissionService, mock(NexHomeAuditRecorder.class), roleRepository, functionRepository,
 				roleFunctionRepository, userRoleRepository, new NexHomeRoleMapper(), new NexHomeRoleFunctionMapper());
 	}
 

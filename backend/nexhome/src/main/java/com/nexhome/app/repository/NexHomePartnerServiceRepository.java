@@ -24,4 +24,8 @@ public interface NexHomePartnerServiceRepository extends JpaRepository<NexHomePa
 	Optional<NexHomePartnerService> findByPartnerIdAndPrimaryServiceTrue(Long partnerId);
 
 	boolean existsByServiceId(Long serviceId);
+
+	/** The partners offering a service (active rows), with the partners and their accounts in the same query. */
+	@EntityGraph(attributePaths = { "partner", "partner.user" })
+	List<NexHomePartnerService> findByServiceIdAndActiveTrue(Long serviceId);
 }

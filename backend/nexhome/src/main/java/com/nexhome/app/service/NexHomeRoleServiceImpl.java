@@ -2,6 +2,7 @@ package com.nexhome.app.service;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,7 @@ import lombok.extern.slf4j.Slf4j;
 public class NexHomeRoleServiceImpl implements NexHomeRoleService {
 
 	private final NexHomePermissionService permissionService;
+	private final NexHomeAuditRecorder auditRecorder;
 	private final NexHomeRoleRepository roleRepository;
 	private final NexHomeFunctionRepository functionRepository;
 	private final NexHomeRoleFunctionRepository roleFunctionRepository;
@@ -50,6 +52,8 @@ public class NexHomeRoleServiceImpl implements NexHomeRoleService {
 
 		NexHomeRole role = roleRepository.save(roleMapper.toRoleEntity(request, permissionService.currentUserId()));
 
+		auditRecorder.record("CREATED", "ROLE", role.getCode(), null, roleValues(role),
+				permissionService.currentUserId());
 		log.info("Role created with Role ID {} ({})", role.getId(), role.getCode());
 		return roleMapper.toRoleDto(role);
 	}
@@ -62,7 +66,10 @@ public class NexHomeRoleServiceImpl implements NexHomeRoleService {
 
 		requireSuperUserForSuperUserRole(role);
 		// The code is never updated (the request rejects it, and the column is not updatable)
+		Map<String, Object> before = roleValues(role);
 		roleMapper.updateRoleEntity(role, request, permissionService.currentUserId());
+		auditRecorder.record("UPDATED", "ROLE", role.getCode(), before, roleValues(role),
+				permissionService.currentUserId());
 
 		log.info("Role updated with Role ID {}", role.getId());
 		return roleMapper.toRoleDto(role);
@@ -106,6 +113,8 @@ public class NexHomeRoleServiceImpl implements NexHomeRoleService {
 		if (userRoleRepository.existsByRoleId(roleId) || roleFunctionRepository.existsByRoleId(roleId)) {
 			throw new DuplicateResourceException("Role is assigned to users or functions; deactivate it instead.");
 		}
+		auditRecorder.record("DELETED", "ROLE", role.getCode(), roleValues(role), null,
+				permissionService.currentUserId());
 		roleRepository.deleteById(roleId);
 
 		log.info("Role deleted with Role ID {}", roleId);
@@ -128,6 +137,8 @@ public class NexHomeRoleServiceImpl implements NexHomeRoleService {
 		NexHomeRoleFunction roleFunction = roleFunctionRepository.save(
 				roleFunctionMapper.toRoleFunctionEntity(request, role, function, permissionService.currentUserId()));
 
+		auditRecorder.record("GRANT_ADDED", "ROLE", role.getCode(), null, grantValues(roleFunction),
+				permissionService.currentUserId());
 		log.info("Role function added with Role Function ID {} (Role ID {}, Function ID {})", roleFunction.getId(),
 				role.getId(), function.getId());
 		return roleFunctionMapper.toRoleFunctionDto(roleFunction);
@@ -140,7 +151,10 @@ public class NexHomeRoleServiceImpl implements NexHomeRoleService {
 				.orElseThrow(() -> new ResourceNotFoundException("Role function does not exist."));
 		requireSuperUserForSuperUserRole(roleFunction.getRole());
 
+		Map<String, Object> before = grantValues(roleFunction);
 		roleFunctionMapper.updateRoleFunctionEntity(roleFunction, request, permissionService.currentUserId());
+		auditRecorder.record("GRANT_UPDATED", "ROLE", roleFunction.getRole().getCode(), before,
+				grantValues(roleFunction), permissionService.currentUserId());
 
 		log.info("Role function updated with Role Function ID {}", roleFunction.getId());
 		return roleFunctionMapper.toRoleFunctionDto(roleFunction);
@@ -152,9 +166,20 @@ public class NexHomeRoleServiceImpl implements NexHomeRoleService {
 		NexHomeRoleFunction roleFunction = roleFunctionRepository.findById(roleFunctionId)
 				.orElseThrow(() -> new ResourceNotFoundException("Role function does not exist."));
 		requireSuperUserForSuperUserRole(roleFunction.getRole());
+		auditRecorder.record("GRANT_REMOVED", "ROLE", roleFunction.getRole().getCode(), grantValues(roleFunction),
+				null, permissionService.currentUserId());
 		roleFunctionRepository.deleteById(roleFunctionId);
 
 		log.info("Role function deleted with Role Function ID {}", roleFunctionId);
+	}
+
+	private static Map<String, Object> roleValues(NexHomeRole role) {
+		return NexHomeAuditRecorder.values("code", role.getCode(), "name", role.getName(), "activeFlag", role.isActiveFlag());
+	}
+
+	private static Map<String, Object> grantValues(NexHomeRoleFunction grant) {
+		return NexHomeAuditRecorder.values("function", grant.getFunction().getFunctionCode(), "canRead", grant.isCanRead(),
+				"canWrite", grant.isCanWrite(), "canDelete", grant.isCanDelete(), "activeFlag", grant.isActiveFlag());
 	}
 
 	/**

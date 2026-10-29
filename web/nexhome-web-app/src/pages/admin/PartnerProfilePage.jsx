@@ -22,6 +22,10 @@ import {
   Send,
   ShieldCheck,
   Star,
+  ThumbsDown,
+  ThumbsUp,
+  Timer,
+  UserCheck,
   UserRound,
   Wallet,
   Wrench
@@ -37,11 +41,16 @@ import LunchBreak from '../../components/admin/partner/LunchBreak';
 import SlotHeading from '../../components/admin/partner/SlotHeading';
 import WeeklyAvailabilityModal from '../../components/admin/partner/WeeklyAvailabilityModal';
 import ActivityLog from '../../components/admin/profile/ActivityLog';
+import FilteredBookings from '../../components/admin/booking/FilteredBookings';
+import PartnerEarnings from '../../components/admin/payment/PartnerEarnings';
+import PartnerSchedule from '../../components/admin/partner/PartnerSchedule';
 import CompletionAvatar from '../../components/admin/profile/CompletionAvatar';
 import StatusMenu from '../../components/admin/profile/StatusMenu';
 import { InfoRow, InfoSection, PendingTab, StatTile } from '../../components/admin/profile/ProfileParts';
+import ProfileReviews from '../../components/admin/review/ProfileReviews';
 import { profileTabClass } from '../../components/admin/profile/profileStyles';
 import { useAdminAuth } from '../../context/adminAuth';
+import { formatAmount } from '../../data/bookingOptions';
 import { activitySubject, PARTNER_ACTIVITY_SECTIONS } from '../../data/activityEvents';
 import { bankDialog, documentDialog, profileDialog, serviceDialog } from '../../data/partnerForms';
 import { availabilityDotClass, onboardingBadgeClass, verificationBadgeClass } from '../../data/partnerOptions';
@@ -167,55 +176,50 @@ function DoneBy({ tag, entry }) {
 }
 
 /**
- * The statistics. Jobs, earnings and reviews have no backend yet (bookings, payouts and reviews modules), so each
- * shows a dash with a note rather than made-up figures.
+ * The statistics, from GET /api/bookings/partner-stats/{id} (BOOKING_MANAGE read): jobs the partner holds, then by
+ * stage, counted as the customer's are (assigned and not answered; accepted, which includes PARTNER_EN_ROUTE, shown as
+ * "Partner Accepted"; in progress, paused included), completed, cancelled, declined (rejected), and earnings (payouts plus cash collected; PAYOUT_MANAGE read, else a dash). The rating is in the
+ * header, beside the joined date.
  */
 const STAT_CARDS = [
+  { key: 'totalJobs', label: 'Total Jobs', icon: CalendarCheck, tone: 'bg-[#EDF6FD] text-[var(--blue)]' },
+  { key: 'assigned', label: 'Assigned', icon: UserCheck, tone: 'bg-[#E8EEF6] text-[var(--navy)]' },
+  { key: 'accepted', label: 'Accepted', icon: ThumbsUp, tone: 'bg-[#EDF6FD] text-[var(--blue)]' },
+  { key: 'inProgress', label: 'In Progress', icon: Timer, tone: 'bg-[#FFF7DE] text-[#B7860B]' },
+  { key: 'completed', label: 'Completed Jobs', icon: CircleCheckBig, tone: 'bg-[#E9F6EF] text-[var(--green)]' },
+  { key: 'cancelled', label: 'Cancelled Jobs', icon: CalendarX, tone: 'bg-[#FDECEC] text-[#E53E3E]' },
+  { key: 'rejected', label: 'Rejected', icon: ThumbsDown, tone: 'bg-[#FDECEC] text-[#E53E3E]' },
   {
-    label: 'Total Jobs',
-    icon: CalendarCheck,
-    tone: 'bg-[#EDF6FD] text-[var(--blue)]',
-    note: 'Available once bookings go live'
-  },
-  {
-    label: 'Completed Jobs',
-    icon: CircleCheckBig,
-    tone: 'bg-[#E9F6EF] text-[var(--green)]',
-    note: 'Available once bookings go live'
-  },
-  {
-    label: 'Cancelled Jobs',
-    icon: CalendarX,
-    tone: 'bg-[#FDECEC] text-[#E53E3E]',
-    note: 'Available once bookings go live'
-  },
-  {
+    key: 'totalEarnings',
     label: 'Total Earnings',
     icon: Wallet,
     tone: 'bg-[#E8EEF6] text-[var(--navy)]',
-    note: 'Available once payouts go live'
-  },
-  { label: 'Average Rating', icon: Star, tone: 'bg-[#FFF7DE] text-[#B7860B]', note: 'Available once reviews go live' }
+    money: true
+  }
 ];
+
+/** Statuses a partner's job never has (before a partner is assigned): not in its filter. */
+const NOT_JOB_STATUSES = ['PENDING', 'CONFIRMED'];
 
 /** The tabs whose data comes with later modules: an empty state until then. */
 const PENDING_TABS = {
+  // Live (Module 6) for BOOKING_MANAGE readers: the bookings assigned to the partner
   jobs: {
     label: 'Jobs',
     icon: CalendarCheck,
-    count: 0,
-    text: "The partner's jobs will show here once bookings go live."
+    text: "The partner's jobs show here for staff who can read bookings."
   },
+  // Live (Module 7) for PAYOUT_MANAGE readers: the partner's payouts
   earnings: {
     label: 'Earnings',
     icon: Wallet,
-    text: "The partner's earnings and payouts will show here once payouts go live."
+    text: "The partner's payouts show here for staff who can read payouts."
   },
+  // Live (Module 9) for REVIEW_MANAGE readers: the reviews of the partner's jobs
   reviews: {
     label: 'Reviews',
     icon: Star,
-    count: 0,
-    text: 'Reviews of the partner will show here once reviews go live.'
+    text: "Reviews of the partner's jobs show here for staff who can read reviews."
   }
 };
 
@@ -383,6 +387,21 @@ export default function PartnerProfilePage() {
   const [dialog, setDialog] = useState(null);
   const [catalogue, setCatalogue] = useState([]);
   const [toast, setToast] = useState(null);
+  const [jobStats, setJobStats] = useState(null);
+
+  // The Reviews tab's count (one row asked for, the total read), for REVIEW_MANAGE readers
+  const canReadReviews = can('REVIEW_MANAGE', 'READ');
+  const [reviewCount, setReviewCount] = useState(null);
+  useEffect(() => {
+    if (!canReadReviews) return undefined;
+    let cancelled = false;
+    authRequest(`/api/reviews?size=1&partnerProfileId=${partnerProfileId}`)
+      .then((page) => !cancelled && setReviewCount(page.totalElements))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authRequest, partnerProfileId, canReadReviews]);
   const closeToast = useCallback(() => setToast(null), []);
   const showToast = useCallback((message, tone = 'success') => setToast({ message, tone, id: Date.now() }), []);
 
@@ -412,6 +431,19 @@ export default function PartnerProfilePage() {
       cancelled = true;
     };
   }, [authRequest, partnerProfileId, reloadKey]);
+
+  // Jobs and earnings, for those who can read bookings
+  const canReadBookings = can('BOOKING_MANAGE', 'READ');
+  useEffect(() => {
+    if (!canReadBookings) return undefined;
+    let cancelled = false;
+    authRequest(`/api/bookings/partner-stats/${partnerProfileId}`)
+      .then((stats) => !cancelled && setJobStats(stats))
+      .catch(() => !cancelled && setJobStats(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [authRequest, partnerProfileId, canReadBookings, reloadKey]);
 
   const { profile, user, services, documents, banks, error } = state;
 
@@ -500,6 +532,8 @@ export default function PartnerProfilePage() {
   }));
   const completionPercent = Math.round((completion.filter((check) => check.done).length / completion.length) * 100);
   const complete = completionPercent === 100;
+  // Submit for Review is offered to editors of a profile not yet submitted (the status menu then gives way to it)
+  const showSubmit = canEdit && SUBMITTABLE.includes(profile.onboardingStatus);
   const submitForReview = async () => {
     setSubmitting(true);
     try {
@@ -589,7 +623,13 @@ export default function PartnerProfilePage() {
     { key: 'documents', label: 'Documents', icon: FileText, count: documents.length },
     { key: 'banks', label: 'Bank Accounts', icon: Banknote, count: banks.length },
     { key: 'availability', label: 'Availability', icon: CalendarClock },
-    ...Object.entries(PENDING_TABS).map(([key, pending]) => ({ key, ...pending })),
+    // The Jobs count: the bookings the partner holds (the job figures' total), for BOOKING_MANAGE readers
+    ...Object.entries(PENDING_TABS).map(([key, pending]) => ({
+      key,
+      ...pending,
+      ...(key === 'jobs' && jobStats ? { count: jobStats.totalJobs } : {}),
+      ...(key === 'reviews' && reviewCount != null ? { count: reviewCount } : {})
+    })),
     { key: 'activity', label: 'Activity Logs', icon: History }
   ];
 
@@ -659,9 +699,19 @@ export default function PartnerProfilePage() {
                 </span>
               )}
             </div>
+            {/* The partner's rating (reviews come with Module 9: until then "No reviews yet") */}
+            <div className="mt-1.5 flex items-center gap-2 text-sm text-[var(--muted)]">
+              <Star size={15} className="fill-[#F2C94C] text-[#D9A21B]" />
+              Rating{' '}
+              {jobStats?.averageRating != null ? (
+                <span className="font-bold text-[var(--ink)]">{Number(jobStats.averageRating).toFixed(1)} / 5</span>
+              ) : (
+                <span className="font-bold text-[var(--ink)]">No reviews yet</span>
+              )}
+            </div>
           </div>
           {/* Onboarding: submit a complete profile for review, then review it on the onboarding screen */}
-          {canEdit && SUBMITTABLE.includes(profile.onboardingStatus) && (
+          {showSubmit && (
             <span className="flex flex-col items-end gap-1 self-start">
               <button
                 type="button"
@@ -685,8 +735,9 @@ export default function PartnerProfilePage() {
               Onboard
             </Link>
           )}
-          {/* Account status, as the partner list's row menu (PARTNER_MANAGE write; not one's own account) */}
-          {canEditEmail && user.userId !== session?.user?.userId && (
+          {/* Account status, as the partner list's row menu (PARTNER_MANAGE write; not one's own account); hidden
+              while Submit for Review is offered */}
+          {canEditEmail && user.userId !== session?.user?.userId && !showSubmit && (
             <div className="-mt-4 self-start">
               <StatusMenu
                 user={user}
@@ -732,9 +783,22 @@ export default function PartnerProfilePage() {
             <>
               <section className="mb-8">
                 <h3 className="mb-3 text-[1.0625rem] font-black text-[var(--navy)]">Partner Statistics</h3>
-                <div className="nh-scroll-hidden -mx-6 flex gap-4 overflow-x-auto px-6 pb-1 sm:-mx-8 sm:px-8 xl:mx-0 xl:grid xl:grid-cols-5 xl:overflow-visible xl:px-0 xl:pb-0">
+                <div className="nh-scroll-hidden -mx-6 flex gap-4 overflow-x-auto px-6 pb-1 sm:-mx-8 sm:px-8 xl:mx-0 xl:grid xl:grid-cols-4 xl:overflow-visible xl:px-0 xl:pb-0">
                   {STAT_CARDS.map((card) => (
-                    <StatTile key={card.label} {...card} value={null} />
+                    <StatTile
+                      key={card.key}
+                      icon={card.icon}
+                      tone={card.tone}
+                      label={card.label}
+                      note={card.note}
+                      value={
+                        jobStats?.[card.key] == null
+                          ? null
+                          : card.money
+                            ? formatAmount(jobStats[card.key])
+                            : jobStats[card.key]
+                      }
+                    />
                   ))}
                 </div>
               </section>
@@ -1104,8 +1168,26 @@ export default function PartnerProfilePage() {
               </InfoSection>
             </div>
           )}
+          {/* Time off (Module 5), with PARTNER_AVAILABILITY_MANAGE read */}
+          {tab === 'availability' && can('PARTNER_AVAILABILITY_MANAGE', 'READ') && (
+            <PartnerSchedule partnerProfileId={profile.partnerProfileId} onMessage={showToast} />
+          )}
 
-          {PENDING_TABS[tab] && <PendingTab {...PENDING_TABS[tab]} />}
+          {tab === 'earnings' && can('PAYOUT_MANAGE', 'READ') ? (
+            <PartnerEarnings partnerProfileId={profile.partnerProfileId} />
+          ) : tab === 'reviews' && can('REVIEW_MANAGE', 'READ') ? (
+            <ProfileReviews of="partner" profileId={profile.partnerProfileId} />
+          ) : tab === 'jobs' && can('BOOKING_MANAGE', 'READ') ? (
+            <FilteredBookings
+              params={{ partnerProfileId: profile.partnerProfileId }}
+              hide={['partner']}
+              hiddenStatuses={NOT_JOB_STATUSES}
+              searchPlaceholder="Search by booking ID, service or customer..."
+              emptyText="No bookings assigned to this partner yet."
+            />
+          ) : (
+            PENDING_TABS[tab] && <PendingTab {...PENDING_TABS[tab]} />
+          )}
           {tab === 'activity' && (
             <ActivityLog
               entries={state.audit}

@@ -41,6 +41,34 @@ public interface NexHomeUserRoleRepository extends JpaRepository<NexHomeUserRole
 			order by 1""")
 	List<MonthlyCount> countActiveByRoleAndMonth(@Param("roleCode") String roleCode);
 
+	/**
+	 * The active staff (SUPER_USER, ADMIN or SUB_ADMIN held through an active role) who may read {@code functionCode}:
+	 * super users always, others through an active grant of an active function. Not the system account (user 1).
+	 * Staff notifications go to them.
+	 */
+	@Query(nativeQuery = true, value = """
+			select distinct u.id
+			from nexhome_users u
+			join nexhome_user_roles ur on ur.user_id = u.id and ur.is_active
+			join nexhome_roles r on r.id = ur.role_id and r.active_flag
+			where u.account_status = 'ACTIVE' and u.id <> 1 and r.code in ('SUPER_USER', 'ADMIN', 'SUB_ADMIN')
+				and (r.code = 'SUPER_USER' or exists (
+					select 1
+					from nexhome_role_functions rf
+					join nexhome_functions f on f.id = rf.function_id
+					where rf.role_id = r.id and rf.active_flag and rf.can_read and f.active_flag
+						and f.function_code = :functionCode))""")
+	List<Long> findStaffWhoCanRead(@Param("functionCode") String functionCode);
+
+	/** Active accounts currently holding any of the roles (active assignment of an active role); not user 1. */
+	@Query(nativeQuery = true, value = """
+			select distinct u.id
+			from nexhome_users u
+			join nexhome_user_roles ur on ur.user_id = u.id and ur.is_active
+			join nexhome_roles r on r.id = ur.role_id and r.active_flag
+			where u.account_status = 'ACTIVE' and u.id <> 1 and r.code in (:roleCodes)""")
+	List<Long> findActiveHoldersOf(@Param("roleCodes") Collection<String> roleCodes);
+
 	/** One row of {@link #countActiveByRoleAndMonth}. */
 	interface MonthlyCount {
 

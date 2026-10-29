@@ -97,6 +97,8 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 	private static final String DEFAULT_REQUIREMENT_TYPE = "OTHER";
 	/** One week: no single job is priced for longer. */
 	private static final int MAX_MINUTES = 7 * 24 * 60;
+	/** An hourly service without a package, and without minutes asked for, is priced for one hour. */
+	static final int DEFAULT_HOURLY_MINUTES = 60;
 	private static final BigDecimal MINUTES_PER_HOUR = BigDecimal.valueOf(60);
 	/** Activity log: updates within this long of the creation are part of creating the record. */
 	private static final Duration SAME_CHANGE = Duration.ofSeconds(5);
@@ -564,6 +566,10 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 				throw new InvalidRequestException("The variant is not available.");
 			}
 		}
+		// An hourly package that is switched off is not offered: one hour at the service's own price instead
+		if (variant != null && !variant.isActive() && PricingType.HOURLY.equals(service.getPricingType())) {
+			variant = null;
+		}
 
 		// A variant with its own price charges that (or its discount); otherwise the service's price applies
 		boolean variantPriced = variant != null && variant.getPriceOverride() != null;
@@ -572,10 +578,17 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 				: priceToPay(service.getBasePrice(), service.getDiscountPrice());
 		Integer duration = variant != null && variant.getDurationMinutes() != null ? variant.getDurationMinutes()
 				: service.getEstimatedDurationMinutes();
+		boolean hourly = PricingType.HOURLY.equals(service.getPricingType());
+		if (hourly && (variant == null || variant.getDurationMinutes() == null)) {
+			// Without a package an hourly job is priced for one hour at the basic (hourly) price, unless asked for more
+			duration = DEFAULT_HOURLY_MINUTES;
+		}
 		Integer billableMinutes = null;
 		BigDecimal subtotal;
-		if (PricingType.HOURLY.equals(service.getPricingType())) {
-			int requested = minutes != null ? minutes : duration != null ? duration : 0;
+		// The same job at the regular prices, so the discount shows for hourly jobs too
+		BigDecimal regularSubtotal;
+		if (hourly) {
+			int requested = minutes != null ? minutes : duration;
 			if (requested <= 0) {
 				throw new InvalidRequestException("Minutes must be more than 0 to price an hourly service.");
 			}
@@ -591,20 +604,24 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 								service.getBillingIncrementMinutes());
 				billableMinutes = covered + extra;
 				subtotal = unitPrice.add(perMinutes(hourlyPrice, extra));
+				regularSubtotal = regularPrice.add(perMinutes(service.getBasePrice(), extra));
 			} else {
 				billableMinutes = billableMinutes(requested, service.getMinimumBillableMinutes(),
 						service.getBillingIncrementMinutes());
 				subtotal = perMinutes(unitPrice, billableMinutes);
+				regularSubtotal = perMinutes(regularPrice, billableMinutes);
 			}
 			duration = billableMinutes;
 		} else {
 			// FIXED, AREA (the variant is the home size) and INSPECTION charge the price once
 			subtotal = unitPrice;
+			regularSubtotal = regularPrice;
 		}
 		subtotal = subtotal.setScale(2, RoundingMode.HALF_UP);
+		regularSubtotal = regularSubtotal.setScale(2, RoundingMode.HALF_UP).max(subtotal);
 
 		return new NexHomeServiceQuoteResponse(service.getId(), variant == null ? null : variant.getId(),
-				service.getPricingType(), regularPrice, unitPrice, billableMinutes, subtotal,
+				service.getPricingType(), regularPrice, unitPrice, billableMinutes, subtotal, regularSubtotal,
 				service.getMinimumCharge(), subtotal.max(service.getMinimumCharge()), duration);
 	}
 

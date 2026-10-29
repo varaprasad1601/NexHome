@@ -52,9 +52,11 @@ import com.nexhome.app.mapper.NexHomePartnerDocumentMapper;
 import com.nexhome.app.mapper.NexHomePartnerProfileMapper;
 import com.nexhome.app.mapper.NexHomePartnerServiceMapper;
 import com.nexhome.app.mapper.NexHomeText;
+import com.nexhome.app.mapper.NexHomeBookingMapper;
 import com.nexhome.app.model.NexHomeAccess;
 import com.nexhome.app.model.NexHomeLookupCodes.DocumentType;
 import com.nexhome.app.model.NexHomeLookupCodes.PartnerAvailabilityStatus;
+import com.nexhome.app.model.NexHomeLookupCodes.NotificationType;
 import com.nexhome.app.model.NexHomeLookupCodes.PartnerOnboardingStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.Types;
 import com.nexhome.app.model.NexHomeLookupCodes.VerificationStatus;
@@ -127,6 +129,8 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	private final NexHomePartnerServiceRepository partnerServiceRepository;
 	private final NexHomePartnerServiceMapper partnerServiceMapper;
 	private final NexHomeAuditUsers auditUsers;
+	private final NexHomeNotifier notifier;
+	private final NexHomeAuditRecorder auditRecorder;
 
 	// ------------------------------------------------------------------------------------------------------------
 	// Partner profiles
@@ -209,8 +213,18 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		profile.setRejectionReason(null);
 		profile.setUpdatedBy(actingUserId);
 
+		notifier.notifyStaff("PARTNER_ONBOARDING_MANAGE", new NexHomeNotifier.Message(NotificationType.ONBOARDING,
+				"Partner " + profile.getPublicId() + " submitted for review",
+				nameOf(profile) + " is waiting to be verified and approved.", NexHomeNotifier.PARTNER_PROFILE,
+				profile.getId()), actingUserId);
 		log.info("Partner profile {} submitted for review", profile.getPublicId());
 		return toProfileDto(profile);
+	}
+
+	/** "First Last", else the partner id. */
+	private static String nameOf(NexHomePartnerProfile profile) {
+		String name = NexHomeBookingMapper.nameOf(profile.getFirstName(), profile.getLastName());
+		return name == null ? profile.getPublicId() : name;
 	}
 
 	@Override
@@ -263,6 +277,19 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		profile.setRejectionReason(PartnerOnboardingStatus.APPROVED.equals(target) ? null : reason);
 		profile.setUpdatedBy(actingUserId);
 
+		String decision = switch (target) {
+			case PartnerOnboardingStatus.APPROVED -> "Your partner profile is approved; you can now take jobs.";
+			case PartnerOnboardingStatus.REJECTED -> "Your partner profile was rejected: " + reason;
+			default -> "Changes were requested on your partner profile: " + reason;
+		};
+		notifier.notify(profile.getUser().getId(), new NexHomeNotifier.Message(NotificationType.ONBOARDING,
+				"Onboarding " + NexHomeSupportServiceImpl.readable(target).toLowerCase(), decision,
+				NexHomeNotifier.PARTNER_PROFILE, profile.getId()), actingUserId);
+		Map<String, Object> after = new LinkedHashMap<>();
+		after.put("onboardingStatus", target);
+		after.put("reason", profile.getRejectionReason());
+		auditRecorder.record("ONBOARDING_DECISION", "PARTNER_PROFILE", profile.getPublicId(),
+				Map.of("onboardingStatus", current), after, actingUserId);
 		log.info("Partner profile {} moved from {} to {} by User ID {}", profile.getPublicId(), current, target,
 				actingUserId);
 		return toProfileDto(profile);
@@ -282,6 +309,10 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 			throw new InvalidRequestException("The account of an approved partner cannot be unverified.");
 		}
 		// The check names who made it; clearing it clears that too (ck_nexhome_partner_profiles_account_verified)
+		if (request.accountVerified() != null && request.accountVerified() != profile.isAccountVerified()) {
+			auditRecorder.record(request.accountVerified() ? "ACCOUNT_VERIFIED" : "ACCOUNT_UNVERIFIED",
+					"PARTNER_PROFILE", profile.getPublicId(), null, null, actingUserId);
+		}
 		if (request.accountVerified() != null) {
 			profile.setAccountVerified(request.accountVerified());
 			profile.setAccountVerifiedBy(request.accountVerified() ? actingUserId : null);
@@ -512,6 +543,13 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		document.setRejectionReason(VerificationStatus.VERIFIED.equals(target) ? null : reason);
 		document.setUpdatedBy(actingUserId);
 
+		auditRecorder.record("DOCUMENT_" + target, "PARTNER_PROFILE", document.getPartner().getPublicId(), null,
+				Map.of("documentId", document.getId(), "documentType", document.getDocumentType()), actingUserId);
+		if (VerificationStatus.REJECTED.equals(target)) {
+			notifier.notify(document.getPartner().getUser().getId(), new NexHomeNotifier.Message(
+					NotificationType.ONBOARDING, "Document rejected", "A document was rejected: " + reason,
+					NexHomeNotifier.PARTNER_PROFILE, document.getPartner().getId()), actingUserId);
+		}
 		log.info("Document {} set to {} by User ID {}", document.getId(), target, actingUserId);
 		return partnerDocumentMapper.toPartnerDocumentDto(document);
 	}
@@ -615,6 +653,13 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		account.setRejectionReason(VerificationStatus.REJECTED.equals(target) ? reason : null);
 		account.setUpdatedBy(actingUserId);
 
+		auditRecorder.record("BANK_ACCOUNT_" + target, "PARTNER_PROFILE", account.getPartner().getPublicId(), null,
+				Map.of("bankAccountId", account.getId()), actingUserId);
+		if (VerificationStatus.REJECTED.equals(target)) {
+			notifier.notify(account.getPartner().getUser().getId(), new NexHomeNotifier.Message(
+					NotificationType.ONBOARDING, "Bank account rejected", "Your bank account was rejected: " + reason,
+					NexHomeNotifier.PARTNER_PROFILE, account.getPartner().getId()), actingUserId);
+		}
 		log.info("Bank account {} set to {} by User ID {}", account.getId(), target, actingUserId);
 		return partnerBankAccountMapper.toPartnerBankAccountDto(account);
 	}

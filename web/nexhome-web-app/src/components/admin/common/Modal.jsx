@@ -1,8 +1,11 @@
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
 
-/** A centred dialog over a dimmed page; Escape or the backdrop closes it, and the page behind does not scroll. */
-export default function Modal({ title, onClose, children, width = 'max-w-[35rem]' }) {
+/**
+ * A centred dialog over a dimmed page; Escape or the backdrop closes it, and the page behind does not scroll. `fill`
+ * gives it the screen's height less a margin above and below, its content filling the rest (lists then scroll inside).
+ */
+export default function Modal({ title, onClose, children, width = 'max-w-[35rem]', fill = false }) {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose();
@@ -23,7 +26,9 @@ export default function Modal({ title, onClose, children, width = 'max-w-[35rem]
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
-        className={`relative w-full ${width} rounded-2xl bg-white p-6 shadow-[var(--shadow)]`}
+        className={`relative w-full ${width} rounded-2xl bg-white p-6 shadow-[var(--shadow)] ${
+          fill ? 'flex h-[calc(100dvh-4rem)] flex-col' : ''
+        }`}
       >
         <div className="mb-5 flex items-center justify-between gap-4">
           <h2 id="modal-title" className="mb-0 text-xl font-black text-[var(--navy)]">
@@ -38,7 +43,7 @@ export default function Modal({ title, onClose, children, width = 'max-w-[35rem]
             <X size={18} />
           </button>
         </div>
-        {children}
+        {fill ? <div className="flex min-h-0 flex-1 flex-col">{children}</div> : children}
       </div>
     </div>
   );

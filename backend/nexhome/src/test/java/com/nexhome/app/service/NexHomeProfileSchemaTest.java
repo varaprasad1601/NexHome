@@ -67,7 +67,8 @@ class NexHomeProfileSchemaTest {
 			assertThat(grant.getRole().getCode()).isEqualTo("SUB_ADMIN");
 			assertThat(grant.getFunction().getFunctionCode()).isEqualTo("PARTNER_ONBOARDING_MANAGE");
 			assertThat(grant.isCanRead()).isTrue();
-			assertThat(grant.isCanWrite()).isFalse();
+			// Sub-admins edit partners until approval since V25
+			assertThat(grant.isCanWrite()).isTrue();
 		});
 	}
 

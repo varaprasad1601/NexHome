@@ -157,7 +157,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 				partnerProfileMapper, partnerDocumentMapper, partnerBankAccountMapper,
 				mock(NexHomeServiceCategoryRepository.class), mock(NexHomeServiceRepository.class),
 				mock(NexHomePartnerServiceRepository.class), new NexHomePartnerServiceMapper(),
-				mock(NexHomeAuditUsers.class));
+				mock(NexHomeAuditUsers.class), mock(NexHomeNotifier.class), mock(NexHomeAuditRecorder.class));
 	}
 
 	// ------------------------------------------------------------------------------------------------------------

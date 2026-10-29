@@ -1,6 +1,7 @@
 package com.nexhome.app.service;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -41,7 +42,6 @@ import com.nexhome.app.model.NexHomeCustomerProfile;
 import com.nexhome.app.model.NexHomePartnerProfile;
 import com.nexhome.app.model.NexHomeAuthRefreshToken.RevokedReason;
 import com.nexhome.app.model.NexHomeLookupCodes.AccountStatus;
-import com.nexhome.app.model.NexHomeLookupCodes.PartnerAvailabilityStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.PartnerOnboardingStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.Types;
 import com.nexhome.app.model.NexHomeRole;
@@ -51,6 +51,7 @@ import com.nexhome.app.model.NexHomeUserRoleId;
 import com.nexhome.app.repository.NexHomeAdminProfileRepository;
 import com.nexhome.app.repository.NexHomeCustomerProfileRepository;
 import com.nexhome.app.repository.NexHomePartnerProfileRepository;
+import com.nexhome.app.repository.NexHomePartnerTimeOffRepository;
 import com.nexhome.app.repository.NexHomeAuthRefreshTokenRepository;
 import com.nexhome.app.repository.NexHomeRoleRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
@@ -76,12 +77,14 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 	private final NexHomeAuthRefreshTokenRepository refreshTokenRepository;
 	private final NexHomeLookupService lookupService;
 	private final NexHomePermissionService permissionService;
+	private final NexHomeAuditRecorder auditRecorder;
 	private final NexHomeUserMapper userMapper;
 	private final NexHomeAdminProfileRepository adminProfileRepository;
 	private final NexHomeAdminProfileMapper adminProfileMapper;
 	private final NexHomeCustomerProfileRepository customerProfileRepository;
 	private final NexHomeCustomerProfileMapper customerProfileMapper;
 	private final NexHomePartnerProfileRepository partnerProfileRepository;
+	private final NexHomePartnerTimeOffRepository timeOffRepository;
 	private final NexHomePartnerProfileMapper partnerProfileMapper;
 
 	@Override
@@ -121,6 +124,8 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 		ensureCustomerProfile(user, role, actingUserId);
 		ensurePartnerProfile(user, role, actingUserId);
 
+		auditRecorder.record("CREATED", "USER", user.getId(), null, NexHomeAuditRecorder.values("role", role.getCode(),
+				"accountStatus", user.getAccountStatus()), actingUserId);
 		log.info("User Created Successfully with User ID {} with Role {}", user.getId(), role.getCode());
 		return userMapper.toUserDto(user, List.of(userRole));
 	}
@@ -219,6 +224,7 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 	@Override
 	@Transactional(readOnly = true)
 	public NexHomePartnerStatsResponse getPartnerStats() {
+		LocalDate today = LocalDate.now(IST);
 		return new NexHomePartnerStatsResponse(
 				userRepository.count(NexHomeUserRepository.partnerSpec(null, null, false, null, null)),
 				userRepository.count(NexHomeUserRepository.partnerSpec(null,
@@ -228,8 +234,8 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 						null)),
 				userRepository.count(NexHomeUserRepository.partnerSpec(null, List.of(PartnerOnboardingStatus.NOT_STARTED,
 						PartnerOnboardingStatus.DRAFT, PartnerOnboardingStatus.CHANGES_REQUESTED), true, null, null)),
-				userRepository.count(NexHomeUserRepository.partnerSpec(null,
-						List.of(PartnerOnboardingStatus.APPROVED), false, PartnerAvailabilityStatus.ONLINE, null)));
+				timeOffRepository.countPartnersOffBetween(today.atStartOfDay(IST).toInstant(),
+						today.plusDays(1).atStartOfDay(IST).toInstant()));
 	}
 
 	@Override
@@ -425,6 +431,8 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 			log.info("{} sessions of User ID {} revoked", sessions, user.getId());
 		}
 
+		auditRecorder.record("STATUS_CHANGED", "USER", user.getId(), NexHomeAuditRecorder.values("accountStatus", current),
+				NexHomeAuditRecorder.values("accountStatus", target), actingUserId);
 		log.info("Account status changed from {} to {} for User ID {}", current, target, request.userId());
 		return toUserDto(findUser(request.userId()));
 	}
@@ -446,6 +454,8 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 		ensureCustomerProfile(user, role, actingUserId);
 		ensurePartnerProfile(user, role, actingUserId);
 
+		auditRecorder.record("ROLE_ASSIGNED", "USER", user.getId(), null, NexHomeAuditRecorder.values("role", role.getCode()),
+				actingUserId);
 		log.info("Role {} assigned to User ID {}", role.getCode(), user.getId());
 		return toUserDto(user);
 	}
@@ -463,6 +473,9 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 		if (request.isActive() && !userRole.getRole().isActiveFlag()) {
 			throw new InvalidRequestException("An inactive role cannot be activated for a user.");
 		}
+		auditRecorder.record("ROLE_UPDATED", "USER", request.userId(), NexHomeAuditRecorder.values("role", userRole.getRole().getCode(),
+				"isActive", userRole.isActive()), NexHomeAuditRecorder.values("role", userRole.getRole().getCode(), "isActive",
+				request.isActive()), actingUserId);
 		userRole.setActive(request.isActive());
 		userRole.setUpdatedBy(actingUserId);
 

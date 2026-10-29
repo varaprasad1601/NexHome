@@ -1,6 +1,7 @@
 package com.nexhome.app.service;
 
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 public class NexHomeLookupServiceImpl implements NexHomeLookupService {
 
 	private final NexHomePermissionService permissionService;
+	private final NexHomeAuditRecorder auditRecorder;
 	private final NexHomeLookupTypeRepository lookupTypeRepository;
 	private final NexHomeLookupValueRepository lookupValueRepository;
 	private final NexHomeLookupTypeMapper lookupTypeMapper;
@@ -45,6 +47,8 @@ public class NexHomeLookupServiceImpl implements NexHomeLookupService {
 		NexHomeLookupType type = lookupTypeRepository.save(
 				lookupTypeMapper.toLookupTypeEntity(request, permissionService.currentUserId()));
 
+		auditRecorder.record("TYPE_CREATED", "LOOKUP", type.getTypeCode(), null, NexHomeAuditRecorder.values("typeName",
+				type.getTypeName(), "activeFlag", type.isActiveFlag()), permissionService.currentUserId());
 		log.info("Lookup type created with Lookup Type ID {} ({})", type.getId(), type.getTypeCode());
 		return lookupTypeMapper.toLookupTypeDto(type);
 	}
@@ -65,6 +69,8 @@ public class NexHomeLookupServiceImpl implements NexHomeLookupService {
 		// The code and system-managed flag are never updated (the request rejects them, the columns are not updatable)
 		lookupTypeMapper.updateLookupTypeEntity(type, request, permissionService.currentUserId());
 
+		auditRecorder.record("TYPE_UPDATED", "LOOKUP", type.getTypeCode(), null, NexHomeAuditRecorder.values("typeName",
+				type.getTypeName(), "activeFlag", type.isActiveFlag()), permissionService.currentUserId());
 		log.info("Lookup type updated with Lookup Type ID {}", type.getId());
 		return lookupTypeMapper.toLookupTypeDto(type);
 	}
@@ -97,6 +103,8 @@ public class NexHomeLookupServiceImpl implements NexHomeLookupService {
 		}
 		value = lookupValueRepository.save(value);
 
+		auditRecorder.record("VALUE_ADDED", "LOOKUP", type.getTypeCode(), null, valueValues(value),
+				permissionService.currentUserId());
 		log.info("Lookup value added with Lookup Value ID {} ({} / {})", value.getId(), type.getTypeCode(),
 				value.getValueCode());
 		return lookupValueMapper.toLookupValueDto(value);
@@ -109,6 +117,7 @@ public class NexHomeLookupServiceImpl implements NexHomeLookupService {
 				.orElseThrow(() -> new ResourceNotFoundException("Lookup value does not exist."));
 		NexHomeLookupType type = value.getLookupType();
 
+		Map<String, Object> before = valueValues(value);
 		// The type and code are never updated (the request rejects them, and the columns are not updatable)
 		lookupValueMapper.updateLookupValueEntity(value, request, permissionService.currentUserId());
 		if (request.activeFlag() != null) {
@@ -131,6 +140,8 @@ public class NexHomeLookupServiceImpl implements NexHomeLookupService {
 			requireActiveForDefault(value);
 		}
 
+		auditRecorder.record("VALUE_UPDATED", "LOOKUP", type.getTypeCode(), before, valueValues(value),
+				permissionService.currentUserId());
 		log.info("Lookup value updated with Lookup Value ID {}", value.getId());
 		return lookupValueMapper.toLookupValueDto(value);
 	}
@@ -172,6 +183,11 @@ public class NexHomeLookupServiceImpl implements NexHomeLookupService {
 				.map(NexHomeLookupValue::getValueCode)
 				.toList();
 		throw new InvalidRequestException(fieldName + " must be one of: " + String.join(", ", allowed) + ".");
+	}
+
+	private static Map<String, Object> valueValues(NexHomeLookupValue value) {
+		return NexHomeAuditRecorder.values("valueCode", value.getValueCode(), "displayName", value.getDisplayName(), "displayOrder",
+				value.getDisplayOrder(), "activeFlag", value.isActiveFlag(), "isDefault", value.isDefaultValue());
 	}
 
 	private static void requireActiveForDefault(NexHomeLookupValue value) {

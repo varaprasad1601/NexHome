@@ -18,11 +18,15 @@ import {
   Phone,
   Plus,
   Star,
+  ThumbsDown,
+  ThumbsUp,
+  Timer,
+  UserCheck,
   UserRound,
   Wallet
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import AdminPageHeader from '../../components/admin/AdminPageHeader';
 import DatePicker from '../../components/admin/common/DatePicker';
@@ -31,6 +35,9 @@ import Select from '../../components/admin/common/Select';
 import Toast from '../../components/admin/common/Toast';
 import Toggle from '../../components/admin/common/Toggle';
 import ActivityLog from '../../components/admin/profile/ActivityLog';
+import FilteredBookings from '../../components/admin/booking/FilteredBookings';
+import CustomerPayments from '../../components/admin/payment/CustomerPayments';
+import CreateBookingModal from '../../components/admin/booking/CreateBookingModal';
 import CompletionAvatar from '../../components/admin/profile/CompletionAvatar';
 import StatusMenu from '../../components/admin/profile/StatusMenu';
 import {
@@ -40,56 +47,14 @@ import {
   SectionActions,
   StatTile
 } from '../../components/admin/profile/ProfileParts';
+import ProfileReviews from '../../components/admin/review/ProfileReviews';
 import { inlineInputClass, profileTabClass } from '../../components/admin/profile/profileStyles';
 import { useAdminAuth } from '../../context/adminAuth';
+import { addressBody, addressFields } from '../../data/addressForm';
 import useActivity from '../../hooks/useActivity';
+import { formatAmount } from '../../data/bookingOptions';
 import { accountStatusLabel, statusBadgeClass } from '../../data/staffOptions';
-import { splitApiDateTime } from '../../utils/format';
-
-const PIN_CODE = /^[1-9][0-9]{5}$/;
-
-/** The Add Address dialog: what the customer app asks for, India only (6-digit PIN). */
-function addressFields(addressTypes) {
-  return [
-    { key: 'contactName', label: 'Contact Name', type: 'text', required: true, maxLength: 150 },
-    {
-      key: 'mobileNumber',
-      label: 'Mobile Number',
-      type: 'text',
-      required: true,
-      maxLength: 15,
-      validate: (value) => (/^[0-9]{6,15}$/.test(value.trim()) ? null : 'Enter 6 to 15 digits')
-    },
-    {
-      key: 'addressType',
-      label: 'Address Type',
-      type: 'select',
-      required: true,
-      options: addressTypes.map((value) => ({ value: value.valueCode, label: value.displayName }))
-    },
-    { key: 'label', label: 'Label', type: 'text', maxLength: 50, placeholder: 'e.g. Parents house' },
-    { key: 'addressLine1', label: 'Address Line 1', type: 'text', required: true, maxLength: 255, wide: true },
-    { key: 'addressLine2', label: 'Address Line 2', type: 'text', maxLength: 255, wide: true },
-    { key: 'landmark', label: 'Landmark', type: 'text', maxLength: 255 },
-    { key: 'city', label: 'City', type: 'text', required: true, maxLength: 100 },
-    { key: 'state', label: 'State', type: 'text', required: true, maxLength: 100 },
-    {
-      key: 'postalCode',
-      label: 'PIN Code',
-      type: 'text',
-      required: true,
-      maxLength: 6,
-      validate: (value) => (PIN_CODE.test(value.trim()) ? null : 'Enter a 6-digit PIN code')
-    },
-    {
-      key: 'isDefault',
-      label: 'Default Address',
-      type: 'toggle',
-      onText: 'Default for bookings',
-      offText: 'Not the default'
-    }
-  ];
-}
+import { formatNumber, splitApiDateTime } from '../../utils/format';
 
 const NAME_PATTERN = /^\s*[\p{L}\p{M}][\p{L}\p{M}\s.'-]*$/u;
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -148,35 +113,29 @@ function validate(form) {
 }
 
 /**
- * The customer statistics. Bookings, payments and reviews have no backend yet (Modules 6, 7 and 8), so each shows a
- * dash with a note rather than made-up figures; give a card its `value` once its data exists.
+ * The customer statistics, from GET /api/bookings/customer-stats/{id} (BOOKING_MANAGE read): bookings in all, then by
+ * stage (pending: every new booking until it is confirmed; confirmed and waiting for a partner; partner assigned and
+ * not answered; partner accepted, which includes PARTNER_EN_ROUTE, shown as "Partner Accepted"; in progress, paused
+ * included), successful (completed), cancelled, the times partners declined the customer's jobs, and spend (online
+ * payments captured plus cash collected, less refunds). The rating is in the header, below the joined date.
  */
 const STAT_CARDS = [
+  { key: 'totalBookings', label: 'Total Bookings', icon: CalendarCheck, tone: 'bg-[#EDF6FD] text-[var(--blue)]' },
+  { key: 'pending', label: 'Pending', icon: Clock, tone: 'bg-[#FFF7DE] text-[#B7860B]' },
+  { key: 'confirmed', label: 'Confirmed', icon: BadgeCheck, tone: 'bg-[#E8EEF6] text-[var(--navy)]' },
+  { key: 'partnerAssigned', label: 'Partner Assigned', icon: UserCheck, tone: 'bg-[#EDF6FD] text-[var(--blue)]' },
+  { key: 'accepted', label: 'Partner Accepted', icon: ThumbsUp, tone: 'bg-[#E9F6EF] text-[var(--green)]' },
+  { key: 'inProgress', label: 'In Progress', icon: Timer, tone: 'bg-[#FFF7DE] text-[#B7860B]' },
+  { key: 'completed', label: 'Successful Bookings', icon: CircleCheckBig, tone: 'bg-[#E9F6EF] text-[var(--green)]' },
+  { key: 'cancelled', label: 'Cancelled Bookings', icon: CalendarX, tone: 'bg-[#FDECEC] text-[#E53E3E]' },
+  { key: 'partnerRejected', label: 'Partner Rejected', icon: ThumbsDown, tone: 'bg-[#FDECEC] text-[#E53E3E]' },
   {
-    label: 'Total Bookings',
-    icon: CalendarCheck,
-    tone: 'bg-[#EDF6FD] text-[var(--blue)]',
-    note: 'Available once bookings go live'
-  },
-  {
-    label: 'Successful Bookings',
-    icon: CircleCheckBig,
-    tone: 'bg-[#E9F6EF] text-[var(--green)]',
-    note: 'Available once bookings go live'
-  },
-  {
-    label: 'Cancelled Bookings',
-    icon: CalendarX,
-    tone: 'bg-[#FDECEC] text-[#E53E3E]',
-    note: 'Available once bookings go live'
-  },
-  {
+    key: 'totalSpend',
     label: 'Total Spend',
     icon: Wallet,
     tone: 'bg-[#E8EEF6] text-[var(--navy)]',
-    note: 'Available once payments go live'
-  },
-  { label: 'Average Rating', icon: Star, tone: 'bg-[#FFF7DE] text-[#B7860B]', note: 'Available once reviews go live' }
+    money: true
+  }
 ];
 
 /**
@@ -184,23 +143,23 @@ const STAT_CARDS = [
  * tab's badge (always 0 until those records exist; replace it with the real count then). Activity Logs follows them.
  */
 const PENDING_TABS = {
+  // Live (Module 6) for BOOKING_MANAGE readers: the customer's bookings
   bookings: {
     label: 'Bookings',
     icon: CalendarCheck,
-    count: 0,
-    text: "The customer's bookings will show here once bookings go live."
+    text: "The customer's bookings show here for staff who can read bookings."
   },
+  // Live (Module 7) for PAYMENT_MANAGE readers: the customer's payments
   payments: {
     label: 'Payments',
     icon: CreditCard,
-    count: 0,
-    text: "The customer's payments and refunds will show here once payments go live."
+    text: "The customer's payments show here for staff who can read payments."
   },
+  // Live (Module 9) for REVIEW_MANAGE readers: the reviews the customer wrote
   reviews: {
-    label: 'Reviews',
+    label: 'Reviews Written',
     icon: Star,
-    count: 0,
-    text: 'Reviews the customer gives will show here once reviews go live.'
+    text: 'Reviews the customer wrote show here for staff who can read reviews.'
   }
 };
 
@@ -280,6 +239,8 @@ export default function CustomerProfilePage() {
   const [languages, setLanguages] = useState([]);
   const [addressTypes, setAddressTypes] = useState([]);
   const [tab, setTab] = useState('overview');
+  const [booking, setBooking] = useState(false);
+  const navigate = useNavigate();
   // The Activity Logs tab: account, profile and address changes from the audit columns
   const activity = useActivity(tab === 'activity' ? `/api/profiles/customers/activity/${customerProfileId}` : null);
   // The section being edited ('personal' or 'contact') and its form
@@ -317,6 +278,35 @@ export default function CustomerProfilePage() {
       cancelled = true;
     };
   }, [authRequest, customerProfileId]);
+
+  // The statistics and the Bookings tab's count, for BOOKING_MANAGE readers
+  const canReadBookings = can('BOOKING_MANAGE', 'READ');
+  const [bookingStats, setBookingStats] = useState(null);
+  const bookingCount = bookingStats?.totalBookings ?? null;
+
+  // The Reviews tab's count (one row asked for, the total read), for REVIEW_MANAGE readers
+  const canReadReviews = can('REVIEW_MANAGE', 'READ');
+  const [reviewCount, setReviewCount] = useState(null);
+  useEffect(() => {
+    if (!canReadReviews) return undefined;
+    let cancelled = false;
+    authRequest(`/api/reviews?size=1&customerProfileId=${customerProfileId}`)
+      .then((page) => !cancelled && setReviewCount(page.totalElements))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authRequest, customerProfileId, canReadReviews]);
+  useEffect(() => {
+    if (!canReadBookings) return undefined;
+    let cancelled = false;
+    authRequest(`/api/bookings/customer-stats/${customerProfileId}`)
+      .then((stats) => !cancelled && setBookingStats(stats))
+      .catch(() => !cancelled && setBookingStats(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [authRequest, customerProfileId, canReadBookings]);
 
   // Display names of the lookup codes (public lookups; without them the codes show)
   useEffect(() => {
@@ -373,19 +363,7 @@ export default function CustomerProfilePage() {
   const saveAddress = async (values) => {
     const editing = addressDialog !== 'new';
     // On update "" clears an optional field; on create it is left out
-    const text = (value) => value.trim() || (editing ? '' : null);
-    const fields = {
-      contactName: values.contactName.trim(),
-      mobileNumber: values.mobileNumber.trim(),
-      addressType: values.addressType,
-      label: text(values.label),
-      addressLine1: values.addressLine1.trim(),
-      addressLine2: text(values.addressLine2),
-      landmark: text(values.landmark),
-      city: values.city.trim(),
-      state: values.state.trim(),
-      postalCode: values.postalCode.trim()
-    };
+    const fields = addressBody(values, editing);
     if (editing) {
       await authRequest('/api/addresses/update', {
         method: 'PUT',
@@ -569,9 +547,9 @@ export default function CustomerProfilePage() {
               >
                 <Icon size={16} />
                 {pending.label}
-                {pending.count !== undefined && (
+                {(key === 'bookings' ? bookingCount : key === 'reviews' ? reviewCount : pending.count) != null && (
                   <span className="rounded-full bg-[var(--light)] px-2 text-[0.75rem] text-[var(--muted)]">
-                    {pending.count}
+                    {key === 'bookings' ? bookingCount : key === 'reviews' ? reviewCount : pending.count}
                   </span>
                 )}
               </button>
@@ -595,10 +573,23 @@ export default function CustomerProfilePage() {
               {/* Customer statistics (see STAT_CARDS) */}
               <section className="mb-8">
                 <h3 className="mb-3 text-[1.0625rem] font-black text-[var(--navy)]">Customer Statistics</h3>
-                {/* Always one row: five columns on wide screens, a sideways-scrolling strip on smaller ones */}
+                {/* Five to a row on wide screens, a sideways-scrolling strip on smaller ones */}
                 <div className="nh-scroll-hidden -mx-6 flex gap-4 overflow-x-auto px-6 pb-1 sm:-mx-8 sm:px-8 xl:mx-0 xl:grid xl:grid-cols-5 xl:overflow-visible xl:px-0 xl:pb-0">
                   {STAT_CARDS.map((card) => (
-                    <StatTile key={card.label} {...card} value={card.value ?? null} />
+                    <StatTile
+                      key={card.key}
+                      icon={card.icon}
+                      tone={card.tone}
+                      label={card.label}
+                      note={card.note}
+                      value={
+                        bookingStats?.[card.key] == null
+                          ? null
+                          : card.money
+                            ? formatAmount(bookingStats[card.key])
+                            : formatNumber(bookingStats[card.key])
+                      }
+                    />
                   ))}
                 </div>
               </section>
@@ -715,6 +706,30 @@ export default function CustomerProfilePage() {
                 </div>
               </div>
             </>
+          ) : tab === 'bookings' && can('BOOKING_MANAGE', 'READ') ? (
+            <>
+              {can('BOOKING_MANAGE', 'WRITE') && (
+                <div className="mb-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setBooking(true)}
+                    className="rounded-lg px-2 py-1 text-sm font-bold text-[var(--blue)] hover:bg-[#EDF6FD]"
+                  >
+                    + Create Booking
+                  </button>
+                </div>
+              )}
+              <FilteredBookings
+                params={{ customerProfileId: profile.customerProfileId }}
+                hide={['customer']}
+                searchPlaceholder="Search by booking ID, service or partner..."
+                emptyText="This customer has no bookings yet."
+              />
+            </>
+          ) : tab === 'reviews' && can('REVIEW_MANAGE', 'READ') ? (
+            <ProfileReviews of="customer" profileId={profile.customerProfileId} />
+          ) : tab === 'payments' && can('PAYMENT_MANAGE', 'READ') ? (
+            <CustomerPayments customerProfileId={profile.customerProfileId} />
           ) : tab === 'activity' ? (
             <ActivityLog entries={activity.entries} loading={activity.loading} />
           ) : PENDING_TABS[tab] ? (
@@ -810,6 +825,23 @@ export default function CustomerProfilePage() {
           onSubmit={saveAddress}
           onClose={() => setAddressDialog(null)}
           width="max-w-[44rem]"
+        />
+      )}
+      {booking && (
+        <CreateBookingModal
+          customer={{
+            customerProfileId: profile.customerProfileId,
+            userId: profile.userId,
+            name: `${name || 'Name not added'} · ${profile.publicId}`,
+            contactName: name,
+            mobileNumber: user.mobileNumber
+          }}
+          onClose={() => setBooking(false)}
+          onCreated={(created) =>
+            navigate(`/admin/bookings/${created.bookingId}`, {
+              state: { toast: { message: `Booking ${created.publicId} created.`, tone: 'success' } }
+            })
+          }
         />
       )}
       <Toast toast={toast} onClose={closeToast} />

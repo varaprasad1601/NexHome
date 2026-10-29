@@ -63,7 +63,8 @@ class NexHomeLookupServiceImplTest {
 		});
 		NexHomePermissionService permissionService = mock(NexHomePermissionService.class);
 		when(permissionService.currentUserId()).thenReturn(1L);
-		lookupService = new NexHomeLookupServiceImpl(permissionService, lookupTypeRepository, lookupValueRepository,
+		lookupService = new NexHomeLookupServiceImpl(permissionService, mock(NexHomeAuditRecorder.class),
+				lookupTypeRepository, lookupValueRepository,
 				new NexHomeLookupTypeMapper(), new NexHomeLookupValueMapper(JsonMapper.builder().build()));
 	}
 

@@ -112,7 +112,8 @@ class NexHomeAuthServiceImplTest {
 		when(lookupService.validateCode(eq("OTP_PURPOSE"), any(), eq("Purpose")))
 				.thenAnswer(invocation -> invocation.<String>getArgument(1).trim());
 		authService = new NexHomeAuthServiceImpl(otpRequestRepository, refreshTokenRepository, userRepository,
-				userRoleRepository, roleRepository, lookupService, permissionService, new NexHomeAuthOtpRequestMapper(),
+				userRoleRepository, roleRepository, lookupService, permissionService, mock(NexHomeAuditRecorder.class),
+				new NexHomeAuthOtpRequestMapper(),
 				new NexHomeAuthRefreshTokenMapper(), new NexHomeUserMapper(), passwordEncoder,
 				new NimbusJwtEncoder(new ImmutableSecret<>(KEY)), new NexHomeOtpProperties(6, 5, 3, 60, false),
 				new NexHomeSecurityProperties("unused", "nexhome", 15, 30, List.of(), "unused"),

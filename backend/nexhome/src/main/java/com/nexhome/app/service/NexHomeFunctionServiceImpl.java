@@ -1,6 +1,7 @@
 package com.nexhome.app.service;
 
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 public class NexHomeFunctionServiceImpl implements NexHomeFunctionService {
 
 	private final NexHomePermissionService permissionService;
+	private final NexHomeAuditRecorder auditRecorder;
 	private final NexHomeFunctionRepository functionRepository;
 	private final NexHomeRoleFunctionRepository roleFunctionRepository;
 	private final NexHomeLookupService lookupService;
@@ -42,6 +44,8 @@ public class NexHomeFunctionServiceImpl implements NexHomeFunctionService {
 		NexHomeFunction function = functionRepository.save(
 				functionMapper.toFunctionEntity(request, functionType, permissionService.currentUserId()));
 
+		auditRecorder.record("CREATED", "FUNCTION", function.getFunctionCode(), null, functionValues(function),
+				permissionService.currentUserId());
 		log.info("Function created with Function ID {} ({})", function.getId(), function.getFunctionCode());
 		return functionMapper.toFunctionDto(function);
 	}
@@ -55,7 +59,10 @@ public class NexHomeFunctionServiceImpl implements NexHomeFunctionService {
 		String functionType = request.functionType() == null ? null
 				: lookupService.validateCode(Types.FUNCTION_TYPE, request.functionType(), "Function type");
 		// Module and code are never updated (the request rejects them, and the columns are not updatable)
+		Map<String, Object> before = functionValues(function);
 		functionMapper.updateFunctionEntity(function, request, functionType, permissionService.currentUserId());
+		auditRecorder.record("UPDATED", "FUNCTION", function.getFunctionCode(), before, functionValues(function),
+				permissionService.currentUserId());
 
 		log.info("Function updated with Function ID {}", function.getId());
 		return functionMapper.toFunctionDto(function);
@@ -79,8 +86,15 @@ public class NexHomeFunctionServiceImpl implements NexHomeFunctionService {
 		if (roleFunctionRepository.existsByFunctionId(functionId)) {
 			throw new DuplicateResourceException("Function is assigned to roles; deactivate it instead.");
 		}
+		functionRepository.findById(functionId).ifPresent(function -> auditRecorder.record("DELETED", "FUNCTION",
+				function.getFunctionCode(), functionValues(function), null, permissionService.currentUserId()));
 		functionRepository.deleteById(functionId);
 
 		log.info("Function deleted with Function ID {}", functionId);
+	}
+
+	private static Map<String, Object> functionValues(NexHomeFunction function) {
+		return NexHomeAuditRecorder.values("module", function.getFunctionModule(), "name", function.getFunctionName(), "type",
+				function.getFunctionType(), "activeFlag", function.isActiveFlag());
 	}
 }

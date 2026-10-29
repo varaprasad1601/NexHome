@@ -15,10 +15,25 @@ import CategoriesPage from './pages/admin/CategoriesPage';
 import CustomerProfilePage from './pages/admin/CustomerProfilePage';
 import CustomersPage from './pages/admin/CustomersPage';
 import OnboardRequestsPage from './pages/admin/OnboardRequestsPage';
+import PartnerAvailabilityPage from './pages/admin/PartnerAvailabilityPage';
+import BookingDetailPage from './pages/admin/BookingDetailPage';
+import BookingsPage from './pages/admin/BookingsPage';
+import PaymentsPage from './pages/admin/PaymentsPage';
+import PayoutsPage from './pages/admin/PayoutsPage';
+import RefundsPage from './pages/admin/RefundsPage';
+import TransactionsPage from './pages/admin/TransactionsPage';
 import PartnerOnboardPage from './pages/admin/PartnerOnboardPage';
 import PartnerProfilePage from './pages/admin/PartnerProfilePage';
 import PartnersPage from './pages/admin/PartnersPage';
 import FunctionsPage from './pages/admin/FunctionsPage';
+import LookupsPage from './pages/admin/LookupsPage';
+import AuditLogsPage from './pages/admin/AuditLogsPage';
+import NotificationsPage from './pages/admin/NotificationsPage';
+import ReviewsPage from './pages/admin/ReviewsPage';
+import SendNotificationsPage from './pages/admin/SendNotificationsPage';
+import SupportTicketPage from './pages/admin/SupportTicketPage';
+import SupportTicketsPage from './pages/admin/SupportTicketsPage';
+import LookupTypePage from './pages/admin/LookupTypePage';
 import RoleDetailPage from './pages/admin/RoleDetailPage';
 import RolesPage from './pages/admin/RolesPage';
 import CategoryViewPage from './pages/admin/CategoryViewPage';
@@ -87,9 +102,24 @@ export default function App() {
               <Route path="services/new" element={<ServiceEditorPage key="new" />} />
               <Route path="services/:serviceId" element={<ServiceViewPage />} />
               <Route path="services/:serviceId/edit" element={<ServiceEditorPage key="edit" />} />
+              <Route path="bookings" element={<BookingsPage />} />
+              <Route path="payments/customers" element={<PaymentsPage />} />
+              <Route path="payments/payouts" element={<PayoutsPage />} />
+              <Route path="payments/transactions" element={<TransactionsPage />} />
+              <Route path="payments/refunds" element={<RefundsPage />} />
+              <Route path="bookings/availability" element={<PartnerAvailabilityPage />} />
+              <Route path="bookings/:bookingId" element={<BookingDetailPage />} />
               <Route path="system/roles" element={<RolesPage />} />
               <Route path="system/roles/:roleId" element={<RoleDetailPage />} />
               <Route path="system/functions" element={<FunctionsPage />} />
+              <Route path="system/lookups" element={<LookupsPage />} />
+              <Route path="system/lookups/:lookupTypeId" element={<LookupTypePage />} />
+              <Route path="system/audit-logs" element={<AuditLogsPage />} />
+              <Route path="reviews" element={<ReviewsPage />} />
+              <Route path="support" element={<SupportTicketsPage />} />
+              <Route path="support/:ticketId" element={<SupportTicketPage />} />
+              <Route path="marketing/notifications" element={<SendNotificationsPage />} />
+              <Route path="notifications" element={<NotificationsPage />} />
               <Route path="profile" element={<AdminProfilePage self />} />
               {/* Sidebar links whose screens are not built yet */}
               <Route path="*" element={<AdminComingSoonPage />} />

@@ -3,7 +3,7 @@ import {
   CircleCheck,
   Hourglass,
   Plus,
-  Radio,
+  CalendarOff,
   RotateCcw,
   Search,
   UserRound,
@@ -42,7 +42,7 @@ const STAT_TILES = [
   { key: 'approved', label: 'Approved', icon: CircleCheck, tile: 'bg-[#E9F6EF] text-[var(--green)]' },
   { key: 'awaitingReview', label: 'Awaiting Review', icon: Hourglass, tile: 'bg-[#F3ECFF] text-[#6B46C1]' },
   { key: 'notSubmitted', label: 'Not Submitted', icon: UserRoundPen, tile: 'bg-[#FFF7DE] text-[#B7860B]' },
-  { key: 'online', label: 'Online Now', icon: Radio, tile: 'bg-[#E9F6EF] text-[var(--green-2)]' }
+  { key: 'onLeaveToday', label: 'On Leave Today', icon: CalendarOff, tile: 'bg-[#FDECEC] text-[#C53030]' }
 ];
 
 /** The account status changes of a partner's row menu, by current status (as the staff and customer tables'). */
@@ -80,7 +80,7 @@ function initials(partner) {
 }
 
 /**
- * User Management > Manage Partners: counts (total, approved, awaiting review, not submitted, online), search (mobile,
+ * User Management > Manage Partners: counts (total, approved, awaiting review, not submitted, on leave today), search (mobile,
  * email, name, partner id), onboarding and account status filters, and the paged list from GET /api/users/partners
  * and /partners/stats. A partner id links to the partner's profile; partners who have not started onboarding have
  * none yet. With PARTNER_MANAGE write the admin adds partners (Create user with the PARTNER role) and changes their
@@ -171,6 +171,12 @@ export default function PartnersPage() {
     };
   }, [authRequest, reloadKey]);
 
+  /** Another page of the list, with the loading rows (the same page changes nothing, so it is not reloaded). */
+  const goToPage = (next) => {
+    if (next === page) return;
+    setPage(next);
+    setList((current) => ({ ...current, loading: true }));
+  };
   /** Any filter change starts again from the first page, with the loading rows. */
   const changeFilter = (setter) => (value) => {
     setter(value);
@@ -481,7 +487,7 @@ export default function PartnersPage() {
                 </tbody>
               </table>
             </div>
-            {!list.loading && <Pagination pageData={list.data} noun="partners" onPageChange={changeFilter(setPage)} />}
+            {!list.loading && <Pagination pageData={list.data} noun="partners" onPageChange={goToPage} />}
           </>
         )}
       </section>

@@ -65,6 +65,21 @@ public class NexHomeAuditUsers {
 				.toList();
 	}
 
+	/** A user's display name and the name of their highest active role (null without one). */
+	public record Person(String name, String role) {
+	}
+
+	/** The name and role of each of the users (as audit entries show them), in one query each. */
+	public Map<Long, Person> people(java.util.Collection<Long> userIds) {
+		Set<Long> ids = userIds.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+		Map<Long, NexHomeRole> roles = highestRoles(ids);
+		Map<Long, String> names = names(ids, roles);
+		Map<Long, Person> people = new HashMap<>();
+		ids.forEach(id -> people.put(id, new Person(names.get(id),
+				roles.get(id) == null ? null : roles.get(id).getName())));
+		return people;
+	}
+
 	/** Only what has happened, newest first. */
 	public List<NexHomeAuditEntry> newestFirst(List<Line> lines) {
 		return entries(lines.stream()

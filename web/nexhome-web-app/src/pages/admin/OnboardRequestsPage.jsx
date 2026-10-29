@@ -130,6 +130,8 @@ export default function OnboardRequestsPage() {
   }, [authRequest, status, search, page]);
 
   const chooseQueue = (next) => {
+    // The open queue's first page again changes nothing, so no reload would end the loading state
+    if (next === status && page === 0) return;
     setStatus(next);
     setPage(0);
     setList((current) => ({ ...current, loading: true }));

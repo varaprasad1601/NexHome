@@ -11,6 +11,7 @@ import java.math.BigDecimal;
  * @param billableMinutes HOURLY only: the minutes billed (a package's hours plus any extra time, or the requested
  *        minutes raised to the minimum and rounded up to the increment)
  * @param subtotal the price for the job: the unit price once, or the hourly price for the billable time
+ * @param regularSubtotal the same job at the regular prices (no discount): the subtotal's discount is the difference
  * @param total the subtotal, raised to the minimum charge
  * @param durationMinutes the expected duration: billable minutes for HOURLY, else the variant's, else the service's
  *        estimate
@@ -29,6 +30,8 @@ public record NexHomeServiceQuoteResponse(
 		Integer billableMinutes,
 
 		BigDecimal subtotal,
+
+		BigDecimal regularSubtotal,
 
 		BigDecimal minimumCharge,
 

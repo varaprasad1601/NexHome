@@ -47,7 +47,9 @@ public class NexHomeSecurityConfig {
 			"/api/auth/admin/otp/request",
 			"/api/auth/otp/verify",
 			"/api/auth/token/refresh",
-			"/api/auth/logout" };
+			"/api/auth/logout",
+			// Payment providers' webhooks: no token, the signature is checked instead (Module 7)
+			"/api/payments/webhooks/*" };
 
 	/** Public reads. The services decide what anonymous callers see (e.g. only active, published entries). */
 	private static final String[] PUBLIC_GET_PATHS = {

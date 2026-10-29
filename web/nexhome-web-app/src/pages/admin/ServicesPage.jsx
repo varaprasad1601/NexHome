@@ -124,6 +124,12 @@ export default function ServicesPage() {
     };
   }, [authRequest, reloadKey]);
 
+  /** Another page of the list, with the loading rows (the same page changes nothing, so it is not reloaded). */
+  const goToPage = (next) => {
+    if (next === page) return;
+    setPage(next);
+    setList((current) => ({ ...current, loading: true }));
+  };
   const changeFilter = (setter) => (value) => {
     setter(value);
     setPage(0);
@@ -389,7 +395,7 @@ export default function ServicesPage() {
                 </tbody>
               </table>
             </div>
-            {!list.loading && <Pagination pageData={list.data} noun="services" onPageChange={changeFilter(setPage)} />}
+            {!list.loading && <Pagination pageData={list.data} noun="services" onPageChange={goToPage} />}
           </>
         )}
       </section>

@@ -2,7 +2,7 @@ import { Ellipsis, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { accountStatusLabel, staffRoleOf, statusBadgeClass } from '../../../data/staffOptions';
+import { accountStatusLabel, statusBadgeClass } from '../../../data/staffOptions';
 import { splitApiDateTime } from '../../../utils/format';
 
 const AVATAR_TINTS = [
@@ -164,7 +164,6 @@ export default function StaffTable({
             <th className={`${headClass} w-[10rem]`}>Name</th>
             <th className={`${headClass} w-[11rem]`}>Email</th>
             <th className={headClass}>Mobile</th>
-            <th className={headClass}>Role</th>
             <th className={headClass}>Status</th>
             <th className={headClass}>Last Login</th>
             {!readOnly && <th className={`${headClass} text-right`}>Actions</th>}
@@ -174,21 +173,20 @@ export default function StaffTable({
           {loading &&
             Array.from({ length: 5 }, (_, i) => (
               <tr key={`loading-${i}`} className="border-t border-[var(--line)]">
-                <td colSpan={readOnly ? 9 : 10} className="px-3 py-4">
+                <td colSpan={readOnly ? 8 : 9} className="px-3 py-4">
                   <div className="h-4 animate-pulse rounded bg-[var(--light)]" />
                 </td>
               </tr>
             ))}
           {!loading && rows.length === 0 && (
             <tr className="border-t border-[var(--line)]">
-              <td colSpan={readOnly ? 9 : 10} className="px-3 py-12 text-center text-sm text-[var(--muted)]">
+              <td colSpan={readOnly ? 8 : 9} className="px-3 py-12 text-center text-sm text-[var(--muted)]">
                 No admins match your search or filters.
               </td>
             </tr>
           )}
           {!loading &&
             rows.map((staff, i) => {
-              const role = staffRoleOf(staff.roleCode);
               const lastLogin = splitApiDateTime(staff.lastLoginAt);
               const own = staff.userId === currentUserId;
               const busy = pendingUserId === staff.userId;
@@ -252,14 +250,6 @@ export default function StaffTable({
                   <td className="px-2.5 py-3">
                     <span className="block max-w-[8.75rem] truncate" title={`${staff.countryCode} ${staff.mobileNumber}`}>
                       {staff.countryCode} {staff.mobileNumber}
-                    </span>
-                  </td>
-                  <td className="px-2.5 py-3">
-                    <span
-                      className={`inline-block max-w-[7rem] truncate rounded-md px-2.5 py-1 align-middle text-xs font-bold ${role?.badge ?? 'bg-[var(--light)] text-[var(--muted)]'}`}
-                      title={staff.roleName ?? undefined}
-                    >
-                      {staff.roleName ?? '—'}
                     </span>
                   </td>
                   <td className="px-2.5 py-3">

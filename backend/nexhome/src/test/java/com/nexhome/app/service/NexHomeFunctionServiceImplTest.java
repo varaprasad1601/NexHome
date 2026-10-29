@@ -53,7 +53,7 @@ class NexHomeFunctionServiceImplTest {
 				.thenAnswer(invocation -> invocation.<String>getArgument(1).trim());
 		NexHomePermissionService permissionService = mock(NexHomePermissionService.class);
 		when(permissionService.currentUserId()).thenReturn(1L);
-		functionService = new NexHomeFunctionServiceImpl(permissionService, functionRepository,
+		functionService = new NexHomeFunctionServiceImpl(permissionService, mock(NexHomeAuditRecorder.class), functionRepository,
 				roleFunctionRepository, lookupService, new NexHomeFunctionMapper());
 	}
 

@@ -131,6 +131,12 @@ export default function AdminsPage({ variant = 'admins' }) {
     };
   }, [authRequest, roleCode, reloadKey]);
 
+  /** Another page of the list, with the loading rows (the same page changes nothing, so it is not reloaded). */
+  const goToPage = (next) => {
+    if (next === page) return;
+    setPage(next);
+    setList((current) => ({ ...current, loading: true }));
+  };
   /** Any filter change starts again from the first page, with the loading rows. */
   const changeFilter = (setter) => (value) => {
     setter(value);
@@ -277,7 +283,7 @@ export default function AdminsPage({ variant = 'admins' }) {
               selected={selected}
               onSelect={handleSelect}
             />
-            {!list.loading && <Pagination pageData={list.data} noun={config.noun} onPageChange={changeFilter(setPage)} />}
+            {!list.loading && <Pagination pageData={list.data} noun={config.noun} onPageChange={goToPage} />}
           </>
         )}
       </section>

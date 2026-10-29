@@ -160,6 +160,7 @@ class NexHomeCatalogServiceImplTest {
 		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, null, 500);
 
 		assertThat(quote.subtotal()).isEqualByComparingTo("499.50");
+		assertThat(quote.regularSubtotal()).isEqualByComparingTo("499.50");
 		assertThat(quote.subtotal().scale()).isEqualTo(2);
 		assertThat(quote.total()).isEqualByComparingTo("600");
 		assertThat(quote.regularPrice()).isEqualByComparingTo("499.5");
@@ -231,6 +232,15 @@ class NexHomeCatalogServiceImplTest {
 		NexHomeServiceQuoteResponse longer = catalogService.quote(30L, 40L, 200);
 		assertThat(longer.billableMinutes()).isEqualTo(210);
 		assertThat(longer.subtotal()).isEqualByComparingTo("849.00");
+		// At the regular prices: the package (no discount of its own) plus 30 minutes at the regular 400 / hour
+		assertThat(longer.regularSubtotal()).isEqualByComparingTo("899.00");
+
+		// A discounted package: 200 regular, 160 charged, so 40 off
+		variant.setPriceOverride(new BigDecimal("200"));
+		variant.setDiscountPrice(new BigDecimal("160"));
+		NexHomeServiceQuoteResponse discounted = catalogService.quote(30L, 40L, null);
+		assertThat(discounted.subtotal()).isEqualByComparingTo("160.00");
+		assertThat(discounted.regularSubtotal()).isEqualByComparingTo("200.00");
 	}
 
 	@Test
@@ -258,14 +268,15 @@ class NexHomeCatalogServiceImplTest {
 	}
 
 	@Test
-	void hourlyWithoutAnyDurationNeedsMinutes() {
+	void hourlyWithoutAPackageOrMinutesIsOneHourAtTheBasicPrice() {
 		hourlyService(30L, "400");
 
-		assertThatThrownBy(() -> catalogService.quote(30L, null, null))
+		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, null, null);
+		assertThat(quote.billableMinutes()).isEqualTo(60);
+		assertThat(quote.total()).isEqualByComparingTo("400");
+		assertThatThrownBy(() -> catalogService.quote(30L, null, -30))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage("Minutes must be more than 0 to price an hourly service.");
-		assertThatThrownBy(() -> catalogService.quote(30L, null, -30))
-				.isInstanceOf(InvalidRequestException.class);
 	}
 
 	@Test

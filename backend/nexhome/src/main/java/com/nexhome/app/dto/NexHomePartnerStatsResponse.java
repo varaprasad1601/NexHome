@@ -7,12 +7,12 @@ package com.nexhome.app.dto;
  * @param approved onboarding APPROVED
  * @param awaitingReview onboarding UNDER_REVIEW: waiting for staff
  * @param notSubmitted NOT_STARTED, DRAFT or CHANGES_REQUESTED (or no profile): waiting for the partner
- * @param online approved partners whose availability is ONLINE
+ * @param onLeaveToday partners with time off covering any part of today (Indian time)
  */
 public record NexHomePartnerStatsResponse(
 		long total,
 		long approved,
 		long awaitingReview,
 		long notSubmitted,
-		long online) {
+		long onLeaveToday) {
 }

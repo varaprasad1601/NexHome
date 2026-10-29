@@ -1,40 +1,25 @@
-import { Bell, BellOff, CalendarCheck, Check, CreditCard, Settings, ShieldCheck, UserRoundPlus, Wrench, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Bell, BellOff, Check, Settings, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { NOTIFICATION_KINDS, SAMPLE_NOTIFICATIONS } from '../../data/adminNotifications';
+import { useAdminAuth } from '../../context/adminAuth';
+import { notificationLink, notificationStyle, timeAgo } from '../../data/supportOptions';
+import useLookupLabels from '../../hooks/useLookupLabels';
 
-/** The icon tile of each kind of notification. */
-const KIND_STYLES = {
-  customer: { icon: UserRoundPlus, tile: 'bg-[#EDF6FD] text-[var(--blue)]' },
-  partner: { icon: Wrench, tile: 'bg-[#E9F6EF] text-[var(--green)]' },
-  booking: { icon: CalendarCheck, tile: 'bg-[#F3ECFF] text-[#6B46C1]' },
-  payment: { icon: CreditCard, tile: 'bg-[#FFF7DE] text-[#B7860B]' },
-  system: { icon: ShieldCheck, tile: 'bg-[#FDECEC] text-[#C53030]' }
-};
-
-/** "Just now", "6 min ago", "2 hr ago", "Yesterday" or "3 days ago". */
-function timeAgo(minutes) {
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hr ago`;
-  const days = Math.floor(hours / 24);
-  return days === 1 ? 'Yesterday' : `${days} days ago`;
-}
-
-/** High priority first, then newest first. */
-const byPriority = (a, b) => (b.priority === 'high') - (a.priority === 'high') || a.minutesAgo - b.minutesAgo;
+const TYPE_LOOKUP = ['NOTIFICATION_TYPE'];
+/** The panel lists this many of the newest; the rest are on the notifications page. */
+const PANEL_SIZE = 30;
+/** How often the unread count is refreshed while the console is open. */
+const REFRESH_MS = 60000;
 
 /**
- * One notification as a list row (sample 12): icon, title with the High tag, text, time and kind; unread rows have a
- * bold title and a blue dot on the right. Their own actions (mark read, remove) replace the dot on hover or focus.
+ * One notification as a list row (sample 12): icon, title, message, time and type; unread rows have a bold title and
+ * a blue dot on the right. Their own actions (mark read, remove) replace the dot on hover or focus.
  */
-function NotificationItem({ notification, onOpen, onRead, onRemove }) {
-  const style = KIND_STYLES[notification.kind] ?? KIND_STYLES.system;
+export function NotificationItem({ notification, typeLabel, onOpen, onRead, onRemove }) {
+  const style = notificationStyle(notification.notificationType);
   const Icon = style.icon;
-  const unread = !notification.read;
-  const kindLabel = NOTIFICATION_KINDS.find((kind) => kind.key === notification.kind)?.label;
+  const unread = !notification.isRead;
   return (
     <li className="group relative">
       <button
@@ -46,21 +31,16 @@ function NotificationItem({ notification, onOpen, onRead, onRemove }) {
           <Icon size={18} strokeWidth={2} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-1.5">
-            <span className={`text-sm ${unread ? 'font-black text-[var(--navy)]' : 'font-bold text-[var(--ink)]'}`}>
-              {notification.title}
-            </span>
-            {notification.priority === 'high' && (
-              <span className="rounded-full bg-[#FDECEC] px-2 py-px text-[0.625rem] font-black uppercase tracking-wide text-[#C53030]">
-                High
-              </span>
-            )}
+          <span className={`block text-sm ${unread ? 'font-black text-[var(--navy)]' : 'font-bold text-[var(--ink)]'}`}>
+            {notification.title}
           </span>
-          <span className="mt-0.5 line-clamp-2 block text-[0.8125rem] leading-snug text-[var(--muted)]">{notification.text}</span>
+          <span className="mt-0.5 line-clamp-2 block text-[0.8125rem] leading-snug text-[var(--muted)]">
+            {notification.message}
+          </span>
           <span className="mt-1.5 flex items-center gap-1.5 text-[0.6875rem] font-bold text-[#8A9AAD]">
-            {timeAgo(notification.minutesAgo)}
-            {kindLabel && <span aria-hidden="true">·</span>}
-            {kindLabel}
+            {timeAgo(notification.creationDate)}
+            {typeLabel && <span aria-hidden="true">·</span>}
+            {typeLabel}
           </span>
         </span>
       </button>
@@ -98,26 +78,55 @@ function NotificationItem({ notification, onOpen, onRead, onRemove }) {
 }
 
 /**
- * The top bar's bell and its panel (samples 12, 4 and 11 of Admin Sreens/notification-samples): a header with Mark
- * all as read and Clear all (one line), All / Unread tabs, kind chips (Customers, Partners, Bookings, Payments,
- * System), list rows with High-priority ones first (opening one marks it read and goes to its page; each
- * can be marked read or removed on hover), and a footer with View all notifications and settings. Escape or a click
- * outside closes it. The notifications are sample data until the backend has them (data/adminNotifications).
+ * The top bar's bell and its panel (samples 12, 4 and 11 of Admin Sreens/notification-samples), with the signed-in
+ * staff member's own notifications (GET /api/notifications/me and /me/summary, refreshed every minute and on open): a
+ * header with Mark all as read and Clear all, All / Unread tabs, type chips (only the types present), list rows
+ * (opening one marks it read and goes to its page; each can be marked read or removed on hover), and a footer with
+ * View all notifications and settings. Escape or a click outside closes it.
  */
 export default function NotificationsMenu() {
+  const { authRequest } = useAdminAuth();
+  const { label } = useLookupLabels(TYPE_LOOKUP);
   const navigate = useNavigate();
   const ref = useRef(null);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('all');
-  const [kind, setKind] = useState('all');
-  const [notifications, setNotifications] = useState(SAMPLE_NOTIFICATIONS);
-  const unread = notifications.filter((notification) => !notification.read).length;
-  const shown = notifications
-    .filter((notification) => (tab === 'unread' ? !notification.read : true) && (kind === 'all' || notification.kind === kind))
-    .sort(byPriority);
+  const [type, setType] = useState('all');
+  const [summary, setSummary] = useState({ total: 0, unread: 0 });
+  const [notifications, setNotifications] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  const loadSummary = useCallback(
+    () =>
+      authRequest('/api/notifications/me/summary')
+        .then(setSummary)
+        .catch(() => {}),
+    [authRequest]
+  );
+  const loadList = useCallback(
+    () =>
+      authRequest(`/api/notifications/me?size=${PANEL_SIZE}`)
+        .then((page) => {
+          setNotifications(page.content);
+          setLoaded(true);
+          setNow(Date.now());
+        })
+        .catch(() => setLoaded(true)),
+    [authRequest]
+  );
+
+  // The badge stays current while the console is open
+  useEffect(() => {
+    loadSummary();
+    const timer = setInterval(loadSummary, REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [loadSummary]);
 
   useEffect(() => {
     if (!open) return undefined;
+    loadList();
+    loadSummary();
     const closeOutside = (e) => {
       if (!ref.current?.contains(e.target)) setOpen(false);
     };
@@ -130,18 +139,54 @@ export default function NotificationsMenu() {
       document.removeEventListener('mousedown', closeOutside);
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [open]);
+  }, [open, loadList, loadSummary]);
 
-  const markRead = (id) =>
-    setNotifications((current) => current.map((item) => (id === undefined || item.id === id ? { ...item, read: true } : item)));
-  const remove = (id) => setNotifications((current) => current.filter((item) => item.id !== id));
+  const unread = summary.unread;
+  const types = [...new Set(notifications.map((notification) => notification.notificationType))];
+  const shown = notifications.filter(
+    (notification) => (tab === 'unread' ? !notification.isRead : true) && (type === 'all' || notification.notificationType === type)
+  );
+
+  /** Changes on screen at once, then on the server; a failure reloads what the server has. */
+  const markRead = (notification) => {
+    setNotifications((current) => current.map((item) => (item.notificationId === notification.notificationId ? { ...item, isRead: true } : item)));
+    setSummary((current) => ({ ...current, unread: Math.max(0, current.unread - (notification.isRead ? 0 : 1)) }));
+    authRequest('/api/notifications/me/read', { method: 'PUT', body: { notificationIds: [notification.notificationId] } }).catch(
+      () => loadSummary()
+    );
+  };
+  const markAllRead = () => {
+    setNotifications((current) => current.map((item) => ({ ...item, isRead: true })));
+    setSummary((current) => ({ ...current, unread: 0 }));
+    authRequest('/api/notifications/me/read-all', { method: 'PUT' }).catch(() => loadSummary());
+  };
+  const remove = (notification) => {
+    setNotifications((current) => current.filter((item) => item.notificationId !== notification.notificationId));
+    setSummary((current) => ({
+      total: Math.max(0, current.total - 1),
+      unread: Math.max(0, current.unread - (notification.isRead ? 0 : 1))
+    }));
+    authRequest(`/api/notifications/me/delete/${notification.notificationId}`, { method: 'DELETE' }).catch(() => {
+      loadList();
+      loadSummary();
+    });
+  };
+  const clearAll = () => {
+    setNotifications([]);
+    setSummary({ total: 0, unread: 0 });
+    authRequest('/api/notifications/me/clear', { method: 'DELETE' }).catch(() => {
+      loadList();
+      loadSummary();
+    });
+  };
   const go = (to) => {
     setOpen(false);
     navigate(to);
   };
   const openNotification = (notification) => {
-    markRead(notification.id);
-    if (notification.to) go(notification.to);
+    if (!notification.isRead) markRead(notification);
+    const to = notificationLink(notification);
+    if (to) go(to);
     else setOpen(false);
   };
 
@@ -155,7 +200,7 @@ export default function NotificationsMenu() {
     `rounded-full px-1.5 text-[0.6875rem] ${tab === key ? 'bg-[#EDF6FD] text-[var(--blue)]' : 'bg-[var(--light)] text-[var(--muted)]'}`;
   const chipClass = (key) =>
     `whitespace-nowrap rounded-full border px-3 py-1 text-xs font-bold transition ${
-      kind === key
+      type === key
         ? 'border-[var(--blue)] bg-[var(--blue)] text-white'
         : 'border-[var(--line)] bg-white text-[var(--muted)] hover:border-[#C7E3FC] hover:text-[var(--ink)]'
     }`;
@@ -173,7 +218,7 @@ export default function NotificationsMenu() {
         <Bell size={18} />
         {unread > 0 && (
           <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#E53E3E] px-1 text-[0.625rem] font-bold text-white ring-2 ring-white">
-            {unread}
+            {unread > 99 ? '99+' : unread}
           </span>
         )}
       </button>
@@ -187,11 +232,11 @@ export default function NotificationsMenu() {
           {/* Header: the title; the actions on one line */}
           <div className="flex items-center justify-between gap-4 px-5 pb-3 pt-4">
             <h2 className="mb-0 text-base font-black text-[var(--navy)]">Notifications</h2>
-            {notifications.length > 0 && (
+            {summary.total > 0 && (
               <div className="flex flex-shrink-0 items-center gap-1 whitespace-nowrap text-xs font-bold">
                 <button
                   type="button"
-                  onClick={() => markRead()}
+                  onClick={markAllRead}
                   disabled={!unread}
                   className="rounded-md px-1.5 py-1 text-[var(--blue)] hover:bg-[#EDF6FD] disabled:cursor-not-allowed disabled:text-[#A8B6C6] disabled:hover:bg-transparent"
                 >
@@ -202,7 +247,7 @@ export default function NotificationsMenu() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => setNotifications([])}
+                  onClick={clearAll}
                   className="rounded-md px-1.5 py-1 text-[var(--muted)] hover:bg-[#FDECEC] hover:text-[#C53030]"
                 >
                   Clear all
@@ -211,33 +256,35 @@ export default function NotificationsMenu() {
             )}
           </div>
 
-          {/* All / Unread, then the kind chips */}
+          {/* All / Unread, then the type chips */}
           <div className="mx-5 flex gap-5 border-b border-[var(--line)]" role="tablist">
             <button type="button" role="tab" aria-selected={tab === 'all'} className={tabClass('all')} onClick={() => setTab('all')}>
-              All <span className={countClass('all')}>{notifications.length}</span>
+              All <span className={countClass('all')}>{summary.total}</span>
             </button>
             <button type="button" role="tab" aria-selected={tab === 'unread'} className={tabClass('unread')} onClick={() => setTab('unread')}>
               Unread <span className={countClass('unread')}>{unread}</span>
             </button>
           </div>
-          <div className="nh-scroll-hidden flex gap-1.5 overflow-x-auto px-5 pb-2.5 pt-3" aria-label="Filter by kind">
-            <button type="button" className={chipClass('all')} aria-pressed={kind === 'all'} onClick={() => setKind('all')}>
-              All
-            </button>
-            {NOTIFICATION_KINDS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={chipClass(item.key)}
-                aria-pressed={kind === item.key}
-                onClick={() => setKind(item.key)}
-              >
-                {item.label}
+          {types.length > 1 && (
+            <div className="nh-scroll-hidden flex gap-1.5 overflow-x-auto px-5 pb-2.5 pt-3" aria-label="Filter by type">
+              <button type="button" className={chipClass('all')} aria-pressed={type === 'all'} onClick={() => setType('all')}>
+                All
               </button>
-            ))}
-          </div>
+              {types.map((code) => (
+                <button key={code} type="button" className={chipClass(code)} aria-pressed={type === code} onClick={() => setType(code)}>
+                  {label('NOTIFICATION_TYPE', code)}
+                </button>
+              ))}
+            </div>
+          )}
 
-          {shown.length === 0 ? (
+          {!loaded ? (
+            <div className="space-y-2 px-5 py-4">
+              {Array.from({ length: 3 }, (_, i) => (
+                <div key={i} className="h-14 animate-pulse rounded-xl bg-[var(--light)]" />
+              ))}
+            </div>
+          ) : shown.length === 0 ? (
             <div className="flex flex-col items-center px-6 py-10 text-center">
               <span className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[#EDF6FD] text-[var(--blue)]">
                 <BellOff size={22} />
@@ -250,20 +297,21 @@ export default function NotificationsMenu() {
               </div>
             </div>
           ) : (
-            <ul className="m-0 max-h-[24rem] list-none space-y-0.5 overflow-y-auto px-2 pb-2 pt-2">
+            <ul className="m-0 max-h-[24rem] list-none space-y-0.5 overflow-y-auto px-2 pb-2 pt-2" key={now}>
               {shown.map((notification) => (
                 <NotificationItem
-                  key={notification.id}
+                  key={notification.notificationId}
                   notification={notification}
+                  typeLabel={label('NOTIFICATION_TYPE', notification.notificationType)}
                   onOpen={openNotification}
-                  onRead={(item) => markRead(item.id)}
-                  onRemove={(item) => remove(item.id)}
+                  onRead={markRead}
+                  onRemove={remove}
                 />
               ))}
             </ul>
           )}
 
-          {/* Footer: the full list (to come) and notification settings */}
+          {/* Footer: the full list and notification settings */}
           <div className="flex items-center justify-between border-t border-[var(--line)] px-5 py-2.5">
             <button
               type="button"

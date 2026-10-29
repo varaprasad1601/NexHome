@@ -226,10 +226,10 @@ class NexHomeCatalogFlowTest {
 		perform(get("/api/catalog/services/quote?serviceId=" + hourly + "&minutes=20"), null, null)
 				.andExpect(jsonPath("$.billableMinutes").value(60))
 				.andExpect(jsonPath("$.subtotal").value(400.00));
-		// Without minutes the estimated duration (120) is priced
+		// Without minutes or a package one hour is priced at the basic hourly price
 		perform(get("/api/catalog/services/quote?serviceId=" + hourly), null, null)
-				.andExpect(jsonPath("$.billableMinutes").value(120))
-				.andExpect(jsonPath("$.total").value(800.00));
+				.andExpect(jsonPath("$.billableMinutes").value(60))
+				.andExpect(jsonPath("$.total").value(400.00));
 		perform(get("/api/catalog/services/quote?serviceId=" + hourly + "&minutes=0"), null, null)
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("Minutes must be more than 0 to price an hourly service."));

@@ -47,6 +47,7 @@ import com.nexhome.app.model.NexHomeUserRoleId;
 import com.nexhome.app.repository.NexHomeAdminProfileRepository;
 import com.nexhome.app.repository.NexHomeCustomerProfileRepository;
 import com.nexhome.app.repository.NexHomePartnerProfileRepository;
+import com.nexhome.app.repository.NexHomePartnerTimeOffRepository;
 import com.nexhome.app.repository.NexHomeAuthRefreshTokenRepository;
 import com.nexhome.app.repository.NexHomeRoleRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
@@ -114,9 +115,10 @@ class NexHomeUserServiceImplTest {
 		});
 		when(permissionService.canManageAccount(any(), anyString())).thenReturn(true);
 		userService = new NexHomeUserServiceImpl(userRepository, roleRepository, userRoleRepository,
-				refreshTokenRepository, lookupService, permissionService, new NexHomeUserMapper(),
+				refreshTokenRepository, lookupService, permissionService, mock(NexHomeAuditRecorder.class),
+				new NexHomeUserMapper(),
 				adminProfileRepository, new NexHomeAdminProfileMapper(), customerProfileRepository, new NexHomeCustomerProfileMapper(),
-				partnerProfileRepository, partnerProfileMapper);
+				partnerProfileRepository, mock(NexHomePartnerTimeOffRepository.class), partnerProfileMapper);
 	}
 
 	@Test

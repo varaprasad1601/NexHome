@@ -27,6 +27,7 @@ import com.nexhome.app.mapper.NexHomeAddressMapper;
 import com.nexhome.app.model.NexHomeAddress;
 import com.nexhome.app.model.NexHomeUser;
 import com.nexhome.app.repository.NexHomeAddressRepository;
+import com.nexhome.app.repository.NexHomeBookingRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
 import com.nexhome.app.repository.NexHomeUserRoleRepository;
 
@@ -71,7 +72,8 @@ class NexHomeAddressServiceImplTest {
 		when(permissionService.currentUserId()).thenReturn(ACTING_USER_ID);
 		when(permissionService.isSelfOrCan(any(), any(), any())).thenReturn(true);
 		addressService = new NexHomeAddressServiceImpl(addressRepository, userRepository, userRoleRepository,
-				lookupService, permissionService, new NexHomeAddressMapper());
+				lookupService, permissionService, new NexHomeAddressMapper(),
+				mock(NexHomeBookingRepository.class));
 	}
 
 	@Test

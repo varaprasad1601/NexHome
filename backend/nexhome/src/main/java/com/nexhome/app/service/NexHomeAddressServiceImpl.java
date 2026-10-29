@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.nexhome.app.dto.NexHomeAddressCreateRequest;
 import com.nexhome.app.dto.NexHomeAddressResponse;
 import com.nexhome.app.dto.NexHomeAddressUpdateRequest;
+import com.nexhome.app.exception.DuplicateResourceException;
 import com.nexhome.app.exception.InvalidRequestException;
 import com.nexhome.app.exception.ResourceNotFoundException;
 import com.nexhome.app.mapper.NexHomeAddressMapper;
@@ -18,6 +19,7 @@ import com.nexhome.app.model.NexHomeLookupCodes.Types;
 import com.nexhome.app.model.NexHomeRole;
 import com.nexhome.app.model.NexHomeUser;
 import com.nexhome.app.repository.NexHomeAddressRepository;
+import com.nexhome.app.repository.NexHomeBookingRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
 import com.nexhome.app.repository.NexHomeUserRoleRepository;
 
@@ -35,6 +37,7 @@ public class NexHomeAddressServiceImpl implements NexHomeAddressService {
 	private final NexHomeLookupService lookupService;
 	private final NexHomePermissionService permissionService;
 	private final NexHomeAddressMapper addressMapper;
+	private final NexHomeBookingRepository bookingRepository;
 
 	@Override
 	@Transactional
@@ -98,6 +101,10 @@ public class NexHomeAddressServiceImpl implements NexHomeAddressService {
 	public void deleteAddress(Long addressId) {
 		NexHomeAddress address = findAddress(addressId);
 		requireSelfOrCan(address.getUser().getId(), NexHomeAccess.DELETE);
+		// Bookings keep their address (they also hold a snapshot of it)
+		if (bookingRepository.existsByAddressId(address.getId())) {
+			throw new DuplicateResourceException("The address is used by bookings and cannot be deleted.");
+		}
 		addressRepository.delete(address);
 		log.info("Address {} deleted", address.getPublicId());
 	}

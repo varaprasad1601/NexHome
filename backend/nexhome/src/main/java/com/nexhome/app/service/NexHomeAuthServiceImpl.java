@@ -84,6 +84,7 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 	private final NexHomeRoleRepository roleRepository;
 	private final NexHomeLookupService lookupService;
 	private final NexHomePermissionService permissionService;
+	private final NexHomeAuditRecorder auditRecorder;
 	private final NexHomeAuthOtpRequestMapper otpRequestMapper;
 	private final NexHomeAuthRefreshTokenMapper refreshTokenMapper;
 	private final NexHomeUserMapper userMapper;
@@ -191,6 +192,7 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 		user.setUpdatedBy(user.getId());
 
 		NexHomeAuthTokenResponse tokens = startSession(user, UUID.randomUUID(), userAgent, now).tokens();
+		auditRecorder.record("SIGNED_IN", "USER", user.getId(), null, NexHomeAuditRecorder.values("purpose", purpose), user.getId());
 		log.info("User ID {} signed in with a {} OTP", user.getId(), purpose);
 		return otpRequestMapper.toAuthOtpDto(otpRequest, toUserDto(user), tokens);
 	}
@@ -294,6 +296,7 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 		user.setMobileNumber(mobileNumber);
 		user.setUpdatedBy(user.getId());
 
+		auditRecorder.record("PHONE_CHANGED", "USER", user.getId(), null, null, user.getId());
 		log.info("Mobile number of User ID {} changed", user.getId());
 		return otpRequestMapper.toAuthOtpDto(otpRequest, toUserDto(user), null);
 	}
