@@ -13,6 +13,10 @@ public record NexHomePartnerServiceResponse(
 
 		String serviceName,
 
+		Long categoryId,
+
+		String categoryName,
+
 		Integer experienceYears,
 
 		boolean isPrimaryService,

@@ -36,8 +36,7 @@ export const ADMIN_NAV = [
     icon: Wrench,
     items: [
       { label: 'Manage Categories', to: '/admin/services/categories', fn: 'CATALOG_MANAGE' },
-      { label: 'Manage Services', to: '/admin/services', fn: 'CATALOG_MANAGE' },
-      { label: 'Manage Service Areas', to: '/admin/services/areas', fn: 'CATALOG_MANAGE' }
+      { label: 'Manage Services', to: '/admin/services', fn: 'CATALOG_MANAGE' }
     ]
   },
   {

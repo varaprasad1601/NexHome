@@ -25,12 +25,19 @@ public record NexHomePartnerDocumentCreateRequest(
 				message = "Document number must be 4 to 30 letters, digits, spaces, slashes or hyphens")
 		String documentNumber,
 
-		@NotBlank(message = "File storage key is required")
+		// Optional until file storage exists
 		@Size(max = 1024, message = "File storage key must be at most 1024 characters")
 		String fileStorageKey,
 
 		@FutureOrPresent(message = "Expiry date cannot be in the past")
-		LocalDate expiryDate) {
+		LocalDate expiryDate,
+
+		// GOVERNMENT_ID_TYPE code: required for a GOVERNMENT_ID document
+		String idType,
+
+		// Required for a CERTIFICATION (skill certificate) document, e.g. "ITI Electrician"
+		@Size(max = 150, message = "Document name must be at most 150 characters")
+		String documentName) {
 
 	/** Never print the document number, e.g. when the request is logged. */
 	@Override

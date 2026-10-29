@@ -1,9 +1,10 @@
 import { ShieldOff } from 'lucide-react';
-import { useState } from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, Outlet, useLocation, useNavigationType } from 'react-router-dom';
 
 import { useAdminAuth } from '../../context/adminAuth';
 import { canOpen, findNavItem } from '../../data/adminNavigation';
+import { scrollToTop } from '../../hooks/useNavigationScroll';
 import AdminSidebar from './AdminSidebar';
 import AdminTopbar from './AdminTopbar';
 
@@ -25,7 +26,8 @@ function NoAccess() {
 
 /**
  * The admin shell: sidebar, top bar and the current screen, in the NexHome web colours. A screen whose sidebar link
- * the admin may not open (see canOpen) shows No access instead, once the permissions have loaded.
+ * the admin may not open (see canOpen) shows No access instead, once the permissions have loaded. Opening another
+ * screen starts at its top; filters in the address (?categoryId=) and Back / Forward keep the scroll position.
  */
 export default function AdminLayout() {
   const location = useLocation();
@@ -36,6 +38,13 @@ export default function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpenAt, setDrawerOpenAt] = useState(null);
   const drawerOpen = drawerOpenAt === location.key;
+  const navigationType = useNavigationType();
+
+  useEffect(() => {
+    if (navigationType !== 'POP') scrollToTop();
+    // Only a new screen (path), not a changed query string
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   const toggleMenu = () => {
     if (window.matchMedia('(min-width: 1024px)').matches) setCollapsed((value) => !value);

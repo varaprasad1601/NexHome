@@ -1,7 +1,9 @@
 package com.nexhome.app.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
@@ -11,9 +13,12 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 /**
- * Creates a service in an active category. Lookup fields take value codes: pricing type FIXED, HOURLY (the base price
- * is per hour), PER_UNIT or INSPECTION; commission type PERCENTAGE (value at most 100) or FIXED. HOURLY needs the
- * minimum billable minutes and the billing increment. The slug defaults to the name in lower case with hyphens.
+ * Creates a service in an active category, with its variants and requirements in the same transaction. Lookup fields
+ * take value codes: service target APPLIANCE or PROPERTY (SERVICE_TARGET), which decides the pricing types allowed
+ * (from the lookup's metadata: APPLIANCE FIXED or HOURLY, PROPERTY also AREA); pricing type FIXED, HOURLY (the base
+ * price is per hour) or AREA (by home size); commission type PERCENTAGE (value at most 100) or FIXED. HOURLY needs the
+ * minimum billable minutes and the billing increment. The discount price is at most the base price. The slug defaults
+ * to the name in lower case with hyphens. Requirements are CUSTOMER_REQUIREMENT / PARTNER_REQUIREMENT value codes.
  */
 public record NexHomeServiceCreateRequest(
 		@NotNull(message = "Category is required")
@@ -31,7 +36,12 @@ public record NexHomeServiceCreateRequest(
 		@Size(max = 300, message = "Short description must be at most 300 characters")
 		String shortDescription,
 
+		// Formatted HTML (cleaned by NexHomeRichText); the console limits its text to 4000 characters
+		@Size(max = 20000, message = "Description must be at most 20000 characters with its formatting")
 		String description,
+
+		@NotBlank(message = "Service for is required")
+		String serviceTarget,
 
 		@NotBlank(message = "Pricing type is required")
 		String pricingType,
@@ -40,6 +50,10 @@ public record NexHomeServiceCreateRequest(
 		@DecimalMin(value = "0", message = "Base price cannot be negative")
 		@Digits(integer = 10, fraction = 2, message = "Base price must have at most 10 digits and 2 decimals")
 		BigDecimal basePrice,
+
+		@DecimalMin(value = "0", message = "Discount price cannot be negative")
+		@Digits(integer = 10, fraction = 2, message = "Discount price must have at most 10 digits and 2 decimals")
+		BigDecimal discountPrice,
 
 		@DecimalMin(value = "0", message = "Minimum charge cannot be negative")
 		@Digits(integer = 10, fraction = 2, message = "Minimum charge must have at most 10 digits and 2 decimals")
@@ -66,5 +80,14 @@ public record NexHomeServiceCreateRequest(
 
 		Boolean isScheduledBookingAllowed,
 
-		Boolean isActive) {
+		Boolean isActive,
+
+		@Size(max = 50, message = "A service can have at most 50 variants")
+		List<@Valid @NotNull(message = "Variant is required") NexHomeServiceVariantInput> variants,
+
+		@Size(max = 30, message = "Choose at most 30 customer requirements")
+		List<@NotBlank(message = "Customer requirement cannot be blank") String> customerRequirements,
+
+		@Size(max = 30, message = "Choose at most 30 partner requirements")
+		List<@NotBlank(message = "Partner requirement cannot be blank") String> partnerRequirements) {
 }

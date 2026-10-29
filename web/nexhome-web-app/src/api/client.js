@@ -11,12 +11,14 @@ export class ApiError extends Error {
 }
 
 /**
- * Calls the backend and returns the parsed JSON body (null for 204).
- * Throws ApiError with the backend's message, or a generic one when the server cannot be reached.
+ * Calls the backend and returns the parsed JSON body (null for 204). A FormData body is sent as multipart (file
+ * uploads), anything else as JSON. Throws ApiError with the backend's message, or a generic one when the server cannot be reached.
  */
 export async function apiRequest(path, { method = 'GET', body, token } = {}) {
   const headers = { Accept: 'application/json' };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const multipart = body instanceof FormData;
+  // The browser sets the multipart content type itself, with its boundary
+  if (body !== undefined && !multipart) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
 
   let response;
@@ -24,7 +26,7 @@ export async function apiRequest(path, { method = 'GET', body, token } = {}) {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body)
+      body: body === undefined || multipart ? body : JSON.stringify(body)
     });
   } catch {
     throw new ApiError('Could not reach the NexHome server. Please try again.', 0);

@@ -58,6 +58,10 @@ public class NexHomeServiceVariant {
 	@Column(name = "price_override", precision = 12, scale = 2)
 	private BigDecimal priceOverride;
 
+	/** What customers pay instead of the price override; needs the override and is at most it. */
+	@Column(name = "discount_price", precision = 12, scale = 2)
+	private BigDecimal discountPrice;
+
 	@Column(name = "duration_minutes")
 	private Integer durationMinutes;
 

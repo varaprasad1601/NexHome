@@ -10,7 +10,8 @@ const TRIGGERS = {
 /**
  * The console's dropdown, in place of the browser's <select>: a button showing the chosen option, and a panel of
  * options with the chosen one ticked. Keyboard: Enter, Space or the arrows open it, the arrows move, Enter picks,
- * Escape or Tab close. It opens upwards when there is no room below.
+ * Escape or Tab close. The panel is fixed to the viewport (so a scrolling form or table cannot clip it), opens
+ * upwards when there is no room below, and closes when the page or a container around it scrolls.
  *
  * @param options [{ value, label }]; `value` is a string ('' for "all" / "not set" choices)
  * @param onChange called with the picked option's value
@@ -31,7 +32,8 @@ export default function Select({
   const ref = useRef(null);
   const listRef = useRef(null);
   const [open, setOpen] = useState(false);
-  const [upwards, setUpwards] = useState(false);
+  // The panel's fixed position: left, width and top (or bottom when it opens upwards)
+  const [position, setPosition] = useState(null);
   const [active, setActive] = useState(0);
   const selectedIndex = options.findIndex((option) => option.value === value);
   const selected = options[selectedIndex];
@@ -41,18 +43,41 @@ export default function Select({
     const closeOutside = (e) => {
       if (!ref.current?.contains(e.target)) setOpen(false);
     };
+    // A scroll anywhere but in the list itself would leave the fixed panel behind
+    const closeOnScroll = (e) => {
+      if (!listRef.current?.contains(e.target)) setOpen(false);
+    };
+    const close = () => setOpen(false);
     document.addEventListener('mousedown', closeOutside);
-    return () => document.removeEventListener('mousedown', closeOutside);
+    window.addEventListener('scroll', closeOnScroll, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('mousedown', closeOutside);
+      window.removeEventListener('scroll', closeOnScroll, true);
+      window.removeEventListener('resize', close);
+    };
   }, [open]);
 
-  // Keep the highlighted option in view while moving through a long list
+  // Keep the highlighted option in view while moving through a long list (scrolling the list only: scrollIntoView
+  // would scroll the containers around it too, and so close it)
   useEffect(() => {
-    if (open) listRef.current?.children[active]?.scrollIntoView({ block: 'nearest' });
+    const list = listRef.current;
+    const item = list?.children[active];
+    if (!open || !item) return;
+    if (item.offsetTop < list.scrollTop) list.scrollTop = item.offsetTop;
+    else if (item.offsetTop + item.offsetHeight > list.scrollTop + list.clientHeight) {
+      list.scrollTop = item.offsetTop + item.offsetHeight - list.clientHeight;
+    }
   }, [open, active]);
 
   const openList = () => {
     const rect = ref.current.getBoundingClientRect();
-    setUpwards(window.innerHeight - rect.bottom < 280 && rect.top > window.innerHeight - rect.bottom);
+    const upwards = window.innerHeight - rect.bottom < 280 && rect.top > window.innerHeight - rect.bottom;
+    setPosition({
+      left: rect.left,
+      width: rect.width,
+      ...(upwards ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 })
+    });
     setActive(Math.max(selectedIndex, 0));
     setOpen(true);
   };
@@ -117,15 +142,14 @@ export default function Select({
         />
       </button>
 
-      {open && (
+      {open && position && (
         <ul
           ref={listRef}
           id={listId}
           role="listbox"
           aria-label={ariaLabel}
-          className={`absolute left-0 z-40 m-0 max-h-64 w-full min-w-[11rem] list-none overflow-y-auto rounded-xl border border-[var(--line)] bg-white p-1.5 shadow-[0_14px_44px_rgba(14,51,89,0.14)] ${
-            upwards ? 'bottom-[calc(100%+0.375rem)]' : 'top-[calc(100%+0.375rem)]'
-          }`}
+          style={{ ...position, minWidth: Math.max(position.width, 176) }}
+          className="fixed z-[60] m-0 max-h-64 list-none overflow-y-auto rounded-xl border border-[var(--line)] bg-white p-1.5 shadow-[0_14px_44px_rgba(14,51,89,0.14)]"
         >
           {options.map((option, index) => {
             const isSelected = option.value === value;

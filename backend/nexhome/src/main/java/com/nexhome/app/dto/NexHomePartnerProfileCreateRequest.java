@@ -145,9 +145,7 @@ public record NexHomePartnerProfileCreateRequest(
 
 		@Pattern(regexp = "^$|^[6-9][0-9]{9}$",
 				message = "Emergency contact number must be a 10-digit Indian mobile number")
-		String emergencyContactNumber,
-
-		Boolean emergencyContactPermission) implements NexHomePartnerProfileFields {
+		String emergencyContactNumber) implements NexHomePartnerProfileFields {
 
 	/** Never print the Aadhaar number, e.g. when the request is logged. */
 	@Override

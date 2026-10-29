@@ -57,9 +57,17 @@ public class NexHomePartnerBankAccount {
 	@Column(name = "bank_name", length = 150)
 	private String bankName;
 
+	/** The branch, e.g. "Madhapur" (V23). */
+	@Column(name = "branch_name", length = 150)
+	private String branchName;
+
 	/** VERIFICATION_STATUS lookup code. */
 	@Column(name = "verification_status", nullable = false, length = 60)
 	private String verificationStatus;
+
+	/** Why staff rejected the account (V27); only while REJECTED. */
+	@Column(name = "rejection_reason", columnDefinition = "text")
+	private String rejectionReason;
 
 	/** Set by the payout integration (Module 7). */
 	@Column(name = "gateway_beneficiary_id", length = 150)

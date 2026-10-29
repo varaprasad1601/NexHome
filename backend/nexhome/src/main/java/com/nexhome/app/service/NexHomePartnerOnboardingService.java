@@ -3,6 +3,7 @@ package com.nexhome.app.service;
 import java.util.List;
 
 import com.nexhome.app.dto.NexHomePageResponse;
+import com.nexhome.app.dto.NexHomeAuditEntry;
 import com.nexhome.app.dto.NexHomePartnerAvailabilityUpdateRequest;
 import com.nexhome.app.dto.NexHomePartnerBankAccountCreateRequest;
 import com.nexhome.app.dto.NexHomePartnerBankAccountResponse;
@@ -17,6 +18,7 @@ import com.nexhome.app.dto.NexHomePartnerProfileResponse;
 import com.nexhome.app.dto.NexHomePartnerProfileReviewRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileSubmitRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileUpdateRequest;
+import com.nexhome.app.dto.NexHomePartnerProfileVerificationRequest;
 import com.nexhome.app.dto.NexHomePartnerServiceCreateRequest;
 import com.nexhome.app.dto.NexHomePartnerServiceResponse;
 import com.nexhome.app.dto.NexHomePartnerServiceUpdateRequest;
@@ -26,9 +28,9 @@ import com.nexhome.app.dto.NexHomePartnerServiceUpdateRequest;
  * accounts. Partners manage their own records; acting on someone else's, reviewing and verifying need
  * PARTNER_ONBOARDING_MANAGE, and nobody can review or verify their own.
  * <p>
- * Lifecycle: DRAFT -(submit)-> UNDER_REVIEW -(review)-> APPROVED, REJECTED, PROFILE_INCOMPLETE (back to the partner,
- * who submits again) or TRAINING_REQUIRED; APPROVED &lt;-&gt; SUSPENDED; REJECTED can be reopened as
- * PROFILE_INCOMPLETE.
+ * Lifecycle (V18): NOT_STARTED (every partner account's empty profile) -(first save)-> DRAFT -(submit)-> UNDER_REVIEW
+ * -(review)-> APPROVED, REJECTED or CHANGES_REQUESTED (back to the partner for more information or documents, who
+ * submits again). APPROVED and REJECTED can be sent back as CHANGES_REQUESTED.
  */
 public interface NexHomePartnerOnboardingService {
 
@@ -36,8 +38,8 @@ public interface NexHomePartnerOnboardingService {
 	NexHomePartnerProfileResponse createPartnerProfile(NexHomePartnerProfileCreateRequest request);
 
 	/**
-	 * Saves profile fields. The partner can do so only while it is a DRAFT or PROFILE_INCOMPLETE, staff at any time;
-	 * a submitted profile must stay complete.
+	 * Saves profile fields, making a NOT_STARTED profile a DRAFT. The partner can do so only while it is NOT_STARTED, a
+	 * DRAFT or CHANGES_REQUESTED, staff at any time; a submitted profile must stay complete.
 	 */
 	NexHomePartnerProfileResponse updatePartnerProfile(NexHomePartnerProfileUpdateRequest request);
 
@@ -46,6 +48,9 @@ public interface NexHomePartnerOnboardingService {
 
 	/** Staff decision: moves the profile to its next onboarding status. */
 	NexHomePartnerProfileResponse reviewPartnerProfile(NexHomePartnerProfileReviewRequest request);
+
+	/** Staff record the account, documents and bank account checks, with who made them. Never for your own profile. */
+	NexHomePartnerProfileResponse updatePartnerVerifications(NexHomePartnerProfileVerificationRequest request);
 
 	/** An approved partner goes ONLINE, OFFLINE or BUSY. */
 	NexHomePartnerProfileResponse updatePartnerAvailability(NexHomePartnerAvailabilityUpdateRequest request);
@@ -61,7 +66,7 @@ public interface NexHomePartnerOnboardingService {
 	 * status codes, city (exact, case-insensitive) and search text (part of a name or the public id).
 	 */
 	NexHomePageResponse<NexHomePartnerProfileResponse> getPartnerProfiles(Integer page, Integer size,
-			String onboardingStatus, String verificationStatus, String availabilityStatus, String city,
+			String onboardingStatus, String approvalStatus, String availabilityStatus, String city,
 			String search);
 
 	NexHomePartnerDocumentResponse addPartnerDocument(NexHomePartnerDocumentCreateRequest request);
@@ -78,6 +83,9 @@ public interface NexHomePartnerOnboardingService {
 	/** The documents of a partner profile, newest first. */
 	List<NexHomePartnerDocumentResponse> getPartnerDocuments(Long partnerProfileId);
 
+	/** The onboarding audit trail of a partner, from the audit columns (staff with PARTNER_ONBOARDING_MANAGE read). */
+	List<NexHomeAuditEntry> getPartnerAudit(Long partnerProfileId);
+
 	/** Adds a bank account; the first one (or one added with isPrimary) becomes primary. */
 	NexHomePartnerBankAccountResponse addPartnerBankAccount(NexHomePartnerBankAccountCreateRequest request);
 
@@ -93,8 +101,8 @@ public interface NexHomePartnerOnboardingService {
 
 	/**
 	 * Adds an active catalogue service the partner offers; the first one (or one added with isPrimaryService) becomes
-	 * primary. Like profile fields, the partner can change their services only while the profile is a DRAFT or
-	 * PROFILE_INCOMPLETE; staff at any time.
+	 * primary. Like profile fields, the partner can change their services only while the profile is NOT_STARTED, a
+	 * DRAFT or CHANGES_REQUESTED; staff at any time.
 	 */
 	NexHomePartnerServiceResponse addPartnerService(NexHomePartnerServiceCreateRequest request);
 

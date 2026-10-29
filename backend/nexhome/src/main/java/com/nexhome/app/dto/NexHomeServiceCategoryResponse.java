@@ -23,5 +23,8 @@ public record NexHomeServiceCategoryResponse(
 
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
 				timezone = "Asia/Kolkata")
-		Instant creationDate) {
+		Instant creationDate,
+
+		/** Partners whose main service is this category; only in the staff list (includeInactive), else null. */
+		Long partnerCount) {
 }

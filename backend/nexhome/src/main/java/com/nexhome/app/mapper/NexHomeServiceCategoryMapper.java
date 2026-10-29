@@ -52,6 +52,11 @@ public class NexHomeServiceCategoryMapper {
 	}
 
 	public NexHomeServiceCategoryResponse toServiceCategoryDto(NexHomeServiceCategory category) {
+		return toServiceCategoryDto(category, null);
+	}
+
+	/** With the number of partners whose main service it is (the staff list). */
+	public NexHomeServiceCategoryResponse toServiceCategoryDto(NexHomeServiceCategory category, Long partnerCount) {
 		return new NexHomeServiceCategoryResponse(
 				category.getId(),
 				category.getPublicId(),
@@ -61,6 +66,7 @@ public class NexHomeServiceCategoryMapper {
 				category.getIconUrl(),
 				category.getDisplayOrder(),
 				category.isActive(),
-				category.getCreationDate());
+				category.getCreationDate(),
+				partnerCount);
 	}
 }

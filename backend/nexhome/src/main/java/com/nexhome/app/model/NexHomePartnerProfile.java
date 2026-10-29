@@ -182,17 +182,24 @@ public class NexHomePartnerProfile {
 	@Column(name = "emergency_contact_number", length = 10)
 	private String emergencyContactNumber;
 
-	/** The emergency contact is shown to anyone but the partner only when this is true. */
-	@Column(name = "emergency_contact_permission", nullable = false)
-	private boolean emergencyContactPermission = false;
-
 	/** PARTNER_ONBOARDING_STATUS lookup code. */
 	@Column(name = "onboarding_status", nullable = false, length = 60)
 	private String onboardingStatus;
 
-	/** VERIFICATION_STATUS lookup code. */
-	@Column(name = "verification_status", nullable = false, length = 60)
-	private String verificationStatus;
+	/** VERIFICATION_STATUS lookup code: the profile's approval (V20, was verification_status). */
+	@Column(name = "approval_status", nullable = false, length = 60)
+	private String approvalStatus;
+
+	/** Staff checked the account (identity and contact); {@code accountVerifiedBy} names who (V20). */
+	@Column(name = "account_verified", nullable = false)
+	private boolean accountVerified = false;
+
+	@Column(name = "account_verified_by")
+	private Long accountVerifiedBy;
+
+	/** When the account was verified (V26); set exactly when verified. */
+	@Column(name = "account_verified_at")
+	private Instant accountVerifiedAt;
 
 	/** PARTNER_AVAILABILITY_STATUS lookup code. */
 	@Column(name = "availability_status", nullable = false, length = 60)

@@ -1,5 +1,7 @@
 package com.nexhome.app.controller;
 
+import java.util.List;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.nexhome.app.dto.NexHomeAuditEntry;
 import com.nexhome.app.dto.NexHomeAdminProfileCreateRequest;
 import com.nexhome.app.dto.NexHomeAdminProfileResponse;
 import com.nexhome.app.dto.NexHomeAdminProfileUpdateRequest;
@@ -68,6 +71,12 @@ public class NexHomeProfileController {
 		return profileService.getCustomerProfiles(page, size, search);
 	}
 
+	/** The customer's activity log from the audit columns; owner or CUSTOMER_MANAGE read (checked in the service). */
+	@GetMapping("/customers/activity/{customerProfileId}")
+	public List<NexHomeAuditEntry> getCustomerProfileActivity(@PathVariable Long customerProfileId) {
+		return profileService.getCustomerProfileActivity(customerProfileId);
+	}
+
 	/** Owner or CUSTOMER_MANAGE read. */
 	@GetMapping("/customers/{customerProfileId}")
 	public NexHomeCustomerProfileResponse getCustomerProfile(@PathVariable Long customerProfileId) {
@@ -106,6 +115,12 @@ public class NexHomeProfileController {
 			@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer size,
 			@RequestParam(required = false) String search) {
 		return profileService.getAdminProfiles(page, size, search);
+	}
+
+	/** The staff member's activity log; owner or read on the owner's staff role function (checked in the service). */
+	@GetMapping("/admins/activity/{adminProfileId}")
+	public List<NexHomeAuditEntry> getAdminProfileActivity(@PathVariable Long adminProfileId) {
+		return profileService.getAdminProfileActivity(adminProfileId);
 	}
 
 	/** Owner or read on the owner's staff role function. */

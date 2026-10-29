@@ -18,6 +18,7 @@ public record NexHomeServiceCategoryCreateRequest(
 		@Size(max = 150, message = "Slug must be at most 150 characters")
 		String slug,
 
+		@Size(max = 300, message = "Description must be at most 300 characters")
 		String description,
 
 		@Pattern(regexp = "^https?://\\S+$", message = "Icon URL must be an http or https URL")

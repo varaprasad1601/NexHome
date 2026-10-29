@@ -1,5 +1,8 @@
 package com.nexhome.app.service;
 
+import java.util.List;
+
+import com.nexhome.app.dto.NexHomeAuditEntry;
 import com.nexhome.app.dto.NexHomeAdminProfileCreateRequest;
 import com.nexhome.app.dto.NexHomeAdminProfileResponse;
 import com.nexhome.app.dto.NexHomeAdminProfileUpdateRequest;
@@ -23,6 +26,12 @@ public interface NexHomeProfileService {
 	/** Owner or CUSTOMER_MANAGE read. */
 	NexHomeCustomerProfileResponse getCustomerProfile(Long customerProfileId);
 
+	/**
+	 * The customer's activity log from the audit columns (account, profile, addresses), newest first; owner or
+	 * CUSTOMER_MANAGE read.
+	 */
+	List<NexHomeAuditEntry> getCustomerProfileActivity(Long customerProfileId);
+
 	/** The caller's customer profile. */
 	NexHomeCustomerProfileResponse getCurrentCustomerProfile();
 
@@ -45,6 +54,9 @@ public interface NexHomeProfileService {
 
 	/** Owner or read on the owner's staff role function. */
 	NexHomeAdminProfileResponse getAdminProfile(Long adminProfileId);
+
+	/** The staff member's activity log (account, profile), newest first; owner or the account function's read. */
+	List<NexHomeAuditEntry> getAdminProfileActivity(Long adminProfileId);
 
 	/** The caller's staff profile. */
 	NexHomeAdminProfileResponse getCurrentAdminProfile();

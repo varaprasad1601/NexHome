@@ -18,6 +18,7 @@ const FLAGS = [
 ];
 const NO_ACCESS = { canRead: false, canWrite: false, canDelete: false };
 
+
 /** What a grant gives: nothing unless it exists and is active. */
 function accessOf(grant) {
   return grant?.activeFlag ? { canRead: grant.canRead, canWrite: grant.canWrite, canDelete: grant.canDelete } : NO_ACCESS;

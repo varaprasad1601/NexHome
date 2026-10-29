@@ -26,9 +26,11 @@ public class NexHomeServiceMapper {
 		service.setName(trimToNull(request.name()));
 		service.setSlug(slug);
 		service.setShortDescription(trimToNull(request.shortDescription()));
-		service.setDescription(trimToNull(request.description()));
+		service.setDescription(NexHomeRichText.clean(request.description()));
+		service.setServiceTarget(trimToNull(request.serviceTarget()));
 		service.setPricingType(trimToNull(request.pricingType()));
 		service.setBasePrice(request.basePrice());
+		service.setDiscountPrice(request.discountPrice());
 		service.setMinimumCharge(request.minimumCharge() == null ? BigDecimal.ZERO : request.minimumCharge());
 		service.setEstimatedDurationMinutes(request.estimatedDurationMinutes());
 		service.setMinimumBillableMinutes(request.minimumBillableMinutes());
@@ -47,7 +49,7 @@ public class NexHomeServiceMapper {
 
 	/**
 	 * Applies an update: a null field keeps its current value and an empty short description or description is
-	 * cleared. The category and slug are applied by the service.
+	 * cleared; the discount price is always replaced (null: no discount). The category and slug are applied by the service.
 	 */
 	public void updateServiceEntity(NexHomeService service, NexHomeServiceUpdateRequest request, Long actingUserId) {
 		if (request.name() != null) {
@@ -57,14 +59,18 @@ public class NexHomeServiceMapper {
 			service.setShortDescription(trimToNull(request.shortDescription()));
 		}
 		if (request.description() != null) {
-			service.setDescription(trimToNull(request.description()));
+			service.setDescription(NexHomeRichText.clean(request.description()));
 		}
 		if (request.pricingType() != null) {
 			service.setPricingType(trimToNull(request.pricingType()));
 		}
+		if (request.serviceTarget() != null) {
+			service.setServiceTarget(trimToNull(request.serviceTarget()));
+		}
 		if (request.basePrice() != null) {
 			service.setBasePrice(request.basePrice());
 		}
+		service.setDiscountPrice(request.discountPrice());
 		if (request.minimumCharge() != null) {
 			service.setMinimumCharge(request.minimumCharge());
 		}
@@ -107,8 +113,10 @@ public class NexHomeServiceMapper {
 				service.getSlug(),
 				service.getShortDescription(),
 				service.getDescription(),
+				service.getServiceTarget(),
 				service.getPricingType(),
 				service.getBasePrice(),
+				service.getDiscountPrice(),
 				service.getMinimumCharge(),
 				service.getEstimatedDurationMinutes(),
 				service.getMinimumBillableMinutes(),

@@ -23,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.nexhome.app.dto.NexHomeLookupValueResponse;
 import com.nexhome.app.dto.NexHomePageResponse;
+import com.nexhome.app.service.NexHomeAuditUsers.Line;
+import com.nexhome.app.dto.NexHomeAuditEntry;
 import com.nexhome.app.dto.NexHomePartnerAvailabilityUpdateRequest;
 import com.nexhome.app.dto.NexHomePartnerBankAccountCreateRequest;
 import com.nexhome.app.dto.NexHomePartnerBankAccountResponse;
@@ -38,6 +40,7 @@ import com.nexhome.app.dto.NexHomePartnerProfileResponse;
 import com.nexhome.app.dto.NexHomePartnerProfileReviewRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileSubmitRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileUpdateRequest;
+import com.nexhome.app.dto.NexHomePartnerProfileVerificationRequest;
 import com.nexhome.app.dto.NexHomePartnerServiceCreateRequest;
 import com.nexhome.app.dto.NexHomePartnerServiceResponse;
 import com.nexhome.app.dto.NexHomePartnerServiceUpdateRequest;
@@ -50,6 +53,7 @@ import com.nexhome.app.mapper.NexHomePartnerProfileMapper;
 import com.nexhome.app.mapper.NexHomePartnerServiceMapper;
 import com.nexhome.app.mapper.NexHomeText;
 import com.nexhome.app.model.NexHomeAccess;
+import com.nexhome.app.model.NexHomeLookupCodes.DocumentType;
 import com.nexhome.app.model.NexHomeLookupCodes.PartnerAvailabilityStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.PartnerOnboardingStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.Types;
@@ -81,25 +85,28 @@ import lombok.extern.slf4j.Slf4j;
 public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboardingService {
 
 	static final String PARTNER_ONBOARDING_MANAGE = "PARTNER_ONBOARDING_MANAGE";
+	/** Staff changes to an approved partner (V25); before approval PARTNER_ONBOARDING_MANAGE write is enough. */
+	static final String PARTNER_APPROVED_EDIT = "PARTNER_APPROVED_EDIT";
 
 	/** The onboarding statuses a reviewer may move a profile to, by its current status. */
 	private static final Map<String, Set<String>> REVIEW_TRANSITIONS = Map.of(
 			PartnerOnboardingStatus.UNDER_REVIEW, Set.of(PartnerOnboardingStatus.APPROVED,
-					PartnerOnboardingStatus.REJECTED, PartnerOnboardingStatus.PROFILE_INCOMPLETE,
-					PartnerOnboardingStatus.TRAINING_REQUIRED),
-			PartnerOnboardingStatus.TRAINING_REQUIRED, Set.of(PartnerOnboardingStatus.APPROVED,
-					PartnerOnboardingStatus.REJECTED, PartnerOnboardingStatus.PROFILE_INCOMPLETE),
-			PartnerOnboardingStatus.APPROVED, Set.of(PartnerOnboardingStatus.SUSPENDED),
-			PartnerOnboardingStatus.SUSPENDED, Set.of(PartnerOnboardingStatus.APPROVED),
-			PartnerOnboardingStatus.REJECTED, Set.of(PartnerOnboardingStatus.PROFILE_INCOMPLETE));
+					PartnerOnboardingStatus.REJECTED, PartnerOnboardingStatus.CHANGES_REQUESTED),
+			// An approved partner whose details need another look, or a rejected one given another chance
+			PartnerOnboardingStatus.APPROVED, Set.of(PartnerOnboardingStatus.CHANGES_REQUESTED),
+			PartnerOnboardingStatus.REJECTED, Set.of(PartnerOnboardingStatus.CHANGES_REQUESTED));
 
 	/** Review decisions that must say why. */
 	private static final Set<String> REASON_REQUIRED = Set.of(PartnerOnboardingStatus.REJECTED,
-			PartnerOnboardingStatus.PROFILE_INCOMPLETE, PartnerOnboardingStatus.SUSPENDED);
+			PartnerOnboardingStatus.CHANGES_REQUESTED);
+
+	/** Statuses of a profile not submitted yet: it may be incomplete (ck_nexhome_partner_profiles_submitted). */
+	private static final Set<String> NOT_SUBMITTED = Set.of(PartnerOnboardingStatus.NOT_STARTED,
+			PartnerOnboardingStatus.DRAFT);
 
 	/** Statuses in which the partner may still edit the profile and submit it. */
-	private static final Set<String> EDITABLE_BY_PARTNER = Set.of(PartnerOnboardingStatus.DRAFT,
-			PartnerOnboardingStatus.PROFILE_INCOMPLETE);
+	private static final Set<String> EDITABLE_BY_PARTNER = Set.of(PartnerOnboardingStatus.NOT_STARTED,
+			PartnerOnboardingStatus.DRAFT, PartnerOnboardingStatus.CHANGES_REQUESTED);
 
 	/** Decisions staff may record on a document or bank account (PENDING is only the initial state). */
 	private static final List<String> VERIFICATION_DECISIONS = List.of(VerificationStatus.IN_REVIEW,
@@ -119,6 +126,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	private final NexHomeServiceRepository serviceRepository;
 	private final NexHomePartnerServiceRepository partnerServiceRepository;
 	private final NexHomePartnerServiceMapper partnerServiceMapper;
+	private final NexHomeAuditUsers auditUsers;
 
 	// ------------------------------------------------------------------------------------------------------------
 	// Partner profiles
@@ -134,8 +142,8 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 				NexHomeRole.PARTNER)) {
 			throw new InvalidRequestException("Partner profiles are only for accounts with the PARTNER role.");
 		}
-		// Every partner account has an empty DRAFT from the start (V16): creating the profile fills it in, keeping its
-		// partner id. Only a profile that already has a name is a duplicate.
+		// Every partner account has an empty NOT_STARTED profile from the start (V16, V18): creating the profile fills it
+		// in, keeping its partner id, and makes it a DRAFT. Only a profile that already has a name is a duplicate.
 		NexHomePartnerProfile existing = partnerProfileRepository.findByUserId(user.getId()).orElse(null);
 		if (existing != null && existing.getFirstName() != null) {
 			throw new DuplicateResourceException("This account already has a partner profile.");
@@ -147,12 +155,13 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		NexHomePartnerProfile profile = existing != null ? existing
 				: partnerProfileMapper.toPartnerProfileEntity(user, actingUserId);
 		applyFields(profile, request, user, actingUserId);
+		startDraft(profile);
 		if (existing == null) {
 			profile = partnerProfileRepository.save(profile);
 		}
 
 		log.info("Partner profile {} filled in for User ID {}", profile.getPublicId(), user.getId());
-		return toPartnerProfileDto(profile, actingUserId);
+		return toProfileDto(profile);
 	}
 
 	@Override
@@ -161,7 +170,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		Long actingUserId = permissionService.currentUserId();
 		NexHomePartnerProfile profile = findPartnerProfile(request.partnerProfileId());
 		NexHomeUser owner = profile.getUser();
-		requireSelfOrCan(owner.getId(), NexHomeAccess.WRITE);
+		requireCanChange(profile, NexHomeAccess.WRITE);
 		if (owner.getId().equals(actingUserId)) {
 			if (!EDITABLE_BY_PARTNER.contains(profile.getOnboardingStatus())) {
 				throw new InvalidRequestException("The profile is " + profile.getOnboardingStatus()
@@ -173,13 +182,14 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		}
 
 		applyFields(profile, request, owner, actingUserId);
-		// Only a draft may be incomplete (ck_nexhome_partner_profiles_submitted)
-		if (!PartnerOnboardingStatus.DRAFT.equals(profile.getOnboardingStatus())) {
+		startDraft(profile);
+		// Only a profile not submitted yet may be incomplete (ck_nexhome_partner_profiles_submitted)
+		if (!NOT_SUBMITTED.contains(profile.getOnboardingStatus())) {
 			requireReadyForReview(profile);
 		}
 
 		log.info("Partner profile {} updated", profile.getPublicId());
-		return toPartnerProfileDto(profile, actingUserId);
+		return toProfileDto(profile);
 	}
 
 	@Override
@@ -189,18 +199,18 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		NexHomePartnerProfile profile = findPartnerProfile(request.partnerProfileId());
 		requireSelfOrCan(profile.getUser().getId(), NexHomeAccess.WRITE);
 		if (!EDITABLE_BY_PARTNER.contains(profile.getOnboardingStatus())) {
-			throw new InvalidRequestException("Only a DRAFT or PROFILE_INCOMPLETE profile can be submitted; this one is "
-					+ profile.getOnboardingStatus() + ".");
+			throw new InvalidRequestException("Only a profile that is not submitted yet or has changes requested can be "
+					+ "submitted; this one is " + profile.getOnboardingStatus() + ".");
 		}
 		requireReadyForReview(profile);
 
 		profile.setOnboardingStatus(PartnerOnboardingStatus.UNDER_REVIEW);
-		profile.setVerificationStatus(VerificationStatus.IN_REVIEW);
+		profile.setApprovalStatus(VerificationStatus.IN_REVIEW);
 		profile.setRejectionReason(null);
 		profile.setUpdatedBy(actingUserId);
 
 		log.info("Partner profile {} submitted for review", profile.getPublicId());
-		return toPartnerProfileDto(profile, actingUserId);
+		return toProfileDto(profile);
 	}
 
 	@Override
@@ -227,14 +237,22 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 				if (!Boolean.TRUE.equals(profile.getAdult())) {
 					throw new InvalidRequestException("Only a partner who is 18 or older can be approved.");
 				}
+				Long partnerId = profile.getId();
+				if (!profile.isAccountVerified()
+						|| !documentsVerified(partnerDocumentRepository.findByPartnerIdIn(List.of(partnerId)))
+						|| !bankAccountVerified(partnerBankAccountRepository.findByPartnerIdAndPrimaryTrue(partnerId)
+								.orElse(null))) {
+					throw new InvalidRequestException(
+							"Verify the account, documents and bank account before approving the partner.");
+				}
 				profile.setApprovedBy(actingUserId);
 				profile.setApprovedAt(Instant.now());
-				profile.setVerificationStatus(VerificationStatus.VERIFIED);
+				profile.setApprovalStatus(VerificationStatus.VERIFIED);
 			}
-			case PartnerOnboardingStatus.REJECTED -> profile.setVerificationStatus(VerificationStatus.REJECTED);
-			case PartnerOnboardingStatus.PROFILE_INCOMPLETE -> profile.setVerificationStatus(VerificationStatus.PENDING);
+			case PartnerOnboardingStatus.REJECTED -> profile.setApprovalStatus(VerificationStatus.REJECTED);
+			case PartnerOnboardingStatus.CHANGES_REQUESTED -> profile.setApprovalStatus(VerificationStatus.PENDING);
 			default -> {
-				// TRAINING_REQUIRED keeps the verification in review; SUSPENDED keeps it as it was
+				// No other targets (REVIEW_TRANSITIONS)
 			}
 		}
 		if (!PartnerOnboardingStatus.APPROVED.equals(target)) {
@@ -247,7 +265,32 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 
 		log.info("Partner profile {} moved from {} to {} by User ID {}", profile.getPublicId(), current, target,
 				actingUserId);
-		return toPartnerProfileDto(profile, actingUserId);
+		return toProfileDto(profile);
+	}
+
+	@Override
+	@Transactional
+	public NexHomePartnerProfileResponse updatePartnerVerifications(NexHomePartnerProfileVerificationRequest request) {
+		Long actingUserId = permissionService.currentUserId();
+		NexHomePartnerProfile profile = findPartnerProfile(request.partnerProfileId());
+		if (profile.getUser().getId().equals(actingUserId)) {
+			throw new AccessDeniedException("Nobody can verify their own partner profile.");
+		}
+		// An approved partner was approved on this check; it cannot be taken back afterwards
+		if (Boolean.FALSE.equals(request.accountVerified())
+				&& PartnerOnboardingStatus.APPROVED.equals(profile.getOnboardingStatus())) {
+			throw new InvalidRequestException("The account of an approved partner cannot be unverified.");
+		}
+		// The check names who made it; clearing it clears that too (ck_nexhome_partner_profiles_account_verified)
+		if (request.accountVerified() != null) {
+			profile.setAccountVerified(request.accountVerified());
+			profile.setAccountVerifiedBy(request.accountVerified() ? actingUserId : null);
+			profile.setAccountVerifiedAt(request.accountVerified() ? Instant.now() : null);
+		}
+		profile.setUpdatedBy(actingUserId);
+
+		log.info("Partner profile {} account verified: {}", profile.getPublicId(), profile.isAccountVerified());
+		return toProfileDto(profile);
 	}
 
 	@Override
@@ -266,7 +309,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		profile.setUpdatedBy(actingUserId);
 
 		log.info("Partner profile {} is now {}", profile.getPublicId(), target);
-		return toPartnerProfileDto(profile, actingUserId);
+		return toProfileDto(profile);
 	}
 
 	@Override
@@ -274,7 +317,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	public NexHomePartnerProfileResponse getPartnerProfile(Long partnerProfileId) {
 		NexHomePartnerProfile profile = findPartnerProfile(partnerProfileId);
 		requireSelfOrCan(profile.getUser().getId(), NexHomeAccess.READ);
-		return toPartnerProfileDto(profile, permissionService.currentUserId());
+		return toProfileDto(profile);
 	}
 
 	@Override
@@ -282,24 +325,110 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	public NexHomePartnerProfileResponse getCurrentPartnerProfile() {
 		Long userId = permissionService.currentUserId();
 		return partnerProfileRepository.findByUserId(userId)
-				.map(profile -> toPartnerProfileDto(profile, userId))
+				.map(this::toProfileDto)
 				.orElseThrow(() -> new ResourceNotFoundException("You do not have a partner profile yet."));
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public NexHomePageResponse<NexHomePartnerProfileResponse> getPartnerProfiles(Integer page, Integer size,
-			String onboardingStatus, String verificationStatus, String availabilityStatus, String city,
+			String onboardingStatus, String approvalStatus, String availabilityStatus, String city,
 			String search) {
 		PageRequest pageRequest = NexHomePaging.newestFirst(page, size);
 		Long userId = permissionService.currentUserId();
 		Page<NexHomePartnerProfile> profiles = partnerProfileRepository.search(
 				optionalCode(Types.PARTNER_ONBOARDING_STATUS, onboardingStatus, "Onboarding status"),
-				optionalCode(Types.VERIFICATION_STATUS, verificationStatus, "Verification status"),
+				optionalCode(Types.VERIFICATION_STATUS, approvalStatus, "Approval status"),
 				optionalCode(Types.PARTNER_AVAILABILITY_STATUS, availabilityStatus, "Availability status"),
 				NexHomePaging.searchText(city), NexHomePaging.searchText(search), pageRequest);
 		return NexHomePaging.toPageResponse(pageRequest, profiles,
-				profiles.stream().map(profile -> toPartnerProfileDto(profile, userId)).toList());
+				toProfileDtos(profiles.getContent()));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<NexHomeAuditEntry> getPartnerAudit(Long partnerProfileId) {
+		NexHomePartnerProfile profile = findPartnerProfile(partnerProfileId);
+		List<NexHomePartnerDocument> documents = partnerDocumentRepository
+				.findByPartnerIdOrderByCreationDateDescIdDesc(partnerProfileId).reversed();
+		List<NexHomePartnerBankAccount> accounts = partnerBankAccountRepository
+				.findByPartnerIdOrderByPrimaryDescCreationDateDescIdDesc(partnerProfileId);
+
+		List<Line> lines = new ArrayList<>();
+		lines.add(new Line("PROFILE_CREATED", null, profile.getCreationDate(), profile.getCreatedBy()));
+		lines.add(new Line("PROFILE_UPDATED", null, profile.getUpdatedDate(), profile.getUpdatedBy()));
+		documents.forEach(document -> lines.add(new Line("DOCUMENT_ADDED", documentSubject(document),
+				document.getCreationDate(), document.getCreatedBy())));
+		accounts.forEach(account -> lines.add(new Line("BANK_ACCOUNT_ADDED", accountSubject(account),
+				account.getCreationDate(), account.getCreatedBy())));
+		lines.add(new Line("ACCOUNT_VERIFIED", null, profile.getAccountVerifiedAt(), profile.getAccountVerifiedBy()));
+		documents.forEach(document -> {
+			boolean verified = VerificationStatus.VERIFIED.equals(document.getVerificationStatus());
+			lines.add(new Line("DOCUMENT_VERIFIED", documentSubject(document),
+					verified ? document.getVerifiedAt() : null, verified ? document.getVerifiedBy() : null));
+		});
+		// A bank account has no verified by / at columns: its last update is the verification (a later change of the
+		// holder name resets it to PENDING)
+		accounts.forEach(account -> {
+			boolean verified = VerificationStatus.VERIFIED.equals(account.getVerificationStatus());
+			lines.add(new Line("BANK_ACCOUNT_VERIFIED", accountSubject(account),
+					verified ? account.getUpdatedDate() : null, verified ? account.getUpdatedBy() : null));
+		});
+		lines.add(new Line("APPROVED", null, profile.getApprovedAt(), profile.getApprovedBy()));
+
+		return auditUsers.entries(lines);
+	}
+
+	/** A document in the audit trail: its name, else its ID type, else its document type (codes). */
+	private static String documentSubject(NexHomePartnerDocument document) {
+		if (document.getDocumentName() != null) {
+			return document.getDocumentName();
+		}
+		return document.getIdType() != null ? document.getIdType() : document.getDocumentType();
+	}
+
+	private static String accountSubject(NexHomePartnerBankAccount account) {
+		return (account.getBankName() == null ? "Account" : account.getBankName()) + " ending "
+				+ account.getAccountNumberLast4();
+	}
+
+	/** The profile with its documents and bank account checks, read from those records. */
+	private NexHomePartnerProfileResponse toProfileDto(NexHomePartnerProfile profile) {
+		Long partnerId = profile.getId();
+		return partnerProfileMapper.toPartnerProfileDto(profile,
+				documentsVerified(partnerDocumentRepository.findByPartnerIdIn(List.of(partnerId))),
+				bankAccountVerified(partnerBankAccountRepository.findByPartnerIdAndPrimaryTrue(partnerId).orElse(null)));
+	}
+
+	/** A page of profiles; their documents and primary bank accounts are loaded in one query each. */
+	private List<NexHomePartnerProfileResponse> toProfileDtos(List<NexHomePartnerProfile> profiles) {
+		if (profiles.isEmpty()) {
+			return List.of();
+		}
+		List<Long> partnerIds = profiles.stream().map(NexHomePartnerProfile::getId).toList();
+		Map<Long, List<NexHomePartnerDocument>> documents = partnerDocumentRepository.findByPartnerIdIn(partnerIds)
+				.stream()
+				.collect(Collectors.groupingBy(document -> document.getPartner().getId()));
+		Map<Long, NexHomePartnerBankAccount> primaryAccounts = partnerBankAccountRepository
+				.findByPartnerIdInAndPrimaryTrue(partnerIds).stream()
+				.collect(Collectors.toMap(account -> account.getPartner().getId(), account -> account));
+		return profiles.stream()
+				.map(profile -> partnerProfileMapper.toPartnerProfileDto(profile,
+						documentsVerified(documents.getOrDefault(profile.getId(), List.of())),
+						bankAccountVerified(primaryAccounts.get(profile.getId()))))
+				.toList();
+	}
+
+	/** The documents check: at least one government ID, and every document VERIFIED. */
+	static boolean documentsVerified(List<NexHomePartnerDocument> documents) {
+		return documents.stream().anyMatch(document -> DocumentType.GOVERNMENT_ID.equals(document.getDocumentType()))
+				&& documents.stream()
+						.allMatch(document -> VerificationStatus.VERIFIED.equals(document.getVerificationStatus()));
+	}
+
+	/** The bank account check: the primary account (where payouts go) is VERIFIED. */
+	static boolean bankAccountVerified(NexHomePartnerBankAccount primaryAccount) {
+		return primaryAccount != null && VerificationStatus.VERIFIED.equals(primaryAccount.getVerificationStatus());
 	}
 
 	// ------------------------------------------------------------------------------------------------------------
@@ -311,12 +440,23 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	public NexHomePartnerDocumentResponse addPartnerDocument(NexHomePartnerDocumentCreateRequest request) {
 		Long actingUserId = permissionService.currentUserId();
 		NexHomePartnerProfile partner = findPartnerProfile(request.partnerProfileId());
-		requireSelfOrCan(partner.getUser().getId(), NexHomeAccess.WRITE);
+		requireCanChange(partner, NexHomeAccess.WRITE);
 		String documentType = lookupService.validateCode(Types.DOCUMENT_TYPE, request.documentType(),
 				"Document type");
+		String idType = request.idType() == null || request.idType().isBlank() ? null
+				: lookupService.validateCode(Types.GOVERNMENT_ID_TYPE, request.idType(), "ID type");
+		if (DocumentType.GOVERNMENT_ID.equals(documentType) && idType == null) {
+			throw new InvalidRequestException("ID type is required for a government ID.");
+		}
+		if (DocumentType.CERTIFICATION.equals(documentType)
+				&& NexHomeText.trimToNull(request.documentName()) == null) {
+			throw new InvalidRequestException("Certificate name is required for a skill certificate.");
+		}
 
-		NexHomePartnerDocument document = partnerDocumentRepository.save(
-				partnerDocumentMapper.toPartnerDocumentEntity(request, partner, documentType, actingUserId));
+		NexHomePartnerDocument document = partnerDocumentMapper.toPartnerDocumentEntity(request, partner, documentType,
+				actingUserId);
+		document.setIdType(idType);
+		document = partnerDocumentRepository.save(document);
 
 		log.info("Document {} ({}) added to partner profile {}", document.getId(), documentType,
 				partner.getPublicId());
@@ -327,12 +467,19 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	@Transactional
 	public NexHomePartnerDocumentResponse updatePartnerDocument(NexHomePartnerDocumentUpdateRequest request) {
 		NexHomePartnerDocument document = findPartnerDocument(request.partnerDocumentId());
-		requireSelfOrCan(document.getPartner().getUser().getId(), NexHomeAccess.WRITE);
-		if (VerificationStatus.VERIFIED.equals(document.getVerificationStatus())) {
+		requireCanChange(document.getPartner(), NexHomeAccess.WRITE);
+		// Staff may correct a verified document (it goes back to PENDING and needs verifying again); the partner may not
+		if (VerificationStatus.VERIFIED.equals(document.getVerificationStatus())
+				&& document.getPartner().getUser().getId().equals(permissionService.currentUserId())) {
 			throw new InvalidRequestException("A verified document cannot be changed; add a new document instead.");
 		}
+		String idType = request.idType() == null || request.idType().isBlank() ? null
+				: lookupService.validateCode(Types.GOVERNMENT_ID_TYPE, request.idType(), "ID type");
 
 		partnerDocumentMapper.updatePartnerDocumentEntity(document, request, permissionService.currentUserId());
+		if (idType != null) {
+			document.setIdType(idType);
+		}
 
 		log.info("Document {} updated and sent back for verification", document.getId());
 		return partnerDocumentMapper.toPartnerDocumentDto(document);
@@ -373,7 +520,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	@Transactional
 	public void deletePartnerDocument(Long partnerDocumentId) {
 		NexHomePartnerDocument document = findPartnerDocument(partnerDocumentId);
-		requireSelfOrCan(document.getPartner().getUser().getId(), NexHomeAccess.DELETE);
+		requireCanChange(document.getPartner(), NexHomeAccess.DELETE);
 		if (VerificationStatus.VERIFIED.equals(document.getVerificationStatus())) {
 			throw new InvalidRequestException("A verified document cannot be deleted.");
 		}
@@ -400,7 +547,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	public NexHomePartnerBankAccountResponse addPartnerBankAccount(NexHomePartnerBankAccountCreateRequest request) {
 		Long actingUserId = permissionService.currentUserId();
 		NexHomePartnerProfile partner = findPartnerProfile(request.partnerProfileId());
-		requireSelfOrCan(partner.getUser().getId(), NexHomeAccess.WRITE);
+		requireCanChange(partner, NexHomeAccess.WRITE);
 
 		NexHomePartnerBankAccount account = partnerBankAccountMapper.toPartnerBankAccountEntity(request, partner,
 				actingUserId);
@@ -432,7 +579,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 			NexHomePartnerBankAccountUpdateRequest request) {
 		Long actingUserId = permissionService.currentUserId();
 		NexHomePartnerBankAccount account = findPartnerBankAccount(request.partnerBankAccountId());
-		requireSelfOrCan(account.getPartner().getUser().getId(), NexHomeAccess.WRITE);
+		requireCanChange(account.getPartner(), NexHomeAccess.WRITE);
 
 		partnerBankAccountMapper.updatePartnerBankAccountEntity(account, request, actingUserId);
 		if (Boolean.TRUE.equals(request.isPrimary()) && !account.isPrimary()) {
@@ -458,8 +605,14 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		}
 		String target = verificationDecision(request.verificationStatus(), account.getVerificationStatus(),
 				"Bank account");
+		String reason = NexHomeText.trimToNull(request.rejectionReason());
+		if (VerificationStatus.REJECTED.equals(target) && reason == null) {
+			throw new InvalidRequestException("Rejection reason is required to reject a bank account.");
+		}
 
 		account.setVerificationStatus(target);
+		// ck_nexhome_partner_bank_accounts_rejection_reason: only a rejected account keeps a reason
+		account.setRejectionReason(VerificationStatus.REJECTED.equals(target) ? reason : null);
 		account.setUpdatedBy(actingUserId);
 
 		log.info("Bank account {} set to {} by User ID {}", account.getId(), target, actingUserId);
@@ -470,7 +623,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	@Transactional
 	public void deletePartnerBankAccount(Long partnerBankAccountId) {
 		NexHomePartnerBankAccount account = findPartnerBankAccount(partnerBankAccountId);
-		requireSelfOrCan(account.getPartner().getUser().getId(), NexHomeAccess.DELETE);
+		requireCanChange(account.getPartner(), NexHomeAccess.DELETE);
 		partnerBankAccountRepository.delete(account);
 		log.info("Bank account {} deleted", partnerBankAccountId);
 	}
@@ -495,7 +648,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	public NexHomePartnerServiceResponse addPartnerService(NexHomePartnerServiceCreateRequest request) {
 		Long actingUserId = permissionService.currentUserId();
 		NexHomePartnerProfile partner = findPartnerProfile(request.partnerProfileId());
-		requireSelfOrCan(partner.getUser().getId(), NexHomeAccess.WRITE);
+		requireCanChange(partner, NexHomeAccess.WRITE);
 		requireEditableByOwner(partner, actingUserId);
 		NexHomeService service = serviceRepository.findById(request.serviceId())
 				.filter(NexHomeService::isActive)
@@ -524,7 +677,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		Long actingUserId = permissionService.currentUserId();
 		NexHomePartnerService partnerService = findPartnerService(request.partnerServiceId());
 		NexHomePartnerProfile partner = partnerService.getPartner();
-		requireSelfOrCan(partner.getUser().getId(), NexHomeAccess.WRITE);
+		requireCanChange(partner, NexHomeAccess.WRITE);
 		requireEditableByOwner(partner, actingUserId);
 
 		if (Boolean.TRUE.equals(request.isPrimaryService()) && !partnerService.isPrimaryService()) {
@@ -543,7 +696,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	@Transactional
 	public void deletePartnerService(Long partnerServiceId) {
 		NexHomePartnerService partnerService = findPartnerService(partnerServiceId);
-		requireSelfOrCan(partnerService.getPartner().getUser().getId(), NexHomeAccess.DELETE);
+		requireCanChange(partnerService.getPartner(), NexHomeAccess.DELETE);
 		requireEditableByOwner(partnerService.getPartner(), permissionService.currentUserId());
 		partnerServiceRepository.delete(partnerService);
 		log.info("Partner service {} deleted", partnerServiceId);
@@ -564,12 +717,22 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	// Rules
 	// ------------------------------------------------------------------------------------------------------------
 
-	/** Like the profile itself, the partner changes their services only while it is a DRAFT or PROFILE_INCOMPLETE. */
+	/**
+	 * Like the profile itself, the partner changes their services only before submitting it (NOT_STARTED, DRAFT) or
+	 * while changes are requested.
+	 */
 	private static void requireEditableByOwner(NexHomePartnerProfile partner, Long actingUserId) {
 		if (partner.getUser().getId().equals(actingUserId)
 				&& !EDITABLE_BY_PARTNER.contains(partner.getOnboardingStatus())) {
 			throw new InvalidRequestException("The profile is " + partner.getOnboardingStatus()
 					+ " and cannot be changed now. Contact support to update it.");
+		}
+	}
+
+	/** Saving a NOT_STARTED profile's fields makes it a "Profile Draft". */
+	private static void startDraft(NexHomePartnerProfile profile) {
+		if (PartnerOnboardingStatus.NOT_STARTED.equals(profile.getOnboardingStatus())) {
+			profile.setOnboardingStatus(PartnerOnboardingStatus.DRAFT);
 		}
 	}
 
@@ -764,10 +927,19 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		});
 	}
 
-	/** The emergency contact is shared with others only with the partner's permission. */
-	private NexHomePartnerProfileResponse toPartnerProfileDto(NexHomePartnerProfile profile, Long viewerId) {
-		return partnerProfileMapper.toPartnerProfileDto(profile,
-				profile.getUser().getId().equals(viewerId) || profile.isEmergencyContactPermission());
+	/**
+	 * Changing a partner's profile or records: the owner, or staff with PARTNER_ONBOARDING_MANAGE; once the partner is
+	 * APPROVED, staff also need PARTNER_APPROVED_EDIT write (admins; not sub-admins).
+	 */
+	private void requireCanChange(NexHomePartnerProfile partner, NexHomeAccess access) {
+		Long ownerId = partner.getUser().getId();
+		requireSelfOrCan(ownerId, access);
+		if (PartnerOnboardingStatus.APPROVED.equals(partner.getOnboardingStatus())
+				&& !ownerId.equals(permissionService.currentUserId())
+				&& !permissionService.can(PARTNER_APPROVED_EDIT, NexHomeAccess.WRITE.name())) {
+			throw new AccessDeniedException("Changing an approved partner needs " + PARTNER_APPROVED_EDIT
+					+ " write access.");
+		}
 	}
 
 	private void requireSelfOrCan(Long ownerId, NexHomeAccess access) {

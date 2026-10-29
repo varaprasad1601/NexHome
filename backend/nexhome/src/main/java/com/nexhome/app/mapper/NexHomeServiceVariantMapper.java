@@ -21,6 +21,7 @@ public class NexHomeServiceVariantMapper {
 		variant.setName(trimToNull(request.name()));
 		variant.setDescription(trimToNull(request.description()));
 		variant.setPriceOverride(request.priceOverride());
+		variant.setDiscountPrice(request.discountPrice());
 		variant.setDurationMinutes(request.durationMinutes());
 		variant.setDisplayOrder(request.displayOrder() == null ? 0 : request.displayOrder());
 		variant.setActive(request.isActive() == null || request.isActive());
@@ -31,7 +32,7 @@ public class NexHomeServiceVariantMapper {
 
 	/**
 	 * Applies an update: a null field keeps its current value and an empty description is cleared, except the price
-	 * override and duration, which are always replaced (null: the service's apply). The service and code never
+	 * override, discount price and duration, which are always replaced (null: the service's apply). The service and code never
 	 * change.
 	 */
 	public void updateServiceVariantEntity(NexHomeServiceVariant variant, NexHomeServiceVariantUpdateRequest request,
@@ -43,6 +44,7 @@ public class NexHomeServiceVariantMapper {
 			variant.setDescription(trimToNull(request.description()));
 		}
 		variant.setPriceOverride(request.priceOverride());
+		variant.setDiscountPrice(request.discountPrice());
 		variant.setDurationMinutes(request.durationMinutes());
 		if (request.displayOrder() != null) {
 			variant.setDisplayOrder(request.displayOrder());
@@ -62,6 +64,7 @@ public class NexHomeServiceVariantMapper {
 				variant.getName(),
 				variant.getDescription(),
 				variant.getPriceOverride(),
+				variant.getDiscountPrice(),
 				variant.getDurationMinutes(),
 				variant.getDisplayOrder(),
 				variant.isActive(),

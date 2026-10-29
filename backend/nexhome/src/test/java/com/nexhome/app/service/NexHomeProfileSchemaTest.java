@@ -136,7 +136,7 @@ class NexHomeProfileSchemaTest {
 		profile.setRegistrationDate(java.time.LocalDate.now());
 		profile.setRegisteredBy(1L);
 		profile.setOnboardingStatus("DRAFT");
-		profile.setVerificationStatus("PENDING");
+		profile.setApprovalStatus("PENDING");
 		profile.setAvailabilityStatus("OFFLINE");
 		return profile;
 	}

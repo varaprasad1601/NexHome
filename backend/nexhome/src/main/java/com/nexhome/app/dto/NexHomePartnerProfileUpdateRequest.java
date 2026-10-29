@@ -23,7 +23,7 @@ import jakarta.validation.constraints.Size;
  * previous work details, emergency contact fields) clears it, as does an empty list or availability map. Numbers
  * cannot be cleared once set.
  * <p>
- * Partners can change their profile only while it is a DRAFT or PROFILE_INCOMPLETE; staff with
+ * Partners can change their profile only while it is NOT_STARTED, a DRAFT or CHANGES_REQUESTED; staff with
  * PARTNER_ONBOARDING_MANAGE write can change it at any time, and only they can change the registration date. The
  * owner, public id and statuses are only declared here so that a request containing them is rejected with a clear
  * message: statuses change through submit, review and availability.
@@ -41,8 +41,8 @@ public record NexHomePartnerProfileUpdateRequest(
 		@Null(message = "Onboarding status cannot be updated here")
 		String onboardingStatus,
 
-		@Null(message = "Verification status cannot be updated here")
-		String verificationStatus,
+		@Null(message = "Approval status cannot be updated here")
+		String approvalStatus,
 
 		@Null(message = "Availability status cannot be updated here")
 		String availabilityStatus,
@@ -162,9 +162,7 @@ public record NexHomePartnerProfileUpdateRequest(
 
 		@Pattern(regexp = "^$|^[6-9][0-9]{9}$",
 				message = "Emergency contact number must be a 10-digit Indian mobile number")
-		String emergencyContactNumber,
-
-		Boolean emergencyContactPermission) implements NexHomePartnerProfileFields {
+		String emergencyContactNumber) implements NexHomePartnerProfileFields {
 
 	/** Never print the Aadhaar number, e.g. when the request is logged. */
 	@Override

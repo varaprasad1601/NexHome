@@ -79,5 +79,4 @@ public interface NexHomePartnerProfileFields {
 
 	String emergencyContactNumber();
 
-	Boolean emergencyContactPermission();
 }

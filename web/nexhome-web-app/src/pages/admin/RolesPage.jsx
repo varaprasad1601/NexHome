@@ -214,8 +214,8 @@ export default function RolesPage() {
               <thead className="bg-[var(--light)]">
                 <tr>
                   <th className={`${headClass} w-12`}>#</th>
-                  <th className={headClass}>Code</th>
                   <th className={headClass}>Name</th>
+                  <th className={headClass}>Code</th>
                   <th className={`${headClass} w-[40%]`}>Description</th>
                   <th className={headClass}>Status</th>
                   <th className={headClass}>Created On</th>
@@ -245,27 +245,17 @@ export default function RolesPage() {
                       <tr key={role.roleId} className="border-t border-[var(--line)] text-[var(--ink)] transition hover:bg-[#FAFCFE]">
                         <td className="px-3 py-3 text-[var(--muted)]">{pageData.page * pageData.size + i + 1}</td>
                         <td className="px-3 py-3">
-                          <span className="whitespace-nowrap rounded-md bg-[#E8EEF6] px-2 py-1 font-mono text-[0.75rem] font-bold text-[var(--navy)]">
-                            {role.code}
-                          </span>
+                          <Link
+                            to={`/admin/system/roles/${role.roleId}`}
+                            className="whitespace-nowrap font-bold text-[var(--blue)] no-underline hover:text-[var(--navy)]"
+                            title="Open the role's permissions"
+                          >
+                            {role.name}
+                          </Link>
                         </td>
                         <td className="px-3 py-3">
-                          <span className="flex items-center gap-2 whitespace-nowrap font-bold">
-                            <Link
-                              to={`/admin/system/roles/${role.roleId}`}
-                              className="font-bold text-[var(--blue)] no-underline hover:text-[var(--navy)]"
-                              title="Open the role's permissions"
-                            >
-                              {role.name}
-                            </Link>
-                            {SYSTEM_ROLE_CODES.includes(role.code) && (
-                              <span
-                                className="rounded-full bg-[var(--light)] px-2 py-0.5 text-[0.6875rem] font-bold text-[var(--muted)]"
-                                title="A seeded role the platform relies on: it cannot be deactivated or deleted"
-                              >
-                                System
-                              </span>
-                            )}
+                          <span className="whitespace-nowrap rounded-md bg-[#E8EEF6] px-2 py-1 font-mono text-[0.75rem] font-bold text-[var(--navy)]">
+                            {role.code}
                           </span>
                         </td>
                         <td className="max-w-0 px-3 py-3">

@@ -34,6 +34,10 @@ public record NexHomeServiceVariantCreateRequest(
 		@Digits(integer = 10, fraction = 2, message = "Price override must have at most 10 digits and 2 decimals")
 		BigDecimal priceOverride,
 
+		@DecimalMin(value = "0", message = "Discount price cannot be negative")
+		@Digits(integer = 10, fraction = 2, message = "Discount price must have at most 10 digits and 2 decimals")
+		BigDecimal discountPrice,
+
 		@Positive(message = "Duration must be more than 0 minutes")
 		Integer durationMinutes,
 

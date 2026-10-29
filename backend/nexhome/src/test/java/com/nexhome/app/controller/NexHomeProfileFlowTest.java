@@ -312,7 +312,7 @@ class NexHomeProfileFlowTest {
 				 "emergencyContactNumber": "9000000001"}""".formatted(partner.getId()))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.onboardingStatus").value("DRAFT"))
-				.andExpect(jsonPath("$.verificationStatus").value("PENDING"))
+				.andExpect(jsonPath("$.approvalStatus").value("PENDING"))
 				.andExpect(jsonPath("$.availabilityStatus").value("OFFLINE"))
 				.andExpect(jsonPath("$.aadhaarNumber").value("XXXXXXXX0123"))
 				.andExpect(jsonPath("$.registeredBy").value(partner.getId()))
@@ -385,7 +385,7 @@ class NexHomeProfileFlowTest {
 		perform(put("/api/partners/profiles/submit"), partnerToken, "{\"partnerProfileId\": %d}".formatted(profileId))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.onboardingStatus").value("UNDER_REVIEW"))
-				.andExpect(jsonPath("$.verificationStatus").value("IN_REVIEW"));
+				.andExpect(jsonPath("$.approvalStatus").value("IN_REVIEW"));
 
 		// Under review the partner can no longer edit
 		perform(put("/api/partners/profiles/update"), partnerToken,
@@ -393,10 +393,10 @@ class NexHomeProfileFlowTest {
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value(startsWith("The profile is UNDER_REVIEW")));
 
-		// Staff see the emergency contact only with the partner's permission
+		// Staff always see the emergency contact (V21)
 		perform(get("/api/partners/profiles/" + profileId), admin, null)
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.emergencyContactName").doesNotExist());
+				.andExpect(jsonPath("$.emergencyContactName").value("Lakshmi"));
 		perform(get("/api/partners/profiles/me"), partnerToken, null)
 				.andExpect(jsonPath("$.emergencyContactName").value("Lakshmi"));
 
@@ -412,30 +412,65 @@ class NexHomeProfileFlowTest {
 				"{\"partnerProfileId\": %d, \"availabilityStatus\": \"ONLINE\"}".formatted(profileId))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("Only an APPROVED partner can change availability."));
+		// Approval needs the three verification checks
+		perform(put("/api/partners/profiles/review"), admin,
+				"{\"partnerProfileId\": %d, \"onboardingStatus\": \"APPROVED\"}".formatted(profileId))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message")
+						.value("Verify the account, documents and bank account before approving the partner."));
+		// The documents and bank account checks come from those records (V24)
+		long documentId = json(perform(post("/api/partners/documents/add"), admin, """
+				{"partnerProfileId": %d, "documentType": "GOVERNMENT_ID", "idType": "PAN", "documentNumber": "ABCDE1234F"}"""
+				.formatted(profileId))
+				.andExpect(status().isCreated())).get("partnerDocumentId").asLong();
+		long bankAccountId = json(perform(post("/api/partners/bank-accounts/add"), admin, """
+				{"partnerProfileId": %d, "accountHolderName": "Suresh Babu", "accountNumber": "123456784321",
+				 "ifscCode": "SBIN0001234", "bankName": "SBI"}""".formatted(profileId))
+				.andExpect(status().isCreated())).get("partnerBankAccountId").asLong();
+		perform(put("/api/partners/documents/verify"), admin,
+				"{\"partnerDocumentId\": %d, \"verificationStatus\": \"VERIFIED\"}".formatted(documentId))
+				.andExpect(status().isOk());
+		perform(put("/api/partners/bank-accounts/verify"), admin,
+				"{\"partnerBankAccountId\": %d, \"verificationStatus\": \"VERIFIED\"}".formatted(bankAccountId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.updatedBy").value(adminUser.getId()));
+		perform(put("/api/partners/profiles/verifications/update"), admin,
+				"{\"partnerProfileId\": %d, \"accountVerified\": true}".formatted(profileId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.accountVerifiedBy").value(adminUser.getId()))
+				.andExpect(jsonPath("$.documentsVerified").value(true))
+				.andExpect(jsonPath("$.bankAccVerified").value(true));
 		perform(put("/api/partners/profiles/review"), admin,
 				"{\"partnerProfileId\": %d, \"onboardingStatus\": \"APPROVED\"}".formatted(profileId))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.onboardingStatus").value("APPROVED"))
-				.andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
+				.andExpect(jsonPath("$.approvalStatus").value("VERIFIED"))
 				.andExpect(jsonPath("$.approvedBy").value(adminUser.getId()))
 				.andExpect(jsonPath("$.approvedAt").isNotEmpty());
+		perform(put("/api/partners/profiles/verifications/update"), admin,
+				"{\"partnerProfileId\": %d, \"accountVerified\": false}".formatted(profileId))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("The account of an approved partner cannot be unverified."));
 
 		perform(put("/api/partners/profiles/availability/update"), partnerToken,
 				"{\"partnerProfileId\": %d, \"availabilityStatus\": \"ONLINE\"}".formatted(profileId))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.availabilityStatus").value("ONLINE"));
 		perform(put("/api/partners/profiles/review"), admin, """
-				{"partnerProfileId": %d, "onboardingStatus": "SUSPENDED", "rejectionReason": "Customer complaints"}"""
+				{"partnerProfileId": %d, "onboardingStatus": "CHANGES_REQUESTED", "rejectionReason": "Upload a new ID"}"""
 				.formatted(profileId))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.availabilityStatus").value("OFFLINE"))
-				.andExpect(jsonPath("$.rejectionReason").value("Customer complaints"));
+				.andExpect(jsonPath("$.approvalStatus").value("PENDING"))
+				.andExpect(jsonPath("$.rejectionReason").value("Upload a new ID"));
+		// Back with the partner: staff cannot approve it until it is submitted again
 		perform(put("/api/partners/profiles/review"), admin,
-				"{\"partnerProfileId\": %d, \"onboardingStatus\": \"TRAINING_REQUIRED\"}".formatted(profileId))
+				"{\"partnerProfileId\": %d, \"onboardingStatus\": \"APPROVED\"}".formatted(profileId))
 				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.message").value("A profile that is SUSPENDED cannot be moved to TRAINING_REQUIRED."));
+				.andExpect(jsonPath("$.message").value("A profile that is CHANGES_REQUESTED cannot be moved to APPROVED."));
 
-		perform(get("/api/partners/profiles?onboardingStatus=SUSPENDED&city=HYDERABAD&search=" + publicId), subAdmin,
+		perform(get("/api/partners/profiles?onboardingStatus=CHANGES_REQUESTED&city=HYDERABAD&search=" + publicId),
+				subAdmin,
 				null)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.totalElements").value(1));
@@ -472,7 +507,7 @@ class NexHomeProfileFlowTest {
 				.get("partnerProfileId").asLong();
 
 		long documentId = json(perform(post("/api/partners/documents/add"), partnerToken, """
-				{"partnerProfileId": %d, "documentType": "GOVERNMENT_ID", "documentNumber": "abcde1234f",
+				{"partnerProfileId": %d, "documentType": "GOVERNMENT_ID", "idType": "PAN", "documentNumber": "abcde1234f",
 				 "fileStorageKey": "partners/%d/pan.pdf", "expiryDate": "%s"}"""
 				.formatted(profileId, profileId, LocalDate.now().plusYears(5)))
 				.andExpect(status().isCreated())

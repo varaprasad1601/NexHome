@@ -103,7 +103,7 @@ public class NexHomeUserMapper {
 				category == null ? null : category.getId(),
 				category == null ? null : category.getName(),
 				profile == null ? null : profile.getOnboardingStatus(),
-				profile == null ? null : profile.getVerificationStatus(),
+				profile == null ? null : profile.getApprovalStatus(),
 				profile == null ? null : profile.getAvailabilityStatus(),
 				userRoles.stream().map(NexHomeUserMapper::toUserRoleDto).toList(),
 				user.getCreationDate());

@@ -8,6 +8,9 @@ import com.nexhome.app.dto.NexHomeServiceCategoryResponse;
 import com.nexhome.app.dto.NexHomeServiceCategoryUpdateRequest;
 import com.nexhome.app.dto.NexHomeServiceCreateRequest;
 import com.nexhome.app.dto.NexHomeServiceDetailResponse;
+import com.nexhome.app.dto.NexHomeServiceImageFile;
+import com.nexhome.app.dto.NexHomeServiceImageOrderRequest;
+import com.nexhome.app.dto.NexHomeServiceImageResponse;
 import com.nexhome.app.dto.NexHomeServiceMediaCreateRequest;
 import com.nexhome.app.dto.NexHomeServiceMediaResponse;
 import com.nexhome.app.dto.NexHomeServiceMediaUpdateRequest;
@@ -45,23 +48,32 @@ public interface NexHomeCatalogService {
 	/**
 	 * One page of services by name.
 	 *
+	 * @param isActive optional: only active (true) or inactive (false) services
 	 * @param search optional text contained in the name or public id
 	 * @param includeInactive also inactive services and services of inactive categories; needs CATALOG_MANAGE read
 	 */
 	NexHomePageResponse<NexHomeServiceResponse> getServices(Integer page, Integer size, Long categoryId,
-			String pricingType, String search, boolean includeInactive);
+			String pricingType, Boolean isActive, String search, boolean includeInactive);
 
-	/** A service with its variants, media and requirements; 404 for an inactive one unless CATALOG_MANAGE read. */
+	/**
+	 * A service with its images, variants, media and requirements; 404 for an inactive one unless CATALOG_MANAGE
+	 * read.
+	 */
 	NexHomeServiceDetailResponse getService(Long serviceId);
 
 	/** {@link #getService} by slug. */
 	NexHomeServiceDetailResponse getServiceBySlug(String slug);
 
+	/** Creates a service with its variants and chosen requirements. */
 	NexHomeServiceResponse createService(NexHomeServiceCreateRequest request);
 
+	/** Updates a service; variants and chosen requirements are replaced when their lists are sent. */
 	NexHomeServiceResponse updateService(NexHomeServiceUpdateRequest request);
 
-	/** Only a service nothing refers to (no variants, media, requirements, FAQs or partners); otherwise deactivate. */
+	/**
+	 * Only a service nothing refers to (no variants, images, media, requirements, FAQs or partners); otherwise
+	 * deactivate.
+	 */
 	void deleteService(Long serviceId);
 
 	NexHomeServiceVariantResponse addVariant(NexHomeServiceVariantCreateRequest request);
@@ -76,6 +88,20 @@ public interface NexHomeCatalogService {
 
 	void deleteMedia(Long serviceMediaId);
 
+	/**
+	 * Stores an image of a service in the database: JPEG, PNG or WebP by its bytes, at most 5 MB, at most 5 per
+	 * service.
+	 */
+	NexHomeServiceImageResponse addImage(Long serviceId, String fileName, byte[] data);
+
+	/** An image's bytes; public by id. */
+	NexHomeServiceImageFile getImage(Long serviceImageId);
+
+	void deleteImage(Long serviceImageId);
+
+	/** Puts the service's images in the given order (every one exactly once); the first is the cover. */
+	List<NexHomeServiceImageResponse> orderImages(NexHomeServiceImageOrderRequest request);
+
 	NexHomeServiceRequirementResponse addRequirement(NexHomeServiceRequirementCreateRequest request);
 
 	NexHomeServiceRequirementResponse updateRequirement(NexHomeServiceRequirementUpdateRequest request);
@@ -83,10 +109,11 @@ public interface NexHomeCatalogService {
 	void deleteRequirement(Long serviceRequirementId);
 
 	/**
-	 * Prices a service, optionally a variant of it: FIXED and INSPECTION charge the unit price, PER_UNIT the unit
-	 * price times {@code quantity} (default 1), HOURLY the hourly unit price for {@code minutes} (default: the
-	 * variant's or service's duration) raised to the minimum billable time and rounded up to the billing increment.
-	 * The total is never below the minimum charge.
+	 * Prices a service, optionally a variant of it. The price is the variant's (when it has one), else the service's,
+	 * and its discount price when set. FIXED, AREA and INSPECTION charge it once. HOURLY: a variant with hours is a
+	 * package covering them, longer jobs adding the service's hourly price in billing increments; without one, the
+	 * hourly price for {@code minutes} (default: the variant's or service's duration) raised to the minimum billable
+	 * time and rounded up to the billing increment. The total is never below the minimum charge.
 	 */
-	NexHomeServiceQuoteResponse quote(Long serviceId, Long serviceVariantId, Integer minutes, Integer quantity);
+	NexHomeServiceQuoteResponse quote(Long serviceId, Long serviceVariantId, Integer minutes);
 }

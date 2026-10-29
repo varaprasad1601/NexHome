@@ -142,7 +142,22 @@ public interface NexHomeUserRepository extends JpaRepository<NexHomeUser, Long>,
 	 */
 	static Specification<NexHomeUser> partnerSpec(String accountStatus, Collection<String> onboardingStatuses,
 			boolean withoutProfile, String availabilityStatus, String search) {
+		return partnerSpec(accountStatus, onboardingStatuses, withoutProfile, availabilityStatus, null, search);
+	}
+
+	/** As above, also only partners whose profile's main service category is {@code mainServiceCategoryId}. */
+	static Specification<NexHomeUser> partnerSpec(String accountStatus, Collection<String> onboardingStatuses,
+			boolean withoutProfile, String availabilityStatus, Long mainServiceCategoryId, String search) {
 		Specification<NexHomeUser> spec = holdsActiveRole(List.of(NexHomeRole.PARTNER), true);
+		if (mainServiceCategoryId != null) {
+			spec = spec.and((user, query, cb) -> {
+				Subquery<Integer> profiles = query.subquery(Integer.class);
+				Root<NexHomePartnerProfile> profile = profiles.from(NexHomePartnerProfile.class);
+				profiles.select(cb.literal(1)).where(cb.equal(profile.get("user"), user),
+						cb.equal(profile.get("mainServiceCategory").get("id"), mainServiceCategoryId));
+				return cb.exists(profiles);
+			});
+		}
 		if (accountStatus != null) {
 			spec = spec.and((user, query, cb) -> cb.equal(user.get("accountStatus"), accountStatus));
 		}

@@ -1,12 +1,16 @@
 package com.nexhome.app.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -21,6 +25,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -29,7 +34,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.AbstractMockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.nexhome.app.config.NexHomeSecurityProperties;
@@ -192,10 +197,26 @@ class NexHomeCatalogFlowTest {
 						.replace("\"minimumCharge\": 0", "\"minimumBillableMinutes\": 60, \"billingIncrementMinutes\": 30, "
 								+ "\"minimumCharge\": 0"))
 				.andExpect(status().isCreated())).get("serviceId").asLong();
-		long perUnit = json(perform(post("/api/catalog/services/create"), admin,
-				service(categoryId, "Fan Install " + suffix, "PER_UNIT", 250)
-						.replace("\"minimumCharge\": 0", "\"minimumCharge\": 600")))
-				.get("serviceId").asLong();
+		// A home-size service with a discount and two sizes, the larger discounted too
+		JsonNode area = json(perform(post("/api/catalog/services/create"), admin,
+				service(categoryId, "Deep Clean " + suffix, "AREA", 799)
+						.replace("\"minimumCharge\": 0", "\"discountPrice\": 699, \"minimumCharge\": 700")
+						.replace("\"isActive\": true", """
+								"isActive": true, "variants": [
+								  {"name": "1 BHK", "price": 799},
+								  {"name": "2 BHK", "price": 1199, "discountPrice": 1100, "description": "Up to 1,000 sq ft"}],
+								"customerRequirements": ["WATER_SUPPLY", "POWER_SUPPLY"],
+								"partnerRequirements": ["CLEANING_SUPPLIES"]"""))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.serviceTarget").value("PROPERTY"))
+				.andExpect(jsonPath("$.discountPrice").value(699)));
+		long areaId = area.get("serviceId").asLong();
+		JsonNode areaDetail = json(perform(get("/api/catalog/services/" + areaId), null, null)
+				.andExpect(jsonPath("$.variants[*].variantCode").value(contains("V_1_BHK", "V_2_BHK")))
+				.andExpect(jsonPath("$.requirements.length()").value(3))
+				.andExpect(jsonPath("$.requirements[?(@.requirementCode == 'CLEANING_SUPPLIES')].requirementFor")
+						.value(hasItem("PARTNER"))));
+		long twoBhk = areaDetail.get("variants").get(1).get("serviceVariantId").asLong();
 
 		// 70 minutes: 60 minimum plus one 30-minute increment = 90 minutes at 400/hour
 		perform(get("/api/catalog/services/quote?serviceId=" + hourly + "&minutes=70"), null, null)
@@ -212,19 +233,123 @@ class NexHomeCatalogFlowTest {
 		perform(get("/api/catalog/services/quote?serviceId=" + hourly + "&minutes=0"), null, null)
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("Minutes must be more than 0 to price an hourly service."));
-		// Two fans cost 500, raised to the 600 minimum charge; four cost 1000
-		perform(get("/api/catalog/services/quote?serviceId=" + perUnit + "&quantity=2"), null, null)
-				.andExpect(jsonPath("$.subtotal").value(500.00))
-				.andExpect(jsonPath("$.total").value(600));
-		perform(get("/api/catalog/services/quote?serviceId=" + perUnit + "&quantity=4"), null, null)
-				.andExpect(jsonPath("$.total").value(1000.00));
+		// Area: the discounted 699 is raised to the 700 minimum charge; the 2 BHK size costs its discounted 1100
+		perform(get("/api/catalog/services/quote?serviceId=" + areaId), null, null)
+				.andExpect(jsonPath("$.regularPrice").value(799))
+				.andExpect(jsonPath("$.subtotal").value(699.00))
+				.andExpect(jsonPath("$.total").value(700));
+		perform(get("/api/catalog/services/quote?serviceId=" + areaId + "&serviceVariantId=" + twoBhk), null, null)
+				.andExpect(jsonPath("$.unitPrice").value(1100))
+				.andExpect(jsonPath("$.total").value(1100.00));
 
-		long otherVariant = json(perform(post("/api/catalog/variants/add"), admin,
-				"{\"serviceId\": %d, \"variantCode\": \"CEILING\", \"name\": \"Ceiling fan\"}".formatted(perUnit)))
-				.get("serviceVariantId").asLong();
-		perform(get("/api/catalog/services/quote?serviceId=" + hourly + "&serviceVariantId=" + otherVariant), null, null)
+		// An appliance service cannot be priced by area
+		perform(post("/api/catalog/services/create"), admin, service(categoryId, "Fan " + suffix, "AREA", 250)
+				.replace("PROPERTY", "APPLIANCE"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message")
+						.value("A service for Appliance / Device can be priced only as: FIXED, HOURLY."));
+
+		perform(get("/api/catalog/services/quote?serviceId=" + hourly + "&serviceVariantId=" + twoBhk), null, null)
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("The variant does not belong to this service."));
+	}
+
+	@Test
+	void serviceUpdateReplacesVariantsAndRequirementsAndImagesAreStored() throws Exception {
+		String admin = accessToken(newUser("ADMIN").getId());
+		long categoryId = json(perform(post("/api/catalog/categories/create"), admin,
+				"{\"name\": \"Cleaning " + suffix + "\"}")).get("serviceCategoryId").asLong();
+		long serviceId = json(perform(post("/api/catalog/services/create"), admin,
+				service(categoryId, "Sofa " + suffix, "HOURLY", 300).replace("\"minimumCharge\": 0",
+						"\"minimumBillableMinutes\": 60, \"billingIncrementMinutes\": 30, \"minimumCharge\": 0")
+						.replace("\"isActive\": true", """
+								"isActive": true, "variants": [{"name": "2 Hours", "price": 499, "durationMinutes": 120},
+								  {"name": "3 Hours", "price": 699, "durationMinutes": 180}],
+								"customerRequirements": ["WATER_SUPPLY", "PARKING"]"""))
+				.andExpect(status().isCreated())).get("serviceId").asLong();
+		JsonNode variants = json(perform(get("/api/catalog/services/" + serviceId), admin, null)).get("variants");
+		long twoHours = variants.get(0).get("serviceVariantId").asLong();
+
+		// Keep and change 2 Hours, drop 3 Hours, add 4 Hours; keep parking only
+		perform(put("/api/catalog/services/update"), admin, """
+				{"serviceId": %d, "variants": [
+				  {"name": "4 Hours", "price": 899, "durationMinutes": 240},
+				  {"serviceVariantId": %d, "name": "2 Hours", "price": 549, "discountPrice": 499, "durationMinutes": 120}],
+				 "customerRequirements": ["PARKING"]}""".formatted(serviceId, twoHours))
+				.andExpect(status().isOk());
+		perform(get("/api/catalog/services/" + serviceId), admin, null)
+				.andExpect(jsonPath("$.variants[*].name").value(contains("4 Hours", "2 Hours")))
+				.andExpect(jsonPath("$.variants[1].serviceVariantId").value(twoHours))
+				.andExpect(jsonPath("$.variants[1].discountPrice").value(499))
+				.andExpect(jsonPath("$.requirements[*].requirementCode").value(contains("PARKING")));
+		// Staff see the activity log (newest first) with who did it; the public does not
+		perform(get("/api/catalog/services/" + serviceId), admin, null)
+				.andExpect(jsonPath("$.activity[?(@.subject == 'Service' && @.action == 'CREATED')]").exists())
+				.andExpect(jsonPath("$.activity[?(@.subject == 'Variant 4 Hours')].userName").value(hasItem(
+						org.hamcrest.Matchers.notNullValue())));
+		perform(get("/api/catalog/services/" + serviceId), null, null)
+				.andExpect(jsonPath("$.activity").doesNotExist());
+
+		// Images: stored, served publicly with their type, at most five
+		byte[] png = { (byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0 };
+		JsonNode image = json(perform(multipart("/api/catalog/services/images/add")
+				.file(new MockMultipartFile("file", "C:\\photos\\sofa.png", "image/jpeg", png))
+				.param("serviceId", String.valueOf(serviceId)), admin, null)
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.fileName").value("sofa.png"))
+				.andExpect(jsonPath("$.contentType").value("image/png")));
+		long imageId = image.get("serviceImageId").asLong();
+		perform(get(image.get("imageUrl").asString()), null, null)
+				.andExpect(status().isOk())
+				.andExpect(header().string(HttpHeaders.CONTENT_TYPE, "image/png"))
+				.andExpect(header().string("X-Content-Type-Options", "nosniff"))
+				.andExpect(content().bytes(png));
+		perform(get("/api/catalog/services/" + serviceId), admin, null)
+				.andExpect(jsonPath("$.images[0].serviceImageId").value(imageId));
+
+		perform(multipart("/api/catalog/services/images/add")
+				.file(new MockMultipartFile("file", "page.html", "image/png", "<html></html>".getBytes()))
+				.param("serviceId", String.valueOf(serviceId)), admin, null)
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Image must be a JPEG, PNG or WebP file."));
+		for (int count = 1; count < 5; count++) {
+			perform(multipart("/api/catalog/services/images/add")
+					.file(new MockMultipartFile("file", "more.png", "image/png", png))
+					.param("serviceId", String.valueOf(serviceId)), admin, null)
+					.andExpect(status().isCreated());
+		}
+		perform(multipart("/api/catalog/services/images/add")
+				.file(new MockMultipartFile("file", "sixth.png", "image/png", png))
+				.param("serviceId", String.valueOf(serviceId)), admin, null)
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("A service can have at most 5 images."));
+		// Anonymous callers cannot upload
+		perform(multipart("/api/catalog/services/images/add")
+				.file(new MockMultipartFile("file", "x.png", "image/png", png))
+				.param("serviceId", String.valueOf(serviceId)), null, null)
+				.andExpect(status().isUnauthorized());
+
+		// The cover is the first image: reverse the order, then the last becomes the cover
+		JsonNode stored = json(perform(get("/api/catalog/services/" + serviceId), admin, null)).get("images");
+		List<Long> ids = new java.util.ArrayList<>();
+		stored.forEach(node -> ids.add(node.get("serviceImageId").asLong()));
+		List<Long> reversed = new java.util.ArrayList<>(ids);
+		java.util.Collections.reverse(reversed);
+		perform(put("/api/catalog/services/images/order"), admin,
+				"{\"serviceId\": %d, \"serviceImageIds\": %s}".formatted(serviceId, reversed))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].serviceImageId").value(reversed.get(0)))
+				.andExpect(jsonPath("$[0].displayOrder").value(0));
+		perform(get("/api/catalog/services/" + serviceId), admin, null)
+				.andExpect(jsonPath("$.images[0].serviceImageId").value(reversed.get(0)));
+		perform(put("/api/catalog/services/images/order"), admin,
+				"{\"serviceId\": %d, \"serviceImageIds\": %s}".formatted(serviceId, ids.subList(0, 2)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("List every image of the service exactly once."));
+
+		perform(delete("/api/catalog/services/images/delete/" + imageId), admin, null)
+				.andExpect(status().isNoContent());
+		perform(get("/api/catalog/services/images/" + imageId), null, null).andExpect(status().isNotFound());
 	}
 
 	@Test
@@ -364,6 +489,15 @@ class NexHomeCatalogFlowTest {
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.mainServiceCategoryId").value(categoryId))).get("partnerProfileId").asLong();
 
+		// The category's partners: a super user lists them by main service category
+		String superUser = accessToken(newUser("SUPER_USER").getId());
+		perform(get("/api/users/partners?mainServiceCategoryId=" + categoryId), superUser, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].partnerProfileId").value(profileId));
+		perform(get("/api/users/partners?mainServiceCategoryId=" + inactiveCategory), superUser, null)
+				.andExpect(jsonPath("$.totalElements").value(0));
+
 		perform(post("/api/partners/services/add"), partnerToken,
 				"{\"partnerProfileId\": %d, \"serviceId\": %d, \"experienceYears\": 4}".formatted(profileId, tap))
 				.andExpect(status().isCreated())
@@ -391,7 +525,8 @@ class NexHomeCatalogFlowTest {
 
 	private static String service(long categoryId, String name, String pricingType, int basePrice) {
 		return """
-				{"categoryId": %d, "name": "%s", "pricingType": "%s", "basePrice": %d, "minimumCharge": 0,
+				{"categoryId": %d, "name": "%s", "serviceTarget": "PROPERTY", "pricingType": "%s", "basePrice": %d,
+				 "minimumCharge": 0,
 				 "estimatedDurationMinutes": 120, "platformCommissionType": "PERCENTAGE", "platformCommissionValue": 15,
 				 "isActive": true}""".formatted(categoryId, name, pricingType, basePrice);
 	}
@@ -402,7 +537,7 @@ class NexHomeCatalogFlowTest {
 				 "content": "You agree to ...", "effectiveFrom": "%s"}""".formatted(key, version, effectiveFrom);
 	}
 
-	private ResultActions perform(MockHttpServletRequestBuilder request, String accessToken, String body)
+	private ResultActions perform(AbstractMockHttpServletRequestBuilder<?> request, String accessToken, String body)
 			throws Exception {
 		if (accessToken != null) {
 			request.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);

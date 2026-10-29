@@ -15,8 +15,11 @@ export function InfoRow({ icon: Icon, label, value, children }) {
         <Icon size={18} strokeWidth={2} />
       </span>
       <div className="min-w-0 flex-1 pt-0.5">
-        <div className="text-[0.8125rem] text-[var(--muted)]">{label}</div>
-        <div className={`mt-0.5 break-words text-[0.9375rem] ${shown ? 'font-bold text-[var(--ink)]' : 'text-[#A8B6C6]'}`}>
+        {/* Without a label (the card's title says it) the value stands alone */}
+        {label && <div className="text-[0.8125rem] text-[var(--muted)]">{label}</div>}
+        <div
+          className={`${label ? 'mt-0.5' : ''} break-words text-[0.9375rem] ${shown ? 'font-bold text-[var(--ink)]' : 'text-[#A8B6C6]'}`}
+        >
           {shown || '—'}
         </div>
       </div>

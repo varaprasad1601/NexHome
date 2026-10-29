@@ -1,18 +1,17 @@
 /** The PARTNER role as Create user takes it (seeded id 5, V1). */
 export const PARTNER_ROLE = { id: 5, code: 'PARTNER', label: 'Partner' };
 
-/** The partner list's onboarding filter for partners who have not started their onboarding profile. */
-export const NOT_STARTED = 'NOT_STARTED';
-
-/** Onboarding status badge colours (PARTNER_ONBOARDING_STATUS): waiting on the partner, on staff, done, stopped. */
+/**
+ * Onboarding status badge colours (PARTNER_ONBOARDING_STATUS, V18): not started and draft (waiting on the partner),
+ * changes requested (back with the partner), under review (on staff), approved, rejected.
+ */
 const ONBOARDING_BADGES = {
+  NOT_STARTED: 'bg-[var(--light)] text-[#A8B6C6]',
   DRAFT: 'bg-[var(--light)] text-[var(--muted)]',
-  PROFILE_INCOMPLETE: 'bg-[#FFF7DE] text-[#8A6508]',
+  CHANGES_REQUESTED: 'bg-[#FFF7DE] text-[#8A6508]',
   UNDER_REVIEW: 'bg-[#EDF6FD] text-[var(--blue)]',
-  TRAINING_REQUIRED: 'bg-[#F3ECFF] text-[#6B46C1]',
   APPROVED: 'bg-[#E9F6EF] text-[var(--green-2)]',
-  REJECTED: 'bg-[#FDECEC] text-[#C53030]',
-  SUSPENDED: 'bg-[#FDECEC] text-[#C53030]'
+  REJECTED: 'bg-[#FDECEC] text-[#C53030]'
 };
 
 export function onboardingBadgeClass(code) {

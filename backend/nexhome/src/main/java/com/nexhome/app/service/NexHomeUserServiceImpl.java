@@ -66,8 +66,6 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 
 	private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 	private static final int STATS_MONTHS = 10;
-	/** The partner list's onboarding filter for partners who have not started their onboarding profile. */
-	private static final String NOT_STARTED = "NOT_STARTED";
 	/** Highest first: a staff member's displayed role is the first one they hold. */
 	private static final List<String> STAFF_ROLES = List.of(NexHomeRole.SUPER_USER, NexHomeRole.ADMIN,
 			NexHomeRole.SUB_ADMIN);
@@ -190,18 +188,18 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 	@Override
 	@Transactional(readOnly = true)
 	public NexHomePageResponse<NexHomePartnerResponse> getPartners(Integer page, Integer size, String accountStatus,
-			String onboardingStatus, String search) {
+			String onboardingStatus, Long mainServiceCategoryId, String search) {
 		PageRequest pageRequest = NexHomePaging.newestFirst(page, size);
 		String status = accountStatus == null || accountStatus.isBlank() ? null
 				: lookupService.validateCode(Types.ACCOUNT_STATUS, accountStatus, "Account status");
 		String onboarding = onboardingStatus == null || onboardingStatus.isBlank() ? null
-				: NOT_STARTED.equalsIgnoreCase(onboardingStatus.trim()) ? NOT_STARTED
-						: lookupService.validateCode(Types.PARTNER_ONBOARDING_STATUS, onboardingStatus,
-								"Onboarding status");
+				: lookupService.validateCode(Types.PARTNER_ONBOARDING_STATUS, onboardingStatus, "Onboarding status");
 
 		Page<NexHomeUser> users = userRepository.findAll(NexHomeUserRepository.partnerSpec(status,
-				onboarding == null || NOT_STARTED.equals(onboarding) ? null : List.of(onboarding),
-				NOT_STARTED.equals(onboarding), null, NexHomePaging.searchText(search)), pageRequest);
+				onboarding == null ? null : List.of(onboarding),
+				// NOT_STARTED also covers a partner account that somehow has no profile row
+				PartnerOnboardingStatus.NOT_STARTED.equals(onboarding), null, mainServiceCategoryId, NexHomePaging.searchText(search)),
+				pageRequest);
 
 		// Roles and profiles (with their category) of the page's users in one query each
 		List<Long> userIds = users.map(NexHomeUser::getId).toList();
@@ -226,10 +224,10 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 				userRepository.count(NexHomeUserRepository.partnerSpec(null,
 						List.of(PartnerOnboardingStatus.APPROVED), false, null, null)),
 				userRepository.count(NexHomeUserRepository.partnerSpec(null, List.of(
-						PartnerOnboardingStatus.UNDER_REVIEW, PartnerOnboardingStatus.TRAINING_REQUIRED), false, null,
+						PartnerOnboardingStatus.UNDER_REVIEW), false, null,
 						null)),
-				userRepository.count(NexHomeUserRepository.partnerSpec(null, List.of(PartnerOnboardingStatus.DRAFT,
-						PartnerOnboardingStatus.PROFILE_INCOMPLETE), true, null, null)),
+				userRepository.count(NexHomeUserRepository.partnerSpec(null, List.of(PartnerOnboardingStatus.NOT_STARTED,
+						PartnerOnboardingStatus.DRAFT, PartnerOnboardingStatus.CHANGES_REQUESTED), true, null, null)),
 				userRepository.count(NexHomeUserRepository.partnerSpec(null,
 						List.of(PartnerOnboardingStatus.APPROVED), false, PartnerAvailabilityStatus.ONLINE, null)));
 	}
@@ -492,7 +490,7 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 		}
 	}
 
-	/** A PARTNER account without a partner profile gets its empty DRAFT (V16), with the NHPART partner id. */
+	/** A PARTNER account without a partner profile gets its empty NOT_STARTED one (V16, V18), with its NHPART id. */
 	private void ensurePartnerProfile(NexHomeUser user, NexHomeRole role, Long actingUserId) {
 		if (NexHomeRole.PARTNER.equals(role.getCode()) && !partnerProfileRepository.existsByUserId(user.getId())) {
 			NexHomePartnerProfile profile = partnerProfileRepository.save(

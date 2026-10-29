@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.nexhome.app.dto.NexHomePageResponse;
+import com.nexhome.app.dto.NexHomeAuditEntry;
 import com.nexhome.app.dto.NexHomePartnerAvailabilityUpdateRequest;
 import com.nexhome.app.dto.NexHomePartnerBankAccountCreateRequest;
 import com.nexhome.app.dto.NexHomePartnerBankAccountResponse;
@@ -30,6 +31,7 @@ import com.nexhome.app.dto.NexHomePartnerProfileResponse;
 import com.nexhome.app.dto.NexHomePartnerProfileReviewRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileSubmitRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileUpdateRequest;
+import com.nexhome.app.dto.NexHomePartnerProfileVerificationRequest;
 import com.nexhome.app.dto.NexHomePartnerServiceCreateRequest;
 import com.nexhome.app.dto.NexHomePartnerServiceResponse;
 import com.nexhome.app.dto.NexHomePartnerServiceUpdateRequest;
@@ -58,7 +60,7 @@ public class NexHomePartnerController {
 		return partnerService.createPartnerProfile(request);
 	}
 
-	/** Owner (while DRAFT or PROFILE_INCOMPLETE) or PARTNER_ONBOARDING_MANAGE write. */
+	/** Owner (while NOT_STARTED, DRAFT or CHANGES_REQUESTED) or PARTNER_ONBOARDING_MANAGE write. */
 	@PutMapping("/profiles/update")
 	public NexHomePartnerProfileResponse updatePartnerProfile(
 			@Valid @RequestBody NexHomePartnerProfileUpdateRequest request) {
@@ -72,12 +74,20 @@ public class NexHomePartnerController {
 		return partnerService.submitPartnerProfile(request);
 	}
 
-	/** Approve, reject, send back, require training or suspend. Never for your own profile. */
+	/** Approve, reject or send back for changes. Never for your own profile. */
 	@PutMapping("/profiles/review")
-	@PreAuthorize("@permissions.can('PARTNER_ONBOARDING_MANAGE', 'WRITE')")
+	@PreAuthorize("@permissions.can('PARTNER_APPROVE', 'WRITE')")
 	public NexHomePartnerProfileResponse reviewPartnerProfile(
 			@Valid @RequestBody NexHomePartnerProfileReviewRequest request) {
 		return partnerService.reviewPartnerProfile(request);
+	}
+
+	/** The account, documents and bank account checks, each with who made it. Never for your own profile. */
+	@PutMapping("/profiles/verifications/update")
+	@PreAuthorize("@permissions.can('PARTNER_VERIFY', 'WRITE')")
+	public NexHomePartnerProfileResponse updatePartnerVerifications(
+			@Valid @RequestBody NexHomePartnerProfileVerificationRequest request) {
+		return partnerService.updatePartnerVerifications(request);
 	}
 
 	/** Owner or PARTNER_ONBOARDING_MANAGE write; approved partners only. */
@@ -94,7 +104,7 @@ public class NexHomePartnerController {
 
 	/**
 	 * Partner profiles, newest first. Query parameters (all optional): {@code page} (0-based), {@code size} (1-100,
-	 * default 10), {@code onboardingStatus}, {@code verificationStatus}, {@code availabilityStatus}, {@code city}
+	 * default 10), {@code onboardingStatus}, {@code approvalStatus}, {@code availabilityStatus}, {@code city}
 	 * (exact, case-insensitive), {@code search} (part of a name or the public id).
 	 */
 	@GetMapping("/profiles")
@@ -102,11 +112,18 @@ public class NexHomePartnerController {
 	public NexHomePageResponse<NexHomePartnerProfileResponse> getPartnerProfiles(
 			@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer size,
 			@RequestParam(required = false) String onboardingStatus,
-			@RequestParam(required = false) String verificationStatus,
+			@RequestParam(required = false) String approvalStatus,
 			@RequestParam(required = false) String availabilityStatus, @RequestParam(required = false) String city,
 			@RequestParam(required = false) String search) {
-		return partnerService.getPartnerProfiles(page, size, onboardingStatus, verificationStatus, availabilityStatus,
+		return partnerService.getPartnerProfiles(page, size, onboardingStatus, approvalStatus, availabilityStatus,
 				city, search);
+	}
+
+	/** The onboarding audit trail: who created, changed, verified and approved what, and when. */
+	@GetMapping("/profiles/audit/{partnerProfileId}")
+	@PreAuthorize("@permissions.can('PARTNER_ONBOARDING_MANAGE', 'READ')")
+	public List<NexHomeAuditEntry> getPartnerAudit(@PathVariable Long partnerProfileId) {
+		return partnerService.getPartnerAudit(partnerProfileId);
 	}
 
 	/** Owner or PARTNER_ONBOARDING_MANAGE read. */
@@ -133,7 +150,7 @@ public class NexHomePartnerController {
 		return partnerService.getPartnerServices(partnerProfileId);
 	}
 
-	/** Owner (while DRAFT or PROFILE_INCOMPLETE) or PARTNER_ONBOARDING_MANAGE write. */
+	/** Owner (while NOT_STARTED, DRAFT or CHANGES_REQUESTED) or PARTNER_ONBOARDING_MANAGE write. */
 	@PostMapping("/services/add")
 	@ResponseStatus(HttpStatus.CREATED)
 	public NexHomePartnerServiceResponse addPartnerService(
@@ -141,14 +158,14 @@ public class NexHomePartnerController {
 		return partnerService.addPartnerService(request);
 	}
 
-	/** Owner (while DRAFT or PROFILE_INCOMPLETE) or PARTNER_ONBOARDING_MANAGE write. */
+	/** Owner (while NOT_STARTED, DRAFT or CHANGES_REQUESTED) or PARTNER_ONBOARDING_MANAGE write. */
 	@PutMapping("/services/update")
 	public NexHomePartnerServiceResponse updatePartnerService(
 			@Valid @RequestBody NexHomePartnerServiceUpdateRequest request) {
 		return partnerService.updatePartnerService(request);
 	}
 
-	/** Owner (while DRAFT or PROFILE_INCOMPLETE) or PARTNER_ONBOARDING_MANAGE delete. */
+	/** Owner (while NOT_STARTED, DRAFT or CHANGES_REQUESTED) or PARTNER_ONBOARDING_MANAGE delete. */
 	@DeleteMapping("/services/delete/{partnerServiceId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void deletePartnerService(@PathVariable Long partnerServiceId) {
@@ -172,7 +189,7 @@ public class NexHomePartnerController {
 
 	/** Never for your own documents. */
 	@PutMapping("/documents/verify")
-	@PreAuthorize("@permissions.can('PARTNER_ONBOARDING_MANAGE', 'WRITE')")
+	@PreAuthorize("@permissions.can('PARTNER_VERIFY', 'WRITE')")
 	public NexHomePartnerDocumentResponse verifyPartnerDocument(
 			@Valid @RequestBody NexHomePartnerDocumentVerifyRequest request) {
 		return partnerService.verifyPartnerDocument(request);
@@ -202,7 +219,7 @@ public class NexHomePartnerController {
 
 	/** Never for your own bank accounts. */
 	@PutMapping("/bank-accounts/verify")
-	@PreAuthorize("@permissions.can('PARTNER_ONBOARDING_MANAGE', 'WRITE')")
+	@PreAuthorize("@permissions.can('PARTNER_VERIFY', 'WRITE')")
 	public NexHomePartnerBankAccountResponse verifyPartnerBankAccount(
 			@Valid @RequestBody NexHomePartnerBankAccountVerifyRequest request) {
 		return partnerService.verifyPartnerBankAccount(request);

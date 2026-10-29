@@ -31,11 +31,19 @@ public final class NexHomeLookupCodes {
 		public static final String COMMISSION_TYPE = "COMMISSION_TYPE";
 		public static final String MEDIA_TYPE = "MEDIA_TYPE";
 		public static final String REQUIREMENT_TYPE = "REQUIREMENT_TYPE";
+		/** What a service works on; each value's metadata lists the pricing types it allows. */
+		public static final String SERVICE_TARGET = "SERVICE_TARGET";
+		/** The options of a service's customer requirements. */
+		public static final String CUSTOMER_REQUIREMENT = "CUSTOMER_REQUIREMENT";
+		/** The options of a service's partner requirements. */
+		public static final String PARTNER_REQUIREMENT = "PARTNER_REQUIREMENT";
 		public static final String FAQ_AUDIENCE = "FAQ_AUDIENCE";
 		public static final String POLICY_AUDIENCE = "POLICY_AUDIENCE";
 		public static final String ACCEPTANCE_METHOD = "ACCEPTANCE_METHOD";
 		/** The daily slots of a partner's weekly availability grid. */
 		public static final String AVAILABILITY_SLOT = "AVAILABILITY_SLOT";
+		/** The kinds of government ID (V19). */
+		public static final String GOVERNMENT_ID_TYPE = "GOVERNMENT_ID_TYPE";
 
 		private Types() {
 		}
@@ -50,6 +58,18 @@ public final class NexHomeLookupCodes {
 		public static final String DEACTIVATED = "DEACTIVATED";
 
 		private AccountStatus() {
+		}
+	}
+
+	/** Values of {@link Types#DOCUMENT_TYPE} that code depends on. */
+	public static final class DocumentType {
+
+		/** Needs an ID type (GOVERNMENT_ID_TYPE). */
+		public static final String GOVERNMENT_ID = "GOVERNMENT_ID";
+		/** A skill certificate; needs its name. */
+		public static final String CERTIFICATION = "CERTIFICATION";
+
+		private DocumentType() {
 		}
 	}
 
@@ -80,18 +100,18 @@ public final class NexHomeLookupCodes {
 	}
 
 	/**
-	 * Values of {@link Types#PARTNER_ONBOARDING_STATUS}. A profile starts as DRAFT, is submitted for review
-	 * (UNDER_REVIEW), and a reviewer approves it, rejects it, asks for changes (PROFILE_INCOMPLETE) or training.
+	 * Values of {@link Types#PARTNER_ONBOARDING_STATUS} (V18). A partner account's profile starts NOT_STARTED, becomes a
+	 * DRAFT ("Profile Draft") once saved, is submitted for review (UNDER_REVIEW), and a reviewer approves it, rejects it
+	 * or returns it for more information or documents (CHANGES_REQUESTED), after which the partner submits again.
 	 */
 	public static final class PartnerOnboardingStatus {
 
+		public static final String NOT_STARTED = "NOT_STARTED";
 		public static final String DRAFT = "DRAFT";
-		public static final String PROFILE_INCOMPLETE = "PROFILE_INCOMPLETE";
 		public static final String UNDER_REVIEW = "UNDER_REVIEW";
-		public static final String TRAINING_REQUIRED = "TRAINING_REQUIRED";
+		public static final String CHANGES_REQUESTED = "CHANGES_REQUESTED";
 		public static final String APPROVED = "APPROVED";
 		public static final String REJECTED = "REJECTED";
-		public static final String SUSPENDED = "SUSPENDED";
 
 		private PartnerOnboardingStatus() {
 		}
@@ -140,12 +160,22 @@ public final class NexHomeLookupCodes {
 		public static final String FIXED = "FIXED";
 		/** The base price is per hour, billed from a minimum in increments. */
 		public static final String HOURLY = "HOURLY";
-		/** The base price is per unit. */
-		public static final String PER_UNIT = "PER_UNIT";
+		/** Priced by the size of the home: each variant is a size (e.g. 2 BHK), charged once. */
+		public static final String AREA = "AREA";
 		/** The base price is an inspection fee; the work is quoted on site. */
 		public static final String INSPECTION = "INSPECTION";
 
 		private PricingType() {
+		}
+	}
+
+	/** Whom a service requirement is for ({@code nexhome_service_requirements.requirement_for}, checked there). */
+	public static final class RequirementFor {
+
+		public static final String CUSTOMER = "CUSTOMER";
+		public static final String PARTNER = "PARTNER";
+
+		private RequirementFor() {
 		}
 	}
 

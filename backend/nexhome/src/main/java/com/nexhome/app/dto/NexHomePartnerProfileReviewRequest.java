@@ -5,8 +5,9 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
- * Staff decision on a partner profile: the next PARTNER_ONBOARDING_STATUS (APPROVED, REJECTED, PROFILE_INCOMPLETE,
- * TRAINING_REQUIRED or SUSPENDED). The reason is required for REJECTED, PROFILE_INCOMPLETE and SUSPENDED.
+ * Staff decision on a partner profile: the next PARTNER_ONBOARDING_STATUS (APPROVED, REJECTED or CHANGES_REQUESTED,
+ * returning it to the partner for more information or documents). The reason is required for REJECTED and
+ * CHANGES_REQUESTED.
  */
 public record NexHomePartnerProfileReviewRequest(
 		@NotNull(message = "Partner profile ID is required")

@@ -36,6 +36,7 @@ public class NexHomePartnerBankAccountMapper {
 		account.setAccountNumberLast4(accountNumber.substring(accountNumber.length() - 4));
 		account.setIfscCode(upperCase(request.ifscCode()));
 		account.setBankName(trimToNull(request.bankName()));
+		account.setBranchName(trimToNull(request.branchName()));
 		account.setVerificationStatus(VerificationStatus.PENDING);
 		account.setCreatedBy(actingUserId);
 		account.setUpdatedBy(actingUserId);
@@ -53,10 +54,14 @@ public class NexHomePartnerBankAccountMapper {
 			if (!holderName.equals(account.getAccountHolderName())) {
 				account.setAccountHolderName(holderName);
 				account.setVerificationStatus(VerificationStatus.PENDING);
+				account.setRejectionReason(null);
 			}
 		}
 		if (request.bankName() != null) {
 			account.setBankName(trimToNull(request.bankName()));
+		}
+		if (request.branchName() != null) {
+			account.setBranchName(trimToNull(request.branchName()));
 		}
 		account.setUpdatedBy(actingUserId);
 	}
@@ -74,8 +79,12 @@ public class NexHomePartnerBankAccountMapper {
 				account.getAccountNumberLast4(),
 				account.getIfscCode(),
 				account.getBankName(),
+				account.getBranchName(),
 				account.getVerificationStatus(),
+				account.getRejectionReason(),
 				account.isPrimary(),
-				account.getCreationDate());
+				account.getCreationDate(),
+				account.getUpdatedBy(),
+				account.getUpdatedDate());
 	}
 }

@@ -88,3 +88,23 @@ html.nh-admin-scale::-webkit-scrollbar-thumb:hover,
 .nh-scroll-hidden::-webkit-scrollbar {
   display: none;
 }
+
+/* Formatted text (common/RichTextEditor): the reset removes list markers and paragraph spacing */
+.nh-rich-text p,
+.nh-rich-text div {
+  margin: 0 0 0.5rem;
+}
+.nh-rich-text ul,
+.nh-rich-text ol {
+  margin: 0 0 0.5rem;
+  padding-left: 1.375rem;
+}
+.nh-rich-text ul {
+  list-style: disc;
+}
+.nh-rich-text ol {
+  list-style: decimal;
+}
+.nh-rich-text > :last-child {
+  margin-bottom: 0;
+}

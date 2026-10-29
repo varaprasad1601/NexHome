@@ -30,6 +30,7 @@ public class NexHomePartnerDocumentMapper {
 		document.setDocumentNumberEncrypted(encryptor.encrypt(upperCase(request.documentNumber())));
 		document.setFileStorageKey(trimToNull(request.fileStorageKey()));
 		document.setExpiryDate(request.expiryDate());
+		document.setDocumentName(trimToNull(request.documentName()));
 		document.setVerificationStatus(VerificationStatus.PENDING);
 		document.setCreatedBy(actingUserId);
 		document.setUpdatedBy(actingUserId);
@@ -51,6 +52,9 @@ public class NexHomePartnerDocumentMapper {
 		if (request.expiryDate() != null) {
 			document.setExpiryDate(request.expiryDate());
 		}
+		if (request.documentName() != null) {
+			document.setDocumentName(trimToNull(request.documentName()));
+		}
 		document.setVerificationStatus(VerificationStatus.PENDING);
 		document.setVerifiedBy(null);
 		document.setVerifiedAt(null);
@@ -70,6 +74,8 @@ public class NexHomePartnerDocumentMapper {
 				document.getVerifiedAt(),
 				document.getExpiryDate(),
 				document.getRejectionReason(),
-				document.getCreationDate());
+				document.getCreationDate(),
+				document.getIdType(),
+				document.getDocumentName());
 	}
 }

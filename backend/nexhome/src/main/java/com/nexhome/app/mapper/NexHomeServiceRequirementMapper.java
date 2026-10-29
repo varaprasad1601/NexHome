@@ -7,18 +7,22 @@ import org.springframework.stereotype.Component;
 import com.nexhome.app.dto.NexHomeServiceRequirementCreateRequest;
 import com.nexhome.app.dto.NexHomeServiceRequirementResponse;
 import com.nexhome.app.dto.NexHomeServiceRequirementUpdateRequest;
+import com.nexhome.app.model.NexHomeLookupCodes.RequirementFor;
 import com.nexhome.app.model.NexHomeService;
 import com.nexhome.app.model.NexHomeServiceRequirement;
 
 @Component
 public class NexHomeServiceRequirementMapper {
 
-	/** The requirement type is validated by the service beforehand; a requirement is mandatory unless told not. */
+	/** The requirement type is validated by the service beforehand; a requirement is mandatory unless told not and for
+	 * the customer unless for the partner. */
 	public NexHomeServiceRequirement toServiceRequirementEntity(NexHomeServiceRequirementCreateRequest request,
 			NexHomeService service, Long actingUserId) {
 		NexHomeServiceRequirement requirement = new NexHomeServiceRequirement();
 		requirement.setService(service);
 		requirement.setRequirementType(trimToNull(request.requirementType()));
+		requirement.setRequirementFor(request.requirementFor() == null ? RequirementFor.CUSTOMER
+				: request.requirementFor());
 		requirement.setDescription(trimToNull(request.description()));
 		requirement.setMandatory(request.isMandatory() == null || request.isMandatory());
 		requirement.setDisplayOrder(request.displayOrder() == null ? 0 : request.displayOrder());
@@ -49,6 +53,8 @@ public class NexHomeServiceRequirementMapper {
 		return new NexHomeServiceRequirementResponse(
 				requirement.getId(),
 				requirement.getService().getId(),
+				requirement.getRequirementFor(),
+				requirement.getRequirementCode(),
 				requirement.getRequirementType(),
 				requirement.getDescription(),
 				requirement.isMandatory(),

@@ -1,5 +1,9 @@
 package com.nexhome.app.service;
 
+import java.util.ArrayList;
+
+import java.time.Instant;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -20,6 +24,7 @@ import com.nexhome.app.dto.NexHomePageResponse;
 import com.nexhome.app.exception.DuplicateResourceException;
 import com.nexhome.app.exception.InvalidRequestException;
 import com.nexhome.app.exception.ResourceNotFoundException;
+import com.nexhome.app.dto.NexHomeAuditEntry;
 import com.nexhome.app.mapper.NexHomeAdminProfileMapper;
 import com.nexhome.app.mapper.NexHomeCustomerProfileMapper;
 import com.nexhome.app.mapper.NexHomeText;
@@ -29,6 +34,7 @@ import com.nexhome.app.model.NexHomeCustomerProfile;
 import com.nexhome.app.model.NexHomeLookupCodes.Types;
 import com.nexhome.app.model.NexHomeRole;
 import com.nexhome.app.model.NexHomeUser;
+import com.nexhome.app.repository.NexHomeAddressRepository;
 import com.nexhome.app.repository.NexHomeAdminProfileRepository;
 import com.nexhome.app.repository.NexHomeCustomerProfileRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
@@ -54,6 +60,8 @@ public class NexHomeProfileServiceImpl implements NexHomeProfileService {
 	private final NexHomePermissionService permissionService;
 	private final NexHomeCustomerProfileMapper customerProfileMapper;
 	private final NexHomeAdminProfileMapper adminProfileMapper;
+	private final NexHomeAddressRepository addressRepository;
+	private final NexHomeAuditUsers auditUsers;
 
 	@Override
 	@Transactional
@@ -267,6 +275,66 @@ public class NexHomeProfileServiceImpl implements NexHomeProfileService {
 	private NexHomeUser findUser(Long userId) {
 		return userRepository.findById(userId)
 				.orElseThrow(() -> new ResourceNotFoundException("User does not exist."));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<NexHomeAuditEntry> getCustomerProfileActivity(Long customerProfileId) {
+		NexHomeCustomerProfile profile = findCustomerProfile(customerProfileId);
+		NexHomeUser user = profile.getUser();
+		requireSelfOrCan(user.getId(), CUSTOMER_MANAGE, NexHomeAccess.READ);
+		List<NexHomeAuditUsers.Line> lines = accountLines(user);
+		profileLines(lines, profile.getCreationDate(), profile.getCreatedBy(), profile.getUpdatedDate(),
+				profile.getUpdatedBy());
+		addressRepository.findByUserIdOrderByDefaultAddressDescCreationDateDescIdDesc(user.getId())
+				.forEach(address -> {
+					String subject = (address.getLabel() != null ? address.getLabel() : address.getAddressType())
+							+ ", " + address.getCity();
+					lines.add(new NexHomeAuditUsers.Line("ADDRESS_ADDED", subject, address.getCreationDate(),
+							address.getCreatedBy()));
+					if (NexHomeAuditUsers.updatedLater(address.getCreationDate(), address.getUpdatedDate())) {
+						lines.add(new NexHomeAuditUsers.Line("ADDRESS_UPDATED", subject, address.getUpdatedDate(),
+								address.getUpdatedBy()));
+					}
+				});
+		return auditUsers.newestFirst(lines);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<NexHomeAuditEntry> getAdminProfileActivity(Long adminProfileId) {
+		NexHomeAdminProfile profile = findAdminProfile(adminProfileId);
+		NexHomeUser user = profile.getUser();
+		if (!user.getId().equals(permissionService.currentUserId())
+				&& !permissionService.canManageStaff(user.getId(), NexHomeAccess.READ.name())) {
+			throw new AccessDeniedException("No read access to this staff profile.");
+		}
+		List<NexHomeAuditUsers.Line> lines = accountLines(user);
+		profileLines(lines, profile.getCreationDate(), profile.getCreatedBy(), profile.getUpdatedDate(),
+				profile.getUpdatedBy());
+		return auditUsers.newestFirst(lines);
+	}
+
+	/** The account: created, last updated (email, photo, phone) and its last status change. */
+	private static List<NexHomeAuditUsers.Line> accountLines(NexHomeUser user) {
+		List<NexHomeAuditUsers.Line> lines = new ArrayList<>();
+		lines.add(new NexHomeAuditUsers.Line("ACCOUNT_CREATED", null, user.getCreationDate(), user.getCreatedBy()));
+		if (NexHomeAuditUsers.updatedLater(user.getCreationDate(), user.getUpdatedDate())) {
+			lines.add(new NexHomeAuditUsers.Line("ACCOUNT_UPDATED", null, user.getUpdatedDate(), user.getUpdatedBy()));
+		}
+		if (user.getStatusUpdatedDate() != null) {
+			lines.add(new NexHomeAuditUsers.Line("STATUS_UPDATED", user.getAccountStatus(),
+					user.getStatusUpdatedDate(), user.getStatusUpdatedBy()));
+		}
+		return lines;
+	}
+
+	private static void profileLines(List<NexHomeAuditUsers.Line> lines, Instant creationDate, Long createdBy,
+			Instant updatedDate, Long updatedBy) {
+		lines.add(new NexHomeAuditUsers.Line("PROFILE_CREATED", null, creationDate, createdBy));
+		if (NexHomeAuditUsers.updatedLater(creationDate, updatedDate)) {
+			lines.add(new NexHomeAuditUsers.Line("PROFILE_UPDATED", null, updatedDate, updatedBy));
+		}
 	}
 
 	private NexHomeCustomerProfile findCustomerProfile(Long customerProfileId) {

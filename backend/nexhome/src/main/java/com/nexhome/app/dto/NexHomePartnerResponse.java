@@ -31,7 +31,7 @@ public record NexHomePartnerResponse(
 		Long mainServiceCategoryId,
 		String mainServiceCategoryName,
 		String onboardingStatus,
-		String verificationStatus,
+		String approvalStatus,
 		String availabilityStatus,
 		List<NexHomeUserRoleResponse> roles,
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",

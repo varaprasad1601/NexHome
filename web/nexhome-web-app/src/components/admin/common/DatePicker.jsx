@@ -1,7 +1,20 @@
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December'
+];
 const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 const YEARS_PER_PAGE = 12;
 
@@ -49,8 +62,10 @@ export default function DatePicker({
   disabled = false
 }) {
   const ref = useRef(null);
+  const panelRef = useRef(null);
   const [open, setOpen] = useState(false);
-  const [upwards, setUpwards] = useState(false);
+  // The panel is fixed to the viewport (as Select's), so a scrolling dialog cannot clip or cover it
+  const [position, setPosition] = useState(null);
   const [view, setView] = useState('days'); // days, years or months
   const [shown, setShown] = useState({ year: 0, month: 0 });
   const today = todayIso();
@@ -63,11 +78,20 @@ export default function DatePicker({
     const closeOnEscape = (e) => {
       if (e.key === 'Escape') setOpen(false);
     };
+    // A scroll anywhere but in the panel would leave the fixed panel behind
+    const closeOnScroll = (e) => {
+      if (!panelRef.current?.contains(e.target)) setOpen(false);
+    };
+    const close = () => setOpen(false);
     document.addEventListener('mousedown', closeOutside);
     document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('scroll', closeOnScroll, true);
+    window.addEventListener('resize', close);
     return () => {
       document.removeEventListener('mousedown', closeOutside);
       document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('scroll', closeOnScroll, true);
+      window.removeEventListener('resize', close);
     };
   }, [open]);
 
@@ -77,7 +101,13 @@ export default function DatePicker({
     setShown({ year: start.year, month: start.month });
     setView('days');
     const rect = ref.current.getBoundingClientRect();
-    setUpwards(window.innerHeight - rect.bottom < 380 && rect.top > window.innerHeight - rect.bottom);
+    const upwards = window.innerHeight - rect.bottom < 380 && rect.top > window.innerHeight - rect.bottom;
+    // 18.5rem wide: kept inside the window on the right
+    const width = 18.5 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+    setPosition({
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
+      ...(upwards ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 })
+    });
     setOpen(true);
   };
 
@@ -149,13 +179,13 @@ export default function DatePicker({
         {formatIso(value) || placeholder}
       </button>
 
-      {open && (
+      {open && position && (
         <div
+          ref={panelRef}
+          style={position}
           role="dialog"
           aria-label={ariaLabel ? `Choose ${ariaLabel.toLowerCase()}` : 'Choose a date'}
-          className={`absolute left-0 z-40 w-[18.5rem] rounded-2xl border border-[var(--line)] bg-white p-4 shadow-[0_14px_44px_rgba(14,51,89,0.14)] ${
-            upwards ? 'bottom-[calc(100%+0.375rem)]' : 'top-[calc(100%+0.375rem)]'
-          }`}
+          className="fixed z-[60] w-[18.5rem] rounded-2xl border border-[var(--line)] bg-white p-4 shadow-[0_14px_44px_rgba(14,51,89,0.14)]"
         >
           <div className="mb-3 flex items-center justify-between gap-2">
             <button
@@ -188,7 +218,10 @@ export default function DatePicker({
             <>
               <div className="mb-1 grid grid-cols-7 gap-1">
                 {WEEKDAYS.map((weekday) => (
-                  <div key={weekday} className="py-1 text-center text-[0.6875rem] font-bold uppercase tracking-wide text-[var(--muted)]">
+                  <div
+                    key={weekday}
+                    className="py-1 text-center text-[0.6875rem] font-bold uppercase tracking-wide text-[var(--muted)]"
+                  >
                     {weekday}
                   </div>
                 ))}

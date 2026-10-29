@@ -48,7 +48,16 @@ public class NexHomePartnerDocument {
 	@Column(name = "document_number_encrypted", columnDefinition = "text")
 	private String documentNumberEncrypted;
 
-	@Column(name = "file_storage_key", nullable = false, columnDefinition = "text")
+	/** GOVERNMENT_ID_TYPE lookup code; set for a GOVERNMENT_ID document (checked by the table). */
+	@Column(name = "id_type", length = 60)
+	private String idType;
+
+	/** The document's name, e.g. a skill certificate's; required for a CERTIFICATION document. */
+	@Column(name = "document_name", length = 150)
+	private String documentName;
+
+	/** Null until file storage exists. */
+	@Column(name = "file_storage_key", columnDefinition = "text")
 	private String fileStorageKey;
 
 	/** VERIFICATION_STATUS lookup code. */

@@ -10,6 +10,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import com.nexhome.app.model.NexHomePartnerProfile;
@@ -29,19 +30,31 @@ public interface NexHomePartnerProfileRepository extends JpaRepository<NexHomePa
 
 	boolean existsByMainServiceCategoryId(Long categoryId);
 
+	/** How many partner profiles have each main service category, in one query (the console's category list). */
+	@Query("select p.mainServiceCategory.id as categoryId, count(p) as partners from NexHomePartnerProfile p "
+			+ "where p.mainServiceCategory is not null group by p.mainServiceCategory.id")
+	List<CategoryCount> countByMainServiceCategory();
+
+	interface CategoryCount {
+
+		Long getCategoryId();
+
+		long getPartners();
+	}
+
 	/**
 	 * Partner profiles matching every filter given: statuses (exact codes), city (lower-cased, matched
 	 * case-insensitively) and {@code search} (lower-cased; part of the name or public id). Null filters are left out
 	 * of the SQL; see {@link NexHomeUserRepository#findByActiveRole}.
 	 */
-	default Page<NexHomePartnerProfile> search(String onboardingStatus, String verificationStatus,
+	default Page<NexHomePartnerProfile> search(String onboardingStatus, String approvalStatus,
 			String availabilityStatus, String city, String search, Pageable pageable) {
 		Specification<NexHomePartnerProfile> spec = Specification.unrestricted();
 		if (onboardingStatus != null) {
 			spec = spec.and((profile, query, cb) -> cb.equal(profile.get("onboardingStatus"), onboardingStatus));
 		}
-		if (verificationStatus != null) {
-			spec = spec.and((profile, query, cb) -> cb.equal(profile.get("verificationStatus"), verificationStatus));
+		if (approvalStatus != null) {
+			spec = spec.and((profile, query, cb) -> cb.equal(profile.get("approvalStatus"), approvalStatus));
 		}
 		if (availabilityStatus != null) {
 			spec = spec.and((profile, query, cb) -> cb.equal(profile.get("availabilityStatus"), availabilityStatus));

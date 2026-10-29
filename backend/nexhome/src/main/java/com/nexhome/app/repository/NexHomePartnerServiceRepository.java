@@ -13,7 +13,8 @@ import com.nexhome.app.model.NexHomePartnerService;
 public interface NexHomePartnerServiceRepository extends JpaRepository<NexHomePartnerService, Long> {
 
 	/** The primary service first, then newest first, with the services loaded in the same query. */
-	@EntityGraph(attributePaths = "service")
+	// The service and its category, for the list's names, in the same query
+	@EntityGraph(attributePaths = { "service", "service.category" })
 	List<NexHomePartnerService> findByPartnerIdOrderByPrimaryServiceDescCreationDateDescIdDesc(Long partnerId);
 
 	/** (partner_id, service_id) is unique. */

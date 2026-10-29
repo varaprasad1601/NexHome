@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Clock,
   Globe,
+  History,
   IdCard,
   Landmark,
   Mail,
@@ -17,11 +18,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import AdminPageHeader from '../../components/admin/AdminPageHeader';
+import ActivityLog from '../../components/admin/profile/ActivityLog';
 import CompletionAvatar from '../../components/admin/profile/CompletionAvatar';
+import StatusMenu from '../../components/admin/profile/StatusMenu';
 import { InfoRow, InfoSection, SectionActions } from '../../components/admin/profile/ProfileParts';
 import Toast from '../../components/admin/common/Toast';
 import { useAdminAuth } from '../../context/adminAuth';
 import { accountStatusLabel, canManageStaffRole, statusBadgeClass } from '../../data/staffOptions';
+import useActivity from '../../hooks/useActivity';
 import { splitApiDateTime } from '../../utils/format';
 
 /**
@@ -174,7 +178,7 @@ function EditField({ field, form, errors, onChange }) {
  */
 export default function AdminProfilePage({ self = false, list = 'admins' }) {
   const { adminProfileId } = useParams();
-  const { authRequest, can, isSuperUser } = useAdminAuth();
+  const { authRequest, can, isSuperUser, session } = useAdminAuth();
   const [state, setState] = useState({ profile: null, user: null, error: '' });
   // Everyone edits their own profile (My Profile); someone else's needs write on the function of their highest staff
   // role (ADMIN_MANAGE, SUB_ADMIN_MANAGE; a super user's: super users), for the profile and the email alike.
@@ -192,6 +196,10 @@ export default function AdminProfilePage({ self = false, list = 'admins' }) {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const closeToast = useCallback(() => setToast(null), []);
+  // The Activity Logs tab: account and profile changes from the audit columns
+  const activity = useActivity(
+    tab === 'activity' && state.profile ? `/api/profiles/admins/activity/${state.profile.adminProfileId}` : null
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -352,6 +360,17 @@ export default function AdminProfilePage({ self = false, list = 'admins' }) {
             </div>
           </div>
 
+          {/* Account status, as the staff lists' row menu: not on one's own account */}
+          {!self && canEdit && user.userId !== session?.user?.userId && (
+            <div className="-mt-4 self-start">
+              <StatusMenu
+                user={user}
+                name={name}
+                onChanged={(status) => setState((current) => ({ ...current, user: { ...current.user, accountStatus: status } }))}
+                onMessage={(message, tone = 'success') => setToast({ message, tone, id: Date.now() })}
+              />
+            </div>
+          )}
         </div>
 
         <div className="mx-6 flex gap-8 border-b border-[var(--line)] sm:mx-8" role="tablist">
@@ -363,10 +382,16 @@ export default function AdminProfilePage({ self = false, list = 'admins' }) {
             <MapPin size={16} />
             Address
           </button>
+          <button type="button" role="tab" aria-selected={tab === 'activity'} className={tabClass('activity')} onClick={() => setTab('activity')}>
+            <History size={16} />
+            Activity Logs
+          </button>
         </div>
 
         <div className="px-6 py-7 sm:px-8" role="tabpanel">
-          {tab === 'overview' ? (
+          {tab === 'activity' ? (
+            <ActivityLog entries={activity.entries} loading={activity.loading} />
+          ) : tab === 'overview' ? (
             <div className="grid grid-cols-1 gap-10 lg:grid-cols-2 lg:gap-0 lg:divide-x lg:divide-[var(--line)]">
               <div className="lg:pr-10">
                 <InfoSection title="Personal Information" onEdit={editLink('personal')}>

@@ -14,7 +14,9 @@ import {
   Mail,
   MapPin,
   Megaphone,
+  Pencil,
   Phone,
+  Plus,
   Star,
   UserRound,
   Wallet
@@ -24,10 +26,13 @@ import { useParams } from 'react-router-dom';
 
 import AdminPageHeader from '../../components/admin/AdminPageHeader';
 import DatePicker from '../../components/admin/common/DatePicker';
+import FormModal from '../../components/admin/common/FormModal';
 import Select from '../../components/admin/common/Select';
 import Toast from '../../components/admin/common/Toast';
 import Toggle from '../../components/admin/common/Toggle';
+import ActivityLog from '../../components/admin/profile/ActivityLog';
 import CompletionAvatar from '../../components/admin/profile/CompletionAvatar';
+import StatusMenu from '../../components/admin/profile/StatusMenu';
 import {
   InfoRow,
   InfoSection,
@@ -37,8 +42,54 @@ import {
 } from '../../components/admin/profile/ProfileParts';
 import { inlineInputClass, profileTabClass } from '../../components/admin/profile/profileStyles';
 import { useAdminAuth } from '../../context/adminAuth';
+import useActivity from '../../hooks/useActivity';
 import { accountStatusLabel, statusBadgeClass } from '../../data/staffOptions';
 import { splitApiDateTime } from '../../utils/format';
+
+const PIN_CODE = /^[1-9][0-9]{5}$/;
+
+/** The Add Address dialog: what the customer app asks for, India only (6-digit PIN). */
+function addressFields(addressTypes) {
+  return [
+    { key: 'contactName', label: 'Contact Name', type: 'text', required: true, maxLength: 150 },
+    {
+      key: 'mobileNumber',
+      label: 'Mobile Number',
+      type: 'text',
+      required: true,
+      maxLength: 15,
+      validate: (value) => (/^[0-9]{6,15}$/.test(value.trim()) ? null : 'Enter 6 to 15 digits')
+    },
+    {
+      key: 'addressType',
+      label: 'Address Type',
+      type: 'select',
+      required: true,
+      options: addressTypes.map((value) => ({ value: value.valueCode, label: value.displayName }))
+    },
+    { key: 'label', label: 'Label', type: 'text', maxLength: 50, placeholder: 'e.g. Parents house' },
+    { key: 'addressLine1', label: 'Address Line 1', type: 'text', required: true, maxLength: 255, wide: true },
+    { key: 'addressLine2', label: 'Address Line 2', type: 'text', maxLength: 255, wide: true },
+    { key: 'landmark', label: 'Landmark', type: 'text', maxLength: 255 },
+    { key: 'city', label: 'City', type: 'text', required: true, maxLength: 100 },
+    { key: 'state', label: 'State', type: 'text', required: true, maxLength: 100 },
+    {
+      key: 'postalCode',
+      label: 'PIN Code',
+      type: 'text',
+      required: true,
+      maxLength: 6,
+      validate: (value) => (PIN_CODE.test(value.trim()) ? null : 'Enter a 6-digit PIN code')
+    },
+    {
+      key: 'isDefault',
+      label: 'Default Address',
+      type: 'toggle',
+      onText: 'Default for bookings',
+      offText: 'Not the default'
+    }
+  ];
+}
 
 const NAME_PATTERN = /^\s*[\p{L}\p{M}][\p{L}\p{M}\s.'-]*$/u;
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -130,7 +181,7 @@ const STAT_CARDS = [
 
 /**
  * The tabs after Overview and Addresses, whose data comes with later modules: an empty state until then. `count` is the
- * tab's badge (always 0 until those records exist; replace it with the real count then); Activity Logs has none.
+ * tab's badge (always 0 until those records exist; replace it with the real count then). Activity Logs follows them.
  */
 const PENDING_TABS = {
   bookings: {
@@ -150,11 +201,6 @@ const PENDING_TABS = {
     icon: Star,
     count: 0,
     text: 'Reviews the customer gives will show here once reviews go live.'
-  },
-  activity: {
-    label: 'Activity Logs',
-    icon: History,
-    text: "The customer's account activity will show here once activity logging is added."
   }
 };
 
@@ -169,7 +215,7 @@ const PROFILE_CHECKS = [
 ];
 
 /** One saved address as a card: label and type, the default badge, contact and the address lines. */
-function AddressCard({ address, typeLabel }) {
+function AddressCard({ address, typeLabel, onEdit }) {
   return (
     <div className="rounded-xl border border-[var(--line)] p-5">
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -187,7 +233,16 @@ function AddressCard({ address, typeLabel }) {
             Default
           </span>
         )}
-        <span className="ml-auto font-mono text-[0.75rem] font-bold text-[var(--muted)]">{address.publicId}</span>
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="ml-auto flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-bold text-[var(--blue)] hover:bg-[#EDF6FD]"
+          >
+            <Pencil size={14} />
+            Edit
+          </button>
+        )}
       </div>
       <div className="text-sm font-bold text-[var(--ink)]">
         {address.contactName} · {address.mobileNumber}
@@ -207,14 +262,14 @@ function AddressCard({ address, typeLabel }) {
 /**
  * User Management > Customers > customer id: the summary (photo, name, status, customer id, joined on), then the
  * Overview tab (Personal Information: the customer profile; Contact & Account: the account) and the Addresses tab (the
- * customer's saved addresses, read only). With CUSTOMER_MANAGE write each Overview section has its own Edit, saving
+ * customer's saved addresses; with CUSTOMER_MANAGE write Add Address and each card's Edit). With CUSTOMER_MANAGE write each Overview section has its own Edit, saving
  * only its changed fields: PUT /api/profiles/customers/update and, for the email, PUT /api/users/update. The mobile
  * number and status are managed elsewhere. Data from GET /api/profiles/customers/{id}, /api/users/{userId} and
  * /api/addresses/users/{userId}; language and address type names from their lookups.
  */
 export default function CustomerProfilePage() {
   const { customerProfileId } = useParams();
-  const { authRequest, can } = useAdminAuth();
+  const { authRequest, can, session } = useAdminAuth();
   const canEdit = can('CUSTOMER_MANAGE', 'WRITE');
   const [state, setState] = useState({
     profile: null,
@@ -225,6 +280,8 @@ export default function CustomerProfilePage() {
   const [languages, setLanguages] = useState([]);
   const [addressTypes, setAddressTypes] = useState([]);
   const [tab, setTab] = useState('overview');
+  // The Activity Logs tab: account, profile and address changes from the audit columns
+  const activity = useActivity(tab === 'activity' ? `/api/profiles/customers/activity/${customerProfileId}` : null);
   // The section being edited ('personal' or 'contact') and its form
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(null);
@@ -233,6 +290,8 @@ export default function CustomerProfilePage() {
   const [toast, setToast] = useState(null);
   const closeToast = useCallback(() => setToast(null), []);
   const showToast = useCallback((message, tone = 'success') => setToast({ message, tone, id: Date.now() }), []);
+  // The address dialog: null, 'new' or the address being edited
+  const [addressDialog, setAddressDialog] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -311,6 +370,40 @@ export default function CustomerProfilePage() {
     .join('')
     .toUpperCase();
   const languageLabel = (code) => languages.find((value) => value.valueCode === code)?.displayName ?? code;
+  const saveAddress = async (values) => {
+    const editing = addressDialog !== 'new';
+    // On update "" clears an optional field; on create it is left out
+    const text = (value) => value.trim() || (editing ? '' : null);
+    const fields = {
+      contactName: values.contactName.trim(),
+      mobileNumber: values.mobileNumber.trim(),
+      addressType: values.addressType,
+      label: text(values.label),
+      addressLine1: values.addressLine1.trim(),
+      addressLine2: text(values.addressLine2),
+      landmark: text(values.landmark),
+      city: values.city.trim(),
+      state: values.state.trim(),
+      postalCode: values.postalCode.trim()
+    };
+    if (editing) {
+      await authRequest('/api/addresses/update', {
+        method: 'PUT',
+        body: { addressId: addressDialog.addressId, ...fields, isDefault: values.isDefault }
+      });
+    } else {
+      await authRequest('/api/addresses/create', {
+        method: 'POST',
+        // The first address is the default anyway
+        body: { userId: profile.userId, ...fields, countryCode: 'IN', isDefault: values.isDefault || undefined }
+      });
+    }
+    const saved = await authRequest(`/api/addresses/users/${profile.userId}`);
+    setState((current) => ({ ...current, addresses: saved }));
+    setAddressDialog(null);
+    showToast(editing ? 'Address updated.' : 'Address added.');
+  };
+
   const typeLabel = (code) => addressTypes.find((value) => value.valueCode === code)?.displayName ?? code;
 
   const startEditing = (section) => () => {
@@ -421,6 +514,19 @@ export default function CustomerProfilePage() {
               Joined on <span className="font-bold text-[var(--ink)]">{formatDate(user.creationDate) ?? '—'}</span>
             </div>
           </div>
+          {/* Account status, as the customer list's row menu (CUSTOMER_MANAGE write; not one's own account) */}
+          {canEdit && user.userId !== session?.user?.userId && (
+            <div className="-mt-4 self-start">
+              <StatusMenu
+                user={user}
+                name={name}
+                onChanged={(status) =>
+                  setState((current) => ({ ...current, user: { ...current.user, accountStatus: status } }))
+                }
+                onMessage={showToast}
+              />
+            </div>
+          )}
         </div>
 
         <div
@@ -471,6 +577,16 @@ export default function CustomerProfilePage() {
               </button>
             );
           })}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'activity'}
+            className={profileTabClass(tab === 'activity')}
+            onClick={() => setTab('activity')}
+          >
+            <History size={16} />
+            Activity Logs
+          </button>
         </div>
 
         <div className="px-6 py-7 sm:px-8" role="tabpanel">
@@ -599,13 +715,37 @@ export default function CustomerProfilePage() {
                 </div>
               </div>
             </>
+          ) : tab === 'activity' ? (
+            <ActivityLog entries={activity.entries} loading={activity.loading} />
           ) : PENDING_TABS[tab] ? (
             <PendingTab {...PENDING_TABS[tab]} />
           ) : addresses.length ? (
-            <InfoSection title="Saved Addresses" divided={false}>
+            <InfoSection
+              title={
+                <span className="flex w-full items-center justify-between gap-3">
+                  Saved Addresses
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => setAddressDialog('new')}
+                      className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-bold text-[var(--blue)] hover:bg-[#EDF6FD]"
+                    >
+                      <Plus size={15} strokeWidth={2.6} />
+                      Add Address
+                    </button>
+                  )}
+                </span>
+              }
+              divided={false}
+            >
               <div className="grid grid-cols-1 gap-4 pt-3 lg:grid-cols-2">
                 {addresses.map((address) => (
-                  <AddressCard key={address.addressId} address={address} typeLabel={typeLabel(address.addressType)} />
+                  <AddressCard
+                    key={address.addressId}
+                    address={address}
+                    typeLabel={typeLabel(address.addressType)}
+                    onEdit={canEdit ? () => setAddressDialog(address) : undefined}
+                  />
                 ))}
               </div>
             </InfoSection>
@@ -616,13 +756,62 @@ export default function CustomerProfilePage() {
               </span>
               <div className="font-bold text-[var(--ink)]">No addresses saved yet</div>
               <div className="text-sm text-[var(--muted)]">
-                The customer adds their service addresses in the NexHome app.
+                The customer adds their service addresses in the NexHome app{canEdit ? ', or add one here.' : '.'}
               </div>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setAddressDialog('new')}
+                  className="mt-4 flex items-center gap-2 rounded-xl bg-[var(--blue)] px-4 py-2 text-sm font-bold text-white hover:bg-[var(--navy)]"
+                >
+                  <Plus size={16} strokeWidth={2.6} />
+                  Add Address
+                </button>
+              )}
             </div>
           )}
         </div>
       </section>
 
+      {addressDialog && canEdit && (
+        <FormModal
+          title={addressDialog === 'new' ? 'Add Address' : 'Edit Address'}
+          fields={addressFields(addressTypes)}
+          initial={
+            addressDialog === 'new'
+              ? {
+                  contactName: name ?? '',
+                  mobileNumber: user.mobileNumber ?? '',
+                  addressType: addressTypes[0]?.valueCode ?? '',
+                  label: '',
+                  addressLine1: '',
+                  addressLine2: '',
+                  landmark: '',
+                  city: '',
+                  state: '',
+                  postalCode: '',
+                  isDefault: addresses.length === 0
+                }
+              : {
+                  contactName: addressDialog.contactName ?? '',
+                  mobileNumber: addressDialog.mobileNumber ?? '',
+                  addressType: addressDialog.addressType ?? '',
+                  label: addressDialog.label ?? '',
+                  addressLine1: addressDialog.addressLine1 ?? '',
+                  addressLine2: addressDialog.addressLine2 ?? '',
+                  landmark: addressDialog.landmark ?? '',
+                  city: addressDialog.city ?? '',
+                  state: addressDialog.state ?? '',
+                  postalCode: addressDialog.postalCode ?? '',
+                  isDefault: addressDialog.isDefault
+                }
+          }
+          submitLabel={addressDialog === 'new' ? 'Add Address' : 'Save Changes'}
+          onSubmit={saveAddress}
+          onClose={() => setAddressDialog(null)}
+          width="max-w-[44rem]"
+        />
+      )}
       <Toast toast={toast} onClose={closeToast} />
     </div>
   );

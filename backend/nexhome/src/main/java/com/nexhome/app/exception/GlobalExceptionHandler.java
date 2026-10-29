@@ -18,6 +18,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import com.nexhome.app.model.ExceptionBody;
 
@@ -109,6 +110,13 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ExceptionBody> handleUnreadableBody(HttpMessageNotReadableException ex,
 			HttpServletRequest request) {
 		return build(HttpStatus.BAD_REQUEST, "Request body is missing or malformed.", request);
+	}
+
+	/** An upload larger than {@code spring.servlet.multipart.max-file-size} (service images: 5 MB). */
+	@ExceptionHandler(MaxUploadSizeExceededException.class)
+	public ResponseEntity<ExceptionBody> handleUploadTooLarge(MaxUploadSizeExceededException ex,
+			HttpServletRequest request) {
+		return build(HttpStatus.CONTENT_TOO_LARGE, "The file must be at most 5 MB.", request);
 	}
 
 	/**

@@ -1,5 +1,6 @@
 package com.nexhome.app.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,4 +17,7 @@ public interface NexHomePartnerBankAccountRepository extends JpaRepository<NexHo
 
 	/** The partner's primary account; unique by the partial index ux_nexhome_partner_bank_accounts_one_primary. */
 	Optional<NexHomePartnerBankAccount> findByPartnerIdAndPrimaryTrue(Long partnerId);
+
+	/** The primary accounts of a page of partners, in one query. */
+	List<NexHomePartnerBankAccount> findByPartnerIdInAndPrimaryTrue(Collection<Long> partnerIds);
 }

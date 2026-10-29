@@ -31,6 +31,9 @@ public record NexHomePartnerBankAccountCreateRequest(
 		@Size(max = 150, message = "Bank name must be at most 150 characters")
 		String bankName,
 
+		@Size(max = 150, message = "Branch must be at most 150 characters")
+		String branchName,
+
 		Boolean isPrimary) {
 
 	/** Never print the account number, e.g. when the request is logged. */

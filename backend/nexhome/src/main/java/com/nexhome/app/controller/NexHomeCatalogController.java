@@ -1,8 +1,13 @@
 package com.nexhome.app.controller;
 
+import java.io.IOException;
+import java.time.Duration;
 import java.util.List;
 
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.nexhome.app.dto.NexHomePageResponse;
 import com.nexhome.app.dto.NexHomeServiceCategoryCreateRequest;
@@ -21,6 +27,9 @@ import com.nexhome.app.dto.NexHomeServiceCategoryResponse;
 import com.nexhome.app.dto.NexHomeServiceCategoryUpdateRequest;
 import com.nexhome.app.dto.NexHomeServiceCreateRequest;
 import com.nexhome.app.dto.NexHomeServiceDetailResponse;
+import com.nexhome.app.dto.NexHomeServiceImageFile;
+import com.nexhome.app.dto.NexHomeServiceImageOrderRequest;
+import com.nexhome.app.dto.NexHomeServiceImageResponse;
 import com.nexhome.app.dto.NexHomeServiceMediaCreateRequest;
 import com.nexhome.app.dto.NexHomeServiceMediaResponse;
 import com.nexhome.app.dto.NexHomeServiceMediaUpdateRequest;
@@ -80,26 +89,60 @@ public class NexHomeCatalogController {
 
 	/**
 	 * Services by name. Query parameters (all optional): {@code page} (0-based), {@code size} (1-100, default 10),
-	 * {@code categoryId}, {@code pricingType}, {@code search} (part of the name or public id), {@code includeInactive}
-	 * (CATALOG_MANAGE read).
+	 * {@code categoryId}, {@code pricingType}, {@code isActive} (only active or only inactive services), {@code search}
+	 * (part of the name or public id), {@code includeInactive} (CATALOG_MANAGE read).
 	 */
 	@GetMapping("/services")
 	public NexHomePageResponse<NexHomeServiceResponse> getServices(@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size, @RequestParam(required = false) Long categoryId,
-			@RequestParam(required = false) String pricingType, @RequestParam(required = false) String search,
+			@RequestParam(required = false) String pricingType, @RequestParam(required = false) Boolean isActive,
+			@RequestParam(required = false) String search,
 			@RequestParam(defaultValue = "false") boolean includeInactive) {
-		return catalogService.getServices(page, size, categoryId, pricingType, search, includeInactive);
+		return catalogService.getServices(page, size, categoryId, pricingType, isActive, search, includeInactive);
 	}
 
 	/**
-	 * Prices a service: query parameters {@code serviceId} (required), {@code serviceVariantId}, {@code minutes}
-	 * (HOURLY) and {@code quantity} (PER_UNIT).
+	 * Prices a service: query parameters {@code serviceId} (required), {@code serviceVariantId} and {@code minutes}
+	 * (HOURLY).
 	 */
 	@GetMapping("/services/quote")
 	public NexHomeServiceQuoteResponse quote(@RequestParam Long serviceId,
-			@RequestParam(required = false) Long serviceVariantId, @RequestParam(required = false) Integer minutes,
-			@RequestParam(required = false) Integer quantity) {
-		return catalogService.quote(serviceId, serviceVariantId, minutes, quantity);
+			@RequestParam(required = false) Long serviceVariantId, @RequestParam(required = false) Integer minutes) {
+		return catalogService.quote(serviceId, serviceVariantId, minutes);
+	}
+
+	/** The image's bytes (public, by id); cached for a day, since an image never changes. */
+	@GetMapping("/services/images/{serviceImageId}")
+	public ResponseEntity<byte[]> getImage(@PathVariable Long serviceImageId) {
+		NexHomeServiceImageFile image = catalogService.getImage(serviceImageId);
+		return ResponseEntity.ok()
+				.contentType(MediaType.parseMediaType(image.contentType()))
+				.cacheControl(CacheControl.maxAge(Duration.ofDays(1)).cachePublic())
+				.header("X-Content-Type-Options", "nosniff")
+				.body(image.data());
+	}
+
+	/** Multipart form: {@code serviceId} and the image as {@code file}. */
+	@PostMapping(value = "/services/images/add", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@ResponseStatus(HttpStatus.CREATED)
+	@PreAuthorize("@permissions.can('CATALOG_MANAGE', 'WRITE')")
+	public NexHomeServiceImageResponse addImage(@RequestParam Long serviceId, @RequestParam MultipartFile file)
+			throws IOException {
+		return catalogService.addImage(serviceId, file.getOriginalFilename(), file.getBytes());
+	}
+
+	/** Puts a service's images in order; the first is the cover. */
+	@PutMapping("/services/images/order")
+	@PreAuthorize("@permissions.can('CATALOG_MANAGE', 'WRITE')")
+	public List<NexHomeServiceImageResponse> orderImages(@Valid @RequestBody NexHomeServiceImageOrderRequest request) {
+		return catalogService.orderImages(request);
+	}
+
+	@DeleteMapping("/services/images/delete/{serviceImageId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	@PreAuthorize("@permissions.can('CATALOG_MANAGE', 'DELETE')")
+	public void deleteImage(@PathVariable Long serviceImageId) {
+		catalogService.deleteImage(serviceImageId);
 	}
 
 	@GetMapping("/services/slug/{slug}")

@@ -11,13 +11,20 @@ import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminLoginPage from './pages/admin/AdminLoginPage';
 import AdminProfilePage from './pages/admin/AdminProfilePage';
 import AdminsPage from './pages/admin/AdminsPage';
+import CategoriesPage from './pages/admin/CategoriesPage';
 import CustomerProfilePage from './pages/admin/CustomerProfilePage';
 import CustomersPage from './pages/admin/CustomersPage';
+import OnboardRequestsPage from './pages/admin/OnboardRequestsPage';
+import PartnerOnboardPage from './pages/admin/PartnerOnboardPage';
 import PartnerProfilePage from './pages/admin/PartnerProfilePage';
 import PartnersPage from './pages/admin/PartnersPage';
 import FunctionsPage from './pages/admin/FunctionsPage';
 import RoleDetailPage from './pages/admin/RoleDetailPage';
 import RolesPage from './pages/admin/RolesPage';
+import CategoryViewPage from './pages/admin/CategoryViewPage';
+import ServiceEditorPage from './pages/admin/ServiceEditorPage';
+import ServiceViewPage from './pages/admin/ServiceViewPage';
+import AdminServicesPage from './pages/admin/ServicesPage';
 import ContactPage from './pages/ContactPage';
 import FaqsPage from './pages/FaqsPage';
 import HomePage from './pages/HomePage';
@@ -61,10 +68,25 @@ export default function App() {
               <Route path="users/customers" element={<CustomersPage />} />
               <Route path="users/customers/:customerProfileId" element={<CustomerProfilePage />} />
               <Route path="users/partners" element={<PartnersPage />} />
+              <Route path="users/partners/onboarding" element={<OnboardRequestsPage />} />
               <Route path="users/partners/:partnerProfileId" element={<PartnerProfilePage />} />
+              <Route path="users/partners/:partnerProfileId/onboard" element={<PartnerOnboardPage />} />
               <Route path="users/admins/:adminProfileId" element={<AdminProfilePage key="admins" list="admins" />} />
-              <Route path="users/sub-admins/:adminProfileId" element={<AdminProfilePage key="sub-admins" list="subAdmins" />} />
-              <Route path="users/super-admins/:adminProfileId" element={<AdminProfilePage key="super-admins" list="superAdmins" />} />
+              <Route
+                path="users/sub-admins/:adminProfileId"
+                element={<AdminProfilePage key="sub-admins" list="subAdmins" />}
+              />
+              <Route
+                path="users/super-admins/:adminProfileId"
+                element={<AdminProfilePage key="super-admins" list="superAdmins" />}
+              />
+              <Route path="services" element={<AdminServicesPage />} />
+              <Route path="services/categories" element={<CategoriesPage />} />
+              <Route path="services/categories/:categoryId" element={<CategoryViewPage />} />
+              {/* Distinct keys: going from Add Service to a service's page starts a fresh form */}
+              <Route path="services/new" element={<ServiceEditorPage key="new" />} />
+              <Route path="services/:serviceId" element={<ServiceViewPage />} />
+              <Route path="services/:serviceId/edit" element={<ServiceEditorPage key="edit" />} />
               <Route path="system/roles" element={<RolesPage />} />
               <Route path="system/roles/:roleId" element={<RoleDetailPage />} />
               <Route path="system/functions" element={<FunctionsPage />} />

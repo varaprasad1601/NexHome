@@ -61,12 +61,20 @@ public class NexHomeService {
 	@Column(name = "description", columnDefinition = "text")
 	private String description;
 
-	/** PRICING_TYPE lookup code: FIXED, HOURLY (base price per hour), PER_UNIT or INSPECTION. */
+	/** SERVICE_TARGET lookup code: APPLIANCE or PROPERTY; decides the pricing types allowed. */
+	@Column(name = "service_target", nullable = false, length = 60)
+	private String serviceTarget;
+
+	/** PRICING_TYPE lookup code: FIXED, HOURLY (base price per hour), AREA (by home size) or INSPECTION. */
 	@Column(name = "pricing_type", nullable = false, length = 60)
 	private String pricingType;
 
 	@Column(name = "base_price", nullable = false, precision = 12, scale = 2)
 	private BigDecimal basePrice;
+
+	/** What customers pay instead of the base price; null for none. At most the base price. */
+	@Column(name = "discount_price", precision = 12, scale = 2)
+	private BigDecimal discountPrice;
 
 	@Column(name = "minimum_charge", nullable = false, precision = 12, scale = 2)
 	private BigDecimal minimumCharge = BigDecimal.ZERO;

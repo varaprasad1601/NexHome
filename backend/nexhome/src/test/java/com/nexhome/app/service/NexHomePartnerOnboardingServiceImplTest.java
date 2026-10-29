@@ -44,6 +44,7 @@ import com.nexhome.app.dto.NexHomePartnerProfileResponse;
 import com.nexhome.app.dto.NexHomePartnerProfileReviewRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileSubmitRequest;
 import com.nexhome.app.dto.NexHomePartnerProfileUpdateRequest;
+import com.nexhome.app.dto.NexHomePartnerProfileVerificationRequest;
 import com.nexhome.app.exception.DuplicateResourceException;
 import com.nexhome.app.exception.InvalidRequestException;
 import com.nexhome.app.mapper.NexHomePartnerBankAccountMapper;
@@ -76,16 +77,14 @@ class NexHomePartnerOnboardingServiceImplTest {
 	private static final Long PROFILE_ID = 30L;
 	private static final String OWNER_MOBILE = "9876543210";
 
-	private static final List<String> ONBOARDING_STATUSES = List.of("DRAFT", "PROFILE_INCOMPLETE", "UNDER_REVIEW",
-			"TRAINING_REQUIRED", "APPROVED", "REJECTED", "SUSPENDED");
+	private static final List<String> ONBOARDING_STATUSES = List.of("NOT_STARTED", "DRAFT", "UNDER_REVIEW",
+			"CHANGES_REQUESTED", "APPROVED", "REJECTED");
 
 	/** The review transitions the onboarding design allows, written out independently of the service. */
 	private static final Map<String, Set<String>> ALLOWED = Map.of(
-			"UNDER_REVIEW", Set.of("APPROVED", "REJECTED", "PROFILE_INCOMPLETE", "TRAINING_REQUIRED"),
-			"TRAINING_REQUIRED", Set.of("APPROVED", "REJECTED", "PROFILE_INCOMPLETE"),
-			"APPROVED", Set.of("SUSPENDED"),
-			"SUSPENDED", Set.of("APPROVED"),
-			"REJECTED", Set.of("PROFILE_INCOMPLETE"));
+			"UNDER_REVIEW", Set.of("APPROVED", "REJECTED", "CHANGES_REQUESTED"),
+			"APPROVED", Set.of("CHANGES_REQUESTED"),
+			"REJECTED", Set.of("CHANGES_REQUESTED"));
 
 	private NexHomePartnerProfileRepository partnerProfileRepository;
 	private NexHomePartnerDocumentRepository partnerDocumentRepository;
@@ -151,12 +150,14 @@ class NexHomePartnerOnboardingServiceImplTest {
 		// The caller is staff user 1 with PARTNER_ONBOARDING_MANAGE unless a test says otherwise
 		when(permissionService.currentUserId()).thenReturn(STAFF_ID);
 		when(permissionService.isSelfOrCan(any(), any(), any())).thenReturn(true);
+		when(permissionService.can(any(), any())).thenReturn(true);
 
 		partnerService = new NexHomePartnerOnboardingServiceImpl(partnerProfileRepository, partnerDocumentRepository,
 				partnerBankAccountRepository, userRepository, userRoleRepository, lookupService, permissionService,
 				partnerProfileMapper, partnerDocumentMapper, partnerBankAccountMapper,
 				mock(NexHomeServiceCategoryRepository.class), mock(NexHomeServiceRepository.class),
-				mock(NexHomePartnerServiceRepository.class), new NexHomePartnerServiceMapper());
+				mock(NexHomePartnerServiceRepository.class), new NexHomePartnerServiceMapper(),
+				mock(NexHomeAuditUsers.class));
 	}
 
 	// ------------------------------------------------------------------------------------------------------------
@@ -165,6 +166,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 
 	@Test
 	void reviewFollowsTheTransitionTable() {
+		verifiedDocumentsAndBankAccount();
 		for (String current : ONBOARDING_STATUSES) {
 			for (String target : ONBOARDING_STATUSES) {
 				NexHomePartnerProfile profile = completeProfile(current);
@@ -189,13 +191,13 @@ class NexHomePartnerOnboardingServiceImplTest {
 	@Test
 	void rejectedProfileCanBeReopenedForChanges() {
 		NexHomePartnerProfile profile = completeProfile("REJECTED");
-		profile.setVerificationStatus("REJECTED");
+		profile.setApprovalStatus("REJECTED");
 
 		NexHomePartnerProfileResponse response = partnerService.reviewPartnerProfile(
-				new NexHomePartnerProfileReviewRequest(PROFILE_ID, "PROFILE_INCOMPLETE", "  Upload a clearer photo  "));
+				new NexHomePartnerProfileReviewRequest(PROFILE_ID, "CHANGES_REQUESTED", "  Upload a clearer photo  "));
 
-		assertThat(response.onboardingStatus()).isEqualTo("PROFILE_INCOMPLETE");
-		assertThat(response.verificationStatus()).isEqualTo("PENDING");
+		assertThat(response.onboardingStatus()).isEqualTo("CHANGES_REQUESTED");
+		assertThat(response.approvalStatus()).isEqualTo("PENDING");
 		assertThat(response.rejectionReason()).isEqualTo("Upload a clearer photo");
 		assertThat(response.availabilityStatus()).isEqualTo("OFFLINE");
 		assertThat(profile.getUpdatedBy()).isEqualTo(STAFF_ID);
@@ -203,9 +205,10 @@ class NexHomePartnerOnboardingServiceImplTest {
 
 	@Test
 	void approvalClearsTheReasonAndRecordsTheApprover() {
-		NexHomePartnerProfile profile = completeProfile("SUSPENDED");
-		profile.setRejectionReason("Customer complaints");
-		profile.setVerificationStatus("VERIFIED");
+		NexHomePartnerProfile profile = completeProfile("UNDER_REVIEW");
+		verifiedDocumentsAndBankAccount();
+		profile.setRejectionReason("Earlier changes requested");
+		profile.setApprovalStatus("IN_REVIEW");
 		profile.setAvailabilityStatus("OFFLINE");
 		Instant before = Instant.now();
 
@@ -213,11 +216,129 @@ class NexHomePartnerOnboardingServiceImplTest {
 				"Ignored on approval"));
 
 		assertThat(profile.getOnboardingStatus()).isEqualTo("APPROVED");
-		assertThat(profile.getVerificationStatus()).isEqualTo("VERIFIED");
+		assertThat(profile.getApprovalStatus()).isEqualTo("VERIFIED");
 		assertThat(profile.getRejectionReason()).isNull();
 		assertThat(profile.getApprovedBy()).isEqualTo(STAFF_ID);
 		assertThat(profile.getApprovedAt()).isAfterOrEqualTo(before);
 		assertThat(profile.getAvailabilityStatus()).isEqualTo("OFFLINE");
+	}
+
+	@Test
+	void accountCheckRecordsWhoMadeItAndNeverForYourself() {
+		NexHomePartnerProfile profile = completeProfile("UNDER_REVIEW");
+		profile.setAccountVerified(false);
+		profile.setAccountVerifiedBy(null);
+
+		var response = partnerService.updatePartnerVerifications(
+				new NexHomePartnerProfileVerificationRequest(PROFILE_ID, true));
+		assertThat(response.accountVerified()).isTrue();
+		assertThat(response.accountVerifiedBy()).isEqualTo(STAFF_ID);
+		assertThat(response.accountVerifiedAt()).isNotNull();
+
+		// Unticking clears who made the check
+		partnerService.updatePartnerVerifications(new NexHomePartnerProfileVerificationRequest(PROFILE_ID, false));
+		assertThat(profile.isAccountVerified()).isFalse();
+		assertThat(profile.getAccountVerifiedBy()).isNull();
+		// Not sent: left as it was
+		partnerService.updatePartnerVerifications(new NexHomePartnerProfileVerificationRequest(PROFILE_ID, null));
+		assertThat(profile.isAccountVerified()).isFalse();
+
+		when(permissionService.currentUserId()).thenReturn(OWNER_ID);
+		assertThatThrownBy(() -> partnerService.updatePartnerVerifications(
+				new NexHomePartnerProfileVerificationRequest(PROFILE_ID, true)))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("Nobody can verify their own partner profile.");
+	}
+
+	@Test
+	void anApprovedPartnerIsChangedOnlyWithApprovedEdit() {
+		completeProfile("APPROVED");
+		when(permissionService.can("PARTNER_APPROVED_EDIT", "WRITE")).thenReturn(false);
+		PartnerFields fields = new PartnerFields();
+		fields.city = "Vijayawada";
+
+		assertThatThrownBy(() -> partnerService.updatePartnerProfile(fields.toUpdate()))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("Changing an approved partner needs PARTNER_APPROVED_EDIT write access.");
+
+		// With it, staff may; before approval PARTNER_ONBOARDING_MANAGE is enough
+		when(permissionService.can("PARTNER_APPROVED_EDIT", "WRITE")).thenReturn(true);
+		assertThat(partnerService.updatePartnerProfile(fields.toUpdate()).city()).isEqualTo("Vijayawada");
+		completeProfile("UNDER_REVIEW");
+		when(permissionService.can("PARTNER_APPROVED_EDIT", "WRITE")).thenReturn(false);
+		assertThat(partnerService.updatePartnerProfile(fields.toUpdate()).city()).isEqualTo("Vijayawada");
+	}
+
+	@Test
+	void rejectingABankAccountNeedsAReasonAndVerifyingClearsIt() {
+		NexHomePartnerBankAccount account = existingBankAccount(51L, "123456784321", "SBIN0001234", true);
+
+		assertThatThrownBy(() -> partnerService.verifyPartnerBankAccount(
+				new NexHomePartnerBankAccountVerifyRequest(51L, "REJECTED", " ")))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Rejection reason is required to reject a bank account.");
+
+		assertThat(partnerService.verifyPartnerBankAccount(new NexHomePartnerBankAccountVerifyRequest(51L, "REJECTED",
+				" Name does not match ")).rejectionReason()).isEqualTo("Name does not match");
+		partnerService.verifyPartnerBankAccount(new NexHomePartnerBankAccountVerifyRequest(51L, "VERIFIED", "Ignored"));
+		assertThat(account.getVerificationStatus()).isEqualTo("VERIFIED");
+		assertThat(account.getRejectionReason()).isNull();
+	}
+
+	@Test
+	void anApprovedPartnersAccountCannotBeUnverified() {
+		NexHomePartnerProfile profile = completeProfile("APPROVED");
+
+		assertThatThrownBy(() -> partnerService.updatePartnerVerifications(
+				new NexHomePartnerProfileVerificationRequest(PROFILE_ID, false)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("The account of an approved partner cannot be unverified.");
+		assertThat(profile.isAccountVerified()).isTrue();
+	}
+
+	@Test
+	void documentsAndBankChecksComeFromTheRecords() {
+		NexHomePartnerProfile partner = completeProfile("UNDER_REVIEW");
+		NexHomePartnerDocument governmentId = document(partner, "GOVERNMENT_ID", "VERIFIED");
+		NexHomePartnerDocument certificate = document(partner, "CERTIFICATION", "PENDING");
+
+		assertThat(NexHomePartnerOnboardingServiceImpl.documentsVerified(List.of())).isFalse();
+		assertThat(NexHomePartnerOnboardingServiceImpl.documentsVerified(List.of(governmentId))).isTrue();
+		// Every document must be verified
+		assertThat(NexHomePartnerOnboardingServiceImpl.documentsVerified(List.of(governmentId, certificate))).isFalse();
+		// ... and one of them must be a government ID
+		certificate.setVerificationStatus("VERIFIED");
+		assertThat(NexHomePartnerOnboardingServiceImpl.documentsVerified(List.of(certificate))).isFalse();
+
+		NexHomePartnerBankAccount account = existingBankAccount(51L, "123456784321", "SBIN0001234", true);
+		assertThat(NexHomePartnerOnboardingServiceImpl.bankAccountVerified(null)).isFalse();
+		assertThat(NexHomePartnerOnboardingServiceImpl.bankAccountVerified(account)).isFalse();
+		account.setVerificationStatus("VERIFIED");
+		assertThat(NexHomePartnerOnboardingServiceImpl.bankAccountVerified(account)).isTrue();
+
+		// The profile response carries both
+		when(partnerDocumentRepository.findByPartnerIdIn(List.of(PROFILE_ID))).thenReturn(List.of(governmentId));
+		when(partnerBankAccountRepository.findByPartnerIdAndPrimaryTrue(PROFILE_ID)).thenReturn(Optional.of(account));
+		var response = partnerService.getPartnerProfile(PROFILE_ID);
+		assertThat(response.documentsVerified()).isTrue();
+		assertThat(response.bankAccVerified()).isTrue();
+	}
+
+	@Test
+	void approvalNeedsTheThreeVerificationChecks() {
+		NexHomePartnerProfile profile = completeProfile("UNDER_REVIEW");
+		// Documents verified, but no verified primary bank account
+		when(partnerDocumentRepository.findByPartnerIdIn(List.of(PROFILE_ID)))
+				.thenReturn(List.of(document(profile, "GOVERNMENT_ID", "VERIFIED")));
+
+		assertThatThrownBy(() -> partnerService.reviewPartnerProfile(
+				new NexHomePartnerProfileReviewRequest(PROFILE_ID, "APPROVED", null)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Verify the account, documents and bank account before approving the partner.");
+		assertThat(profile.getOnboardingStatus()).isEqualTo("UNDER_REVIEW");
+		// Other decisions do not need them
+		assertThat(partnerService.reviewPartnerProfile(new NexHomePartnerProfileReviewRequest(PROFILE_ID,
+				"CHANGES_REQUESTED", "Add a cancelled cheque")).onboardingStatus()).isEqualTo("CHANGES_REQUESTED");
 	}
 
 	@Test
@@ -236,24 +357,24 @@ class NexHomePartnerOnboardingServiceImplTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "APPROVED, SUSPENDED, VERIFIED", "UNDER_REVIEW, TRAINING_REQUIRED, IN_REVIEW",
-			"UNDER_REVIEW, REJECTED, REJECTED", "TRAINING_REQUIRED, PROFILE_INCOMPLETE, PENDING" })
+	@CsvSource({ "APPROVED, CHANGES_REQUESTED, PENDING", "UNDER_REVIEW, CHANGES_REQUESTED, PENDING",
+			"UNDER_REVIEW, REJECTED, REJECTED", "REJECTED, CHANGES_REQUESTED, PENDING" })
 	void everyDecisionButApprovalTakesThePartnerOffline(String current, String target, String verification) {
 		NexHomePartnerProfile profile = completeProfile(current);
-		profile.setVerificationStatus(current.equals("APPROVED") ? "VERIFIED" : "IN_REVIEW");
+		profile.setApprovalStatus(current.equals("APPROVED") ? "VERIFIED" : "IN_REVIEW");
 		profile.setAvailabilityStatus("ONLINE");
 
 		partnerService.reviewPartnerProfile(new NexHomePartnerProfileReviewRequest(PROFILE_ID, target, "Reason"));
 
 		assertThat(profile.getAvailabilityStatus()).isEqualTo("OFFLINE");
-		assertThat(profile.getVerificationStatus()).isEqualTo(verification);
+		assertThat(profile.getApprovalStatus()).isEqualTo(verification);
 		assertThat(profile.getRejectionReason()).isEqualTo("Reason");
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "PROFILE_INCOMPLETE", "SUSPENDED" })
+	@ValueSource(strings = { "CHANGES_REQUESTED", "REJECTED" })
 	void blankReasonIsNotEnough(String target) {
-		NexHomePartnerProfile profile = completeProfile(target.equals("SUSPENDED") ? "APPROVED" : "UNDER_REVIEW");
+		NexHomePartnerProfile profile = completeProfile("UNDER_REVIEW");
 
 		assertThatThrownBy(() -> partnerService.reviewPartnerProfile(
 				new NexHomePartnerProfileReviewRequest(PROFILE_ID, target, "   ")))
@@ -293,7 +414,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 						+ "city, state, postalCode, skillCategory, yearsExperience, mainServiceCategoryId, "
 						+ "preferredArrangement, paymentBasis, "
 						+ "expectedEarningsInr, maxTravelKm, weekendAvailability, serviceAreas, weeklyAvailability.");
-		assertThat(profile.getOnboardingStatus()).isEqualTo("DRAFT");
+		assertThat(profile.getOnboardingStatus()).isEqualTo("NOT_STARTED");
 	}
 
 	@Test
@@ -320,7 +441,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 			"VARIES, '{\"SATURDAY\":[\"MORNING\"],\"SUNDAY\":[\"EVENING\"]}', true",
 			"VARIES, '{\"MONDAY\":[\"MORNING\"]}', true" })
 	void weekendAnswerMustAgreeWithTheWeeklyGrid(String weekend, String weekly, boolean matches) {
-		NexHomePartnerProfile profile = completeProfile("PROFILE_INCOMPLETE");
+		NexHomePartnerProfile profile = completeProfile("CHANGES_REQUESTED");
 		profile.setWeekendAvailability(weekend);
 		profile.setWeeklyAvailability(weekly);
 		profile.setRejectionReason("Add your weekend slots");
@@ -330,7 +451,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 		if (matches) {
 			NexHomePartnerProfileResponse response = partnerService.submitPartnerProfile(request);
 			assertThat(response.onboardingStatus()).isEqualTo("UNDER_REVIEW");
-			assertThat(response.verificationStatus()).isEqualTo("IN_REVIEW");
+			assertThat(response.approvalStatus()).isEqualTo("IN_REVIEW");
 			assertThat(response.rejectionReason()).isNull();
 		}
 		else {
@@ -338,18 +459,19 @@ class NexHomePartnerOnboardingServiceImplTest {
 					.isInstanceOf(InvalidRequestException.class)
 					.hasMessage("Weekly availability does not match weekend availability " + weekend
 							+ ": check the Saturday and Sunday slots.");
-			assertThat(profile.getOnboardingStatus()).isEqualTo("PROFILE_INCOMPLETE");
+			assertThat(profile.getOnboardingStatus()).isEqualTo("CHANGES_REQUESTED");
 		}
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "UNDER_REVIEW", "TRAINING_REQUIRED", "APPROVED", "REJECTED", "SUSPENDED" })
-	void onlyDraftOrIncompleteProfilesAreSubmitted(String status) {
+	@ValueSource(strings = { "UNDER_REVIEW", "APPROVED", "REJECTED" })
+	void onlyUnsubmittedOrReturnedProfilesAreSubmitted(String status) {
 		completeProfile(status);
 
 		assertThatThrownBy(() -> partnerService.submitPartnerProfile(new NexHomePartnerProfileSubmitRequest(PROFILE_ID)))
 				.isInstanceOf(InvalidRequestException.class)
-				.hasMessage("Only a DRAFT or PROFILE_INCOMPLETE profile can be submitted; this one is " + status + ".");
+				.hasMessage("Only a profile that is not submitted yet or has changes requested can be submitted; this "
+						+ "one is " + status + ".");
 	}
 
 	// ------------------------------------------------------------------------------------------------------------
@@ -407,7 +529,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "UNDER_REVIEW", "TRAINING_REQUIRED", "APPROVED", "REJECTED", "SUSPENDED" })
+	@ValueSource(strings = { "UNDER_REVIEW", "APPROVED", "REJECTED" })
 	void ownerCannotEditOnceSubmitted(String status) {
 		NexHomePartnerProfile profile = completeProfile(status);
 		when(permissionService.currentUserId()).thenReturn(OWNER_ID);
@@ -421,8 +543,8 @@ class NexHomePartnerOnboardingServiceImplTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "DRAFT", "PROFILE_INCOMPLETE" })
-	void ownerEditsDraftOrIncompleteProfile(String status) {
+	@ValueSource(strings = { "NOT_STARTED", "DRAFT", "CHANGES_REQUESTED" })
+	void ownerEditsUnsubmittedOrReturnedProfile(String status) {
 		NexHomePartnerProfile profile = completeProfile(status);
 		when(permissionService.currentUserId()).thenReturn(OWNER_ID);
 		PartnerFields fields = new PartnerFields();
@@ -432,6 +554,8 @@ class NexHomePartnerOnboardingServiceImplTest {
 
 		assertThat(profile.getCity()).isEqualTo("Pune");
 		assertThat(profile.getUpdatedBy()).isEqualTo(OWNER_ID);
+		// The first save makes a NOT_STARTED profile a draft; a returned one stays returned until submitted
+		assertThat(profile.getOnboardingStatus()).isEqualTo(status.equals("NOT_STARTED") ? "DRAFT" : status);
 	}
 
 	@Test
@@ -530,13 +654,13 @@ class NexHomePartnerOnboardingServiceImplTest {
 	void createFillsInTheDraftOfTheAccount() {
 		when(userRoleRepository.existsByUserIdAndRoleCodeAndActiveTrueAndRoleActiveFlagTrue(OWNER_ID, "PARTNER"))
 				.thenReturn(true);
-		// The empty DRAFT every partner account gets (V16)
+		// The empty profile every partner account gets (V16, V18)
 		NexHomePartnerProfile draft = new NexHomePartnerProfile();
 		draft.setId(90L);
 		draft.setPublicId("NHPART0090");
 		draft.setUser(userRepository.findById(OWNER_ID).orElseThrow());
-		draft.setOnboardingStatus("DRAFT");
-		draft.setVerificationStatus("PENDING");
+		draft.setOnboardingStatus("NOT_STARTED");
+		draft.setApprovalStatus("PENDING");
 		draft.setAvailabilityStatus("OFFLINE");
 		when(partnerProfileRepository.findByUserId(OWNER_ID)).thenReturn(Optional.of(draft));
 
@@ -544,6 +668,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 
 		// The partner id stays; the draft is updated in place, not saved as a second profile
 		assertThat(filled.publicId()).isEqualTo("NHPART0090");
+		assertThat(filled.onboardingStatus()).isEqualTo("DRAFT");
 		assertThat(draft.getFirstName()).isNotNull();
 		verify(partnerProfileRepository, never()).save(any());
 	}
@@ -639,7 +764,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 				new NexHomePartnerDocumentVerifyRequest(40L, "VERIFIED", null)))
 				.isInstanceOf(AccessDeniedException.class);
 		assertThatThrownBy(() -> partnerService.verifyPartnerBankAccount(
-				new NexHomePartnerBankAccountVerifyRequest(51L, "VERIFIED")))
+				new NexHomePartnerBankAccountVerifyRequest(51L, "VERIFIED", null)))
 				.isInstanceOf(AccessDeniedException.class);
 	}
 
@@ -652,7 +777,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 		when(permissionService.currentUserId()).thenReturn(OWNER_ID);
 
 		partnerService.updatePartnerDocument(new NexHomePartnerDocumentUpdateRequest(40L, null, null, null,
-				"partners/30/pan-v2.pdf", null, null));
+				"partners/30/pan-v2.pdf", null, null, null, null));
 
 		assertThat(document.getVerificationStatus()).isEqualTo("PENDING");
 		assertThat(document.getVerifiedBy()).isNull();
@@ -662,12 +787,39 @@ class NexHomePartnerOnboardingServiceImplTest {
 	}
 
 	@Test
+	void governmentIdNeedsItsTypeAndACertificateItsName() {
+		completeProfile("DRAFT");
+		when(permissionService.currentUserId()).thenReturn(OWNER_ID);
+
+		assertThatThrownBy(() -> partnerService.addPartnerDocument(new NexHomePartnerDocumentCreateRequest(
+				PROFILE_ID, "GOVERNMENT_ID", "ABCDE1234F", null, null, " ", null)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("ID type is required for a government ID.");
+		assertThatThrownBy(() -> partnerService.addPartnerDocument(new NexHomePartnerDocumentCreateRequest(
+				PROFILE_ID, "CERTIFICATION", "ITI-2020-118", null, null, null, "  ")))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Certificate name is required for a skill certificate.");
+		verify(partnerDocumentRepository, never()).save(any());
+
+		// No file is needed until storage exists
+		var id = partnerService.addPartnerDocument(new NexHomePartnerDocumentCreateRequest(PROFILE_ID,
+				"GOVERNMENT_ID", "ABCDE1234F", null, null, " PAN ", null));
+		assertThat(id.idType()).isEqualTo("PAN");
+		assertThat(id.fileStorageKey()).isNull();
+		assertThat(id.verificationStatus()).isEqualTo("PENDING");
+		var certificate = partnerService.addPartnerDocument(new NexHomePartnerDocumentCreateRequest(PROFILE_ID,
+				"CERTIFICATION", "ITI-2020-118", null, null, null, " ITI Electrician "));
+		assertThat(certificate.documentName()).isEqualTo("ITI Electrician");
+		assertThat(certificate.idType()).isNull();
+	}
+
+	@Test
 	void documentOfAnotherPartnerNeedsOnboardingManage() {
 		completeProfile("DRAFT");
 		when(permissionService.isSelfOrCan(OWNER_ID, "PARTNER_ONBOARDING_MANAGE", "WRITE")).thenReturn(false);
 
 		assertThatThrownBy(() -> partnerService.addPartnerDocument(new NexHomePartnerDocumentCreateRequest(
-				PROFILE_ID, "GOVERNMENT_ID", null, "k", null)))
+				PROFILE_ID, "GOVERNMENT_ID", null, "k", null, "PAN", null)))
 				.isInstanceOf(AccessDeniedException.class);
 		verify(partnerDocumentRepository, never()).save(any());
 	}
@@ -771,16 +923,16 @@ class NexHomePartnerOnboardingServiceImplTest {
 		NexHomePartnerBankAccount account = existingBankAccount(51L, "123456784321", "SBIN0001234", true);
 
 		assertThatThrownBy(() -> partnerService.verifyPartnerBankAccount(
-				new NexHomePartnerBankAccountVerifyRequest(51L, "PENDING")))
+				new NexHomePartnerBankAccountVerifyRequest(51L, "PENDING", null)))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage("Verification status must be one of: IN_REVIEW, VERIFIED, REJECTED, EXPIRED.");
 
-		partnerService.verifyPartnerBankAccount(new NexHomePartnerBankAccountVerifyRequest(51L, " VERIFIED "));
+		partnerService.verifyPartnerBankAccount(new NexHomePartnerBankAccountVerifyRequest(51L, " VERIFIED ", null));
 		assertThat(account.getVerificationStatus()).isEqualTo("VERIFIED");
 		assertThat(account.getUpdatedBy()).isEqualTo(STAFF_ID);
 
 		assertThatThrownBy(() -> partnerService.verifyPartnerBankAccount(
-				new NexHomePartnerBankAccountVerifyRequest(51L, "VERIFIED")))
+				new NexHomePartnerBankAccountVerifyRequest(51L, "VERIFIED", null)))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage("Bank account is already VERIFIED.");
 	}
@@ -832,7 +984,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 							"User cannot be updated",
 							"Public ID cannot be updated",
 							"Onboarding status cannot be updated here",
-							"Verification status cannot be updated here",
+							"Approval status cannot be updated here",
 							"Availability status cannot be updated here",
 							"Aadhaar number must be 12 digits and cannot start with 0 or 1");
 		}
@@ -843,13 +995,13 @@ class NexHomePartnerOnboardingServiceImplTest {
 		try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
 			assertThat(factory.getValidator().validate(bankAccount("123456784321", "sbin0001234", null))).isEmpty();
 			assertThat(factory.getValidator().validate(new NexHomePartnerBankAccountCreateRequest(PROFILE_ID,
-					"Suresh", "12345678", "SBIN1001234", null, null)))
+					"Suresh", "12345678", "SBIN1001234", null, null, null)))
 					.extracting(ConstraintViolation::getMessage)
 					.containsExactlyInAnyOrder(
 							"Account number must be 9 to 18 digits",
 							"IFSC code must be 4 letters, a zero and 6 letters or digits");
 			assertThat(factory.getValidator().validate(new NexHomePartnerBankAccountUpdateRequest(51L, PROFILE_ID,
-					"123456784321", "SBIN0001234", " ", null, null, "VERIFIED")))
+					"123456784321", "SBIN0001234", " ", null, null, null, "VERIFIED")))
 					.extracting(ConstraintViolation::getMessage)
 					.containsExactlyInAnyOrder(
 							"Partner profile cannot be updated",
@@ -864,7 +1016,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 	void documentUpdateRejectsTypeAndStatus() {
 		try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
 			assertThat(factory.getValidator().validate(new NexHomePartnerDocumentUpdateRequest(40L, PROFILE_ID,
-					"OTHER", "ab", null, LocalDate.now().minusDays(1), "VERIFIED")))
+					"OTHER", "ab", null, LocalDate.now().minusDays(1), "VERIFIED", null, null)))
 					.extracting(ConstraintViolation::getMessage)
 					.containsExactlyInAnyOrder(
 							"Partner profile cannot be updated",
@@ -910,6 +1062,9 @@ class NexHomePartnerOnboardingServiceImplTest {
 		profile.setWeeklyAvailability("{\"MONDAY\":[\"MORNING\"],\"SATURDAY\":[\"MORNING\"]}");
 		profile.setWeekendAvailability("SATURDAY");
 		profile.setOnboardingStatus(onboardingStatus);
+		// Staff have verified the account; documents and bank accounts: verifiedDocumentsAndBankAccount()
+		profile.setAccountVerified(true);
+		profile.setAccountVerifiedBy(STAFF_ID);
 		when(partnerProfileRepository.findById(PROFILE_ID)).thenReturn(Optional.of(profile));
 		return profile;
 	}
@@ -917,11 +1072,32 @@ class NexHomePartnerOnboardingServiceImplTest {
 	private NexHomePartnerDocument existingDocument(String verificationStatus, LocalDate expiryDate) {
 		NexHomePartnerDocument document = partnerDocumentMapper.toPartnerDocumentEntity(
 				new NexHomePartnerDocumentCreateRequest(PROFILE_ID, "GOVERNMENT_ID", "ABCDE1234F",
-						"partners/30/pan.pdf", expiryDate),
+						"partners/30/pan.pdf", expiryDate, "PAN", null),
 				completeProfile("DRAFT"), "GOVERNMENT_ID", OWNER_ID);
 		document.setId(40L);
 		document.setVerificationStatus(verificationStatus);
 		when(partnerDocumentRepository.findById(40L)).thenReturn(Optional.of(document));
+		return document;
+	}
+
+	/** The partner has a verified government ID and a verified primary bank account, so approval is possible. */
+	private void verifiedDocumentsAndBankAccount() {
+		NexHomePartnerProfile partner = new NexHomePartnerProfile();
+		partner.setId(PROFILE_ID);
+		when(partnerDocumentRepository.findByPartnerIdIn(List.of(PROFILE_ID)))
+				.thenReturn(List.of(document(partner, "GOVERNMENT_ID", "VERIFIED")));
+		NexHomePartnerBankAccount account = new NexHomePartnerBankAccount();
+		account.setPartner(partner);
+		account.setPrimary(true);
+		account.setVerificationStatus("VERIFIED");
+		when(partnerBankAccountRepository.findByPartnerIdAndPrimaryTrue(PROFILE_ID)).thenReturn(Optional.of(account));
+	}
+
+	private static NexHomePartnerDocument document(NexHomePartnerProfile partner, String type, String status) {
+		NexHomePartnerDocument document = new NexHomePartnerDocument();
+		document.setPartner(partner);
+		document.setDocumentType(type);
+		document.setVerificationStatus(status);
 		return document;
 	}
 
@@ -938,11 +1114,12 @@ class NexHomePartnerOnboardingServiceImplTest {
 	}
 
 	private static NexHomePartnerBankAccountCreateRequest bankAccount(String number, String ifsc, Boolean primary) {
-		return new NexHomePartnerBankAccountCreateRequest(PROFILE_ID, "Suresh Babu", number, ifsc, "Bank", primary);
+		return new NexHomePartnerBankAccountCreateRequest(PROFILE_ID, "Suresh Babu", number, ifsc, "Bank", null,
+				primary);
 	}
 
 	private static NexHomePartnerBankAccountUpdateRequest bankUpdate(Long id, Boolean primary) {
-		return new NexHomePartnerBankAccountUpdateRequest(id, null, null, null, null, null, primary, null);
+		return new NexHomePartnerBankAccountUpdateRequest(id, null, null, null, null, null, null, primary, null);
 	}
 
 	/** Mutable stand-in for the 40-component partner profile requests; unset fields stay null. */
@@ -987,7 +1164,6 @@ class NexHomePartnerOnboardingServiceImplTest {
 		String emergencyContactName;
 		String emergencyContactRelationship;
 		String emergencyContactNumber;
-		Boolean emergencyContactPermission;
 
 		NexHomePartnerProfileCreateRequest toCreate() {
 			return new NexHomePartnerProfileCreateRequest(OWNER_ID, firstName, middleName, lastName, aadhaarNumber,
@@ -996,7 +1172,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 					yearsExperience, mainServiceCategoryId, additionalSkills, preferredArrangement, paymentBasis,
 					expectedEarningsInr, visitChargeInr, minimumJobPaymentInr, previousWorkDetails, serviceAreas,
 					maxTravelKm, weeklyAvailability(), weekendAvailability, emergencyContactName,
-					emergencyContactRelationship, emergencyContactNumber, emergencyContactPermission);
+					emergencyContactRelationship, emergencyContactNumber);
 		}
 
 		/** The update leaves names alone unless a test set them to something else. */
@@ -1008,8 +1184,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 					latitude, longitude, registrationDate, skillCategory, yearsExperience, mainServiceCategoryId,
 					additionalSkills, preferredArrangement, paymentBasis, expectedEarningsInr, visitChargeInr,
 					minimumJobPaymentInr, previousWorkDetails, serviceAreas, maxTravelKm, weeklyAvailability(), weekendAvailability,
-					emergencyContactName, emergencyContactRelationship, emergencyContactNumber,
-					emergencyContactPermission);
+					emergencyContactName, emergencyContactRelationship, emergencyContactNumber);
 		}
 
 		/** A copy, so a grid holding null lists (which Map.of cannot) reaches the service as given. */

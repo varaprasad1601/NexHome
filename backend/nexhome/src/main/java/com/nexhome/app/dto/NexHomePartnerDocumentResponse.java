@@ -21,5 +21,9 @@ public record NexHomePartnerDocumentResponse(
 		String rejectionReason,
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
 				timezone = "Asia/Kolkata")
-		Instant creationDate) {
+		Instant creationDate,
+
+		String idType,
+
+		String documentName) {
 }

@@ -1,4 +1,5 @@
 import {
+  ClipboardCheck,
   CircleCheck,
   Hourglass,
   Plus,
@@ -26,7 +27,7 @@ import {
   searchInputClass
 } from '../../components/admin/system/systemStyles';
 import { useAdminAuth } from '../../context/adminAuth';
-import { NOT_STARTED, PARTNER_ROLE, availabilityDotClass, onboardingBadgeClass } from '../../data/partnerOptions';
+import { PARTNER_ROLE, availabilityDotClass, onboardingBadgeClass } from '../../data/partnerOptions';
 import { STATUS_FILTERS, accountStatusLabel, statusBadgeClass } from '../../data/staffOptions';
 import useDebounced from '../../hooks/useDebounced';
 import useLookupLabels from '../../hooks/useLookupLabels';
@@ -92,6 +93,8 @@ export default function PartnersPage() {
   const [searchText, setSearchText] = useState('');
   const search = useDebounced(searchText.trim());
   const [onboardingStatus, setOnboardingStatus] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [categories, setCategories] = useState([]);
   const [accountStatus, setAccountStatus] = useState('');
   const [page, setPage] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
@@ -105,9 +108,34 @@ export default function PartnersPage() {
     document.title = 'Partners | NexHome Admin';
   }, []);
 
+  // Onboard Requests: the button and how many profiles wait for review
+  const canSeeOnboarding = can('PARTNER_ONBOARDING_MANAGE', 'READ');
+  const [waiting, setWaiting] = useState(0);
+  useEffect(() => {
+    if (!canSeeOnboarding) return undefined;
+    let cancelled = false;
+    authRequest('/api/partners/profiles?size=1&onboardingStatus=UNDER_REVIEW')
+      .then((data) => !cancelled && setWaiting(data.totalElements))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authRequest, canSeeOnboarding]);
+
   const showToast = useCallback((message, tone = 'success') => setToast({ message, tone, id: Date.now() }), []);
   const closeToast = useCallback(() => setToast(null), []);
   const reload = () => setReloadKey((key) => key + 1);
+
+  // The service categories for the filter (all, inactive ones too: partners may still have one as their main service)
+  useEffect(() => {
+    let cancelled = false;
+    authRequest('/api/catalog/categories?includeInactive=true')
+      .then((list) => !cancelled && setCategories(list))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authRequest]);
 
   // The page of partners for the current filters
   useEffect(() => {
@@ -115,6 +143,7 @@ export default function PartnersPage() {
     const params = new URLSearchParams({ page: String(page), size: String(PAGE_SIZE) });
     if (search) params.set('search', search);
     if (onboardingStatus) params.set('onboardingStatus', onboardingStatus);
+    if (categoryId) params.set('mainServiceCategoryId', categoryId);
     if (accountStatus) params.set('accountStatus', accountStatus);
     authRequest(`/api/users/partners?${params}`)
       .then((data) => {
@@ -126,7 +155,7 @@ export default function PartnersPage() {
     return () => {
       cancelled = true;
     };
-  }, [authRequest, page, search, onboardingStatus, accountStatus, reloadKey]);
+  }, [authRequest, page, search, onboardingStatus, categoryId, accountStatus, reloadKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +180,7 @@ export default function PartnersPage() {
   const resetFilters = () => {
     setSearchText('');
     setOnboardingStatus('');
+    setCategoryId('');
     setAccountStatus('');
     setPage(0);
   };
@@ -181,7 +211,7 @@ export default function PartnersPage() {
 
   const rows = list.data.content;
   const firstRowNumber = list.data.page * list.data.size + 1;
-  const columns = canManage ? 10 : 9;
+  const columns = canManage ? 9 : 8;
 
   return (
     <div className="mx-auto max-w-[92.5rem]">
@@ -190,12 +220,25 @@ export default function PartnersPage() {
         title="Partners"
         description="Service professionals on NexHome, their onboarding and their account status."
         actions={
-          canManage && (
-            <button type="button" className={primaryButtonClass} onClick={() => setAdding(true)}>
-              <Plus size={17} strokeWidth={2.4} />
-              Add Partner
-            </button>
-          )
+          <div className="flex flex-wrap items-center gap-3">
+            {canManage && (
+              <button type="button" className={primaryButtonClass} onClick={() => setAdding(true)}>
+                <Plus size={17} strokeWidth={2.4} />
+                Add Partner
+              </button>
+            )}
+            {canSeeOnboarding && (
+              <Link to="/admin/users/partners/onboarding" className={`${resetButtonClass} no-underline`}>
+                <ClipboardCheck size={17} />
+                Onboard Requests
+                {waiting > 0 && (
+                  <span className="rounded-full bg-[var(--blue)] px-2 py-0.5 text-[0.6875rem] font-black text-white">
+                    {waiting}
+                  </span>
+                )}
+              </Link>
+            )}
+          </div>
         }
       />
 
@@ -224,7 +267,7 @@ export default function PartnersPage() {
       </div>
 
       <section className={`mt-5 ${cardClass}`}>
-        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_13rem_11rem_auto]">
+        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_13rem_13rem_11rem_auto]">
           <label className="relative">
             <span className="sr-only">Search partners</span>
             <Search
@@ -248,11 +291,19 @@ export default function PartnersPage() {
             onChange={changeFilter(setOnboardingStatus)}
             options={[
               { value: '', label: 'All Onboarding' },
-              { value: NOT_STARTED, label: 'Not started' },
               ...(values.PARTNER_ONBOARDING_STATUS ?? []).map((value) => ({
                 value: value.valueCode,
                 label: value.displayName
               }))
+            ]}
+          />
+          <Select
+            ariaLabel="Service category"
+            value={categoryId}
+            onChange={changeFilter(setCategoryId)}
+            options={[
+              { value: '', label: 'All Categories' },
+              ...categories.map((category) => ({ value: String(category.serviceCategoryId), label: category.name }))
             ]}
           />
           <Select
@@ -288,7 +339,6 @@ export default function PartnersPage() {
                     <th className={`${headClass} w-[11rem]`}>Name</th>
                     <th className={headClass}>Mobile</th>
                     <th className={headClass}>Service</th>
-                    <th className={headClass}>City</th>
                     <th className={headClass}>Onboarding</th>
                     <th className={headClass}>Availability</th>
                     <th className={headClass}>Account</th>
@@ -371,15 +421,6 @@ export default function PartnersPage() {
                             {partner.mainServiceCategoryName ? (
                               <span className="block max-w-[9rem] truncate" title={partner.mainServiceCategoryName}>
                                 {partner.mainServiceCategoryName}
-                              </span>
-                            ) : (
-                              <span className="text-[#A8B6C6]">—</span>
-                            )}
-                          </td>
-                          <td className="max-w-0 px-3 py-3">
-                            {partner.city ? (
-                              <span className="block max-w-[7rem] truncate" title={partner.city}>
-                                {partner.city}
                               </span>
                             ) : (
                               <span className="text-[#A8B6C6]">—</span>

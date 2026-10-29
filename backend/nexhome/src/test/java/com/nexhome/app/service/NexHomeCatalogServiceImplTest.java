@@ -13,8 +13,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.security.access.AccessDeniedException;
 
+import com.nexhome.app.dto.NexHomeLookupValueResponse;
 import com.nexhome.app.dto.NexHomePageResponse;
 import com.nexhome.app.dto.NexHomeServiceCategoryCreateRequest;
 import com.nexhome.app.dto.NexHomeServiceCategoryUpdateRequest;
@@ -31,6 +36,7 @@ import com.nexhome.app.dto.NexHomeServiceQuoteResponse;
 import com.nexhome.app.dto.NexHomeServiceResponse;
 import com.nexhome.app.dto.NexHomeServiceUpdateRequest;
 import com.nexhome.app.dto.NexHomeServiceVariantCreateRequest;
+import com.nexhome.app.dto.NexHomeServiceVariantInput;
 import com.nexhome.app.dto.NexHomeServiceVariantUpdateRequest;
 import com.nexhome.app.exception.DuplicateResourceException;
 import com.nexhome.app.exception.InvalidRequestException;
@@ -43,15 +49,19 @@ import com.nexhome.app.mapper.NexHomeServiceVariantMapper;
 import com.nexhome.app.model.NexHomeService;
 import com.nexhome.app.model.NexHomeServiceCategory;
 import com.nexhome.app.model.NexHomeServiceMedia;
+import com.nexhome.app.model.NexHomeServiceRequirement;
 import com.nexhome.app.model.NexHomeServiceVariant;
+import com.nexhome.app.repository.NexHomeAdminProfileRepository;
 import com.nexhome.app.repository.NexHomeFaqRepository;
 import com.nexhome.app.repository.NexHomePartnerProfileRepository;
 import com.nexhome.app.repository.NexHomePartnerServiceRepository;
 import com.nexhome.app.repository.NexHomeServiceCategoryRepository;
+import com.nexhome.app.repository.NexHomeServiceImageRepository;
 import com.nexhome.app.repository.NexHomeServiceMediaRepository;
 import com.nexhome.app.repository.NexHomeServiceRepository;
 import com.nexhome.app.repository.NexHomeServiceRequirementRepository;
 import com.nexhome.app.repository.NexHomeServiceVariantRepository;
+import com.nexhome.app.repository.NexHomeUserRepository;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
@@ -66,6 +76,7 @@ class NexHomeCatalogServiceImplTest {
 	private NexHomeServiceRepository serviceRepository;
 	private NexHomeServiceVariantRepository variantRepository;
 	private NexHomeServiceMediaRepository mediaRepository;
+	private NexHomeServiceImageRepository imageRepository;
 	private NexHomeServiceRequirementRepository requirementRepository;
 	private NexHomeFaqRepository faqRepository;
 	private NexHomePartnerProfileRepository partnerProfileRepository;
@@ -81,6 +92,7 @@ class NexHomeCatalogServiceImplTest {
 		serviceRepository = mock(NexHomeServiceRepository.class);
 		variantRepository = mock(NexHomeServiceVariantRepository.class);
 		mediaRepository = mock(NexHomeServiceMediaRepository.class);
+		imageRepository = mock(NexHomeServiceImageRepository.class);
 		requirementRepository = mock(NexHomeServiceRequirementRepository.class);
 		faqRepository = mock(NexHomeFaqRepository.class);
 		partnerProfileRepository = mock(NexHomePartnerProfileRepository.class);
@@ -107,10 +119,11 @@ class NexHomeCatalogServiceImplTest {
 		when(permissionService.currentUserId()).thenReturn(ACTING_USER_ID);
 		when(permissionService.canIfSignedIn(any(), any())).thenReturn(false);
 		catalogService = new NexHomeCatalogServiceImpl(categoryRepository, serviceRepository, variantRepository,
-				mediaRepository, requirementRepository, faqRepository, partnerProfileRepository,
+				mediaRepository, imageRepository, requirementRepository, faqRepository, partnerProfileRepository,
 				partnerServiceRepository, lookupService, permissionService, new NexHomeServiceCategoryMapper(),
 				new NexHomeServiceMapper(), new NexHomeServiceVariantMapper(), new NexHomeServiceMediaMapper(),
-				new NexHomeServiceRequirementMapper());
+				new NexHomeServiceRequirementMapper(), mock(NexHomeAdminProfileRepository.class),
+				mock(NexHomeUserRepository.class));
 	}
 
 	// ----------------------------------------------------------------------------------------------------------------
@@ -139,23 +152,23 @@ class NexHomeCatalogServiceImplTest {
 	// ----------------------------------------------------------------------------------------------------------------
 
 	@Test
-	void fixedAndInspectionChargeTheUnitPriceOnceIgnoringQuantityAndMinutes() {
+	void fixedAndInspectionChargeTheUnitPriceOnceIgnoringMinutes() {
 		NexHomeService fixed = existingService(30L, "FIXED", "499.5");
 		fixed.setEstimatedDurationMinutes(120);
 		fixed.setMinimumCharge(new BigDecimal("600"));
 
-		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, null, 500, 7);
+		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, null, 500);
 
 		assertThat(quote.subtotal()).isEqualByComparingTo("499.50");
 		assertThat(quote.subtotal().scale()).isEqualTo(2);
 		assertThat(quote.total()).isEqualByComparingTo("600");
-		assertThat(quote.quantity()).isNull();
+		assertThat(quote.regularPrice()).isEqualByComparingTo("499.5");
 		assertThat(quote.billableMinutes()).isNull();
 		assertThat(quote.durationMinutes()).isEqualTo(120);
 		assertThat(quote.serviceVariantId()).isNull();
 
 		existingService(31L, "INSPECTION", "199");
-		NexHomeServiceQuoteResponse inspection = catalogService.quote(31L, null, null, 3);
+		NexHomeServiceQuoteResponse inspection = catalogService.quote(31L, null, null);
 		assertThat(inspection.subtotal()).isEqualByComparingTo("199.00");
 		assertThat(inspection.total()).isEqualByComparingTo("199.00");
 		assertThat(inspection.pricingType()).isEqualTo("INSPECTION");
@@ -165,47 +178,72 @@ class NexHomeCatalogServiceImplTest {
 	void unknownPricingTypeIsChargedLikeFixed() {
 		existingService(30L, "SUBSCRIPTION", "250");
 
-		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, null, 90, 4);
+		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, null, 90);
 
 		assertThat(quote.subtotal()).isEqualByComparingTo("250.00");
-		assertThat(quote.quantity()).isNull();
 		assertThat(quote.billableMinutes()).isNull();
 	}
 
 	@Test
-	void perUnitMultipliesTheQuantityWithinBounds() {
-		existingService(30L, "PER_UNIT", "12.345");
+	void areaChargesTheHomeSizeVariantOnceAndDiscountsApply() {
+		NexHomeService area = existingService(30L, "AREA", "799");
+		area.setDiscountPrice(new BigDecimal("699"));
+		NexHomeServiceVariant twoBhk = existingVariant(40L, area, true);
+		twoBhk.setPriceOverride(new BigDecimal("1199"));
+		twoBhk.setDiscountPrice(new BigDecimal("1100"));
 
-		NexHomeServiceQuoteResponse one = catalogService.quote(30L, null, null, null);
-		assertThat(one.quantity()).isEqualTo(1);
-		assertThat(one.subtotal()).isEqualByComparingTo("12.35");
-		assertThat(catalogService.quote(30L, null, null, 1000).subtotal()).isEqualByComparingTo("12345.00");
+		NexHomeServiceQuoteResponse withoutVariant = catalogService.quote(30L, null, 500);
+		assertThat(withoutVariant.regularPrice()).isEqualByComparingTo("799");
+		assertThat(withoutVariant.unitPrice()).isEqualByComparingTo("699");
+		assertThat(withoutVariant.total()).isEqualByComparingTo("699.00");
+		assertThat(withoutVariant.billableMinutes()).isNull();
 
-		for (int quantity : new int[] { 0, -1, 1001 }) {
-			assertThatThrownBy(() -> catalogService.quote(30L, null, null, quantity))
-					.isInstanceOf(InvalidRequestException.class)
-					.hasMessage("Quantity must be between 1 and 1000.");
-		}
+		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, 40L, null);
+		assertThat(quote.regularPrice()).isEqualByComparingTo("1199");
+		assertThat(quote.unitPrice()).isEqualByComparingTo("1100");
+		assertThat(quote.total()).isEqualByComparingTo("1100.00");
+
+		// Without its own discount a variant charges its price, not the service's discount
+		twoBhk.setDiscountPrice(null);
+		assertThat(catalogService.quote(30L, 40L, null).total()).isEqualByComparingTo("1199.00");
 	}
 
 	@Test
-	void hourlyUsesTheVariantPriceAndDurationWhenNoMinutesAreGiven() {
+	void hourlyVariantWithHoursIsAPackageAndLongerJobsAddTheHourlyPrice() {
 		NexHomeService hourly = hourlyService(30L, "400");
+		hourly.setDiscountPrice(new BigDecimal("300"));
 		hourly.setEstimatedDurationMinutes(120);
 		NexHomeServiceVariant variant = existingVariant(40L, hourly, true);
-		variant.setPriceOverride(new BigDecimal("600"));
-		variant.setDurationMinutes(70);
+		variant.setPriceOverride(new BigDecimal("699"));
+		variant.setDurationMinutes(180);
 
-		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, 40L, null, null);
+		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, 40L, null);
+
+		assertThat(quote.unitPrice()).isEqualByComparingTo("699");
+		assertThat(quote.billableMinutes()).isEqualTo(180);
+		assertThat(quote.subtotal()).isEqualByComparingTo("699.00");
+		assertThat(quote.durationMinutes()).isEqualTo(180);
+		assertThat(quote.serviceVariantId()).isEqualTo(40L);
+		// Less time than the package still costs the package
+		assertThat(catalogService.quote(30L, 40L, 60).subtotal()).isEqualByComparingTo("699.00");
+
+		// 200 minutes: 20 extra, billed as one 30-minute increment at the discounted 300 / hour
+		NexHomeServiceQuoteResponse longer = catalogService.quote(30L, 40L, 200);
+		assertThat(longer.billableMinutes()).isEqualTo(210);
+		assertThat(longer.subtotal()).isEqualByComparingTo("849.00");
+	}
+
+	@Test
+	void hourlyVariantWithoutHoursIsAnHourlyRate() {
+		NexHomeService hourly = hourlyService(30L, "400");
+		NexHomeServiceVariant variant = existingVariant(40L, hourly, true);
+		variant.setPriceOverride(new BigDecimal("600"));
+
+		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, 40L, 70);
 
 		assertThat(quote.unitPrice()).isEqualByComparingTo("600");
 		assertThat(quote.billableMinutes()).isEqualTo(90);
 		assertThat(quote.subtotal()).isEqualByComparingTo("900.00");
-		assertThat(quote.durationMinutes()).isEqualTo(90);
-		assertThat(quote.serviceVariantId()).isEqualTo(40L);
-
-		// Explicit minutes win over the variant's duration
-		assertThat(catalogService.quote(30L, 40L, 150, null).billableMinutes()).isEqualTo(150);
 	}
 
 	@Test
@@ -213,7 +251,7 @@ class NexHomeCatalogServiceImplTest {
 		NexHomeService hourly = hourlyService(30L, "100");
 		hourly.setBillingIncrementMinutes(1);
 
-		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, null, 61, null);
+		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, null, 61);
 
 		assertThat(quote.billableMinutes()).isEqualTo(61);
 		assertThat(quote.subtotal()).isEqualByComparingTo("101.67");
@@ -223,10 +261,10 @@ class NexHomeCatalogServiceImplTest {
 	void hourlyWithoutAnyDurationNeedsMinutes() {
 		hourlyService(30L, "400");
 
-		assertThatThrownBy(() -> catalogService.quote(30L, null, null, null))
+		assertThatThrownBy(() -> catalogService.quote(30L, null, null))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage("Minutes must be more than 0 to price an hourly service.");
-		assertThatThrownBy(() -> catalogService.quote(30L, null, -30, null))
+		assertThatThrownBy(() -> catalogService.quote(30L, null, -30))
 				.isInstanceOf(InvalidRequestException.class);
 	}
 
@@ -236,7 +274,7 @@ class NexHomeCatalogServiceImplTest {
 		fixed.setEstimatedDurationMinutes(45);
 		existingVariant(40L, fixed, true);
 
-		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, 40L, null, null);
+		NexHomeServiceQuoteResponse quote = catalogService.quote(30L, 40L, null);
 
 		assertThat(quote.unitPrice()).isEqualByComparingTo("799");
 		assertThat(quote.durationMinutes()).isEqualTo(45);
@@ -249,10 +287,10 @@ class NexHomeCatalogServiceImplTest {
 		existingVariant(41L, other, false);
 		when(variantRepository.findById(404L)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> catalogService.quote(30L, 41L, null, null))
+		assertThatThrownBy(() -> catalogService.quote(30L, 41L, null))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage("The variant does not belong to this service.");
-		assertThatThrownBy(() -> catalogService.quote(30L, 404L, null, null))
+		assertThatThrownBy(() -> catalogService.quote(30L, 404L, null))
 				.isInstanceOf(ResourceNotFoundException.class)
 				.hasMessage("Service variant does not exist.");
 	}
@@ -263,12 +301,12 @@ class NexHomeCatalogServiceImplTest {
 		NexHomeServiceVariant variant = existingVariant(40L, fixed, false);
 		variant.setPriceOverride(new BigDecimal("1299"));
 
-		assertThatThrownBy(() -> catalogService.quote(30L, 40L, null, null))
+		assertThatThrownBy(() -> catalogService.quote(30L, 40L, null))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage("The variant is not available.");
 
 		catalogReader();
-		assertThat(catalogService.quote(30L, 40L, null, null).total()).isEqualByComparingTo("1299.00");
+		assertThat(catalogService.quote(30L, 40L, null).total()).isEqualByComparingTo("1299.00");
 	}
 
 	@Test
@@ -280,14 +318,14 @@ class NexHomeCatalogServiceImplTest {
 		when(serviceRepository.findWithCategoryById(404L)).thenReturn(Optional.empty());
 
 		for (Long serviceId : List.of(30L, 31L, 404L)) {
-			assertThatThrownBy(() -> catalogService.quote(serviceId, null, null, null))
+			assertThatThrownBy(() -> catalogService.quote(serviceId, null, null))
 					.isInstanceOf(ResourceNotFoundException.class)
 					.hasMessage("Service does not exist.");
 		}
 
 		catalogReader();
-		assertThat(catalogService.quote(30L, null, null, null).total()).isEqualByComparingTo("799.00");
-		assertThat(catalogService.quote(31L, null, null, null).total()).isEqualByComparingTo("799.00");
+		assertThat(catalogService.quote(30L, null, null).total()).isEqualByComparingTo("799.00");
+		assertThat(catalogService.quote(31L, null, null).total()).isEqualByComparingTo("799.00");
 	}
 
 	// ----------------------------------------------------------------------------------------------------------------
@@ -401,6 +439,237 @@ class NexHomeCatalogServiceImplTest {
 	// ----------------------------------------------------------------------------------------------------------------
 
 	@Test
+	void serviceTargetAllowsOnlyItsPricingTypes() {
+		activeCategory();
+		serviceTargets();
+
+		assertThatThrownBy(() -> catalogService.createService(serviceCreate("APPLIANCE", "AREA", null, null)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("A service for Appliance / Device can be priced only as: FIXED, HOURLY.");
+		verify(serviceRepository, never()).save(any());
+
+		assertThat(catalogService.createService(serviceCreate("PROPERTY", "AREA", null, null)).serviceTarget())
+				.isEqualTo("PROPERTY");
+
+		// Changing only the target is checked against the current pricing type, before anything changes
+		NexHomeService service = existingService(31L, "AREA", "799");
+		service.setServiceTarget("PROPERTY");
+		assertThatThrownBy(() -> catalogService.updateService(new NexHomeServiceUpdateRequest(31L, null, null, null,
+				null, null, null, "APPLIANCE", null, null, null, null, null, null, null, null, null, null, null, null,
+				null, null, null))).isInstanceOf(InvalidRequestException.class);
+		assertThat(service.getServiceTarget()).isEqualTo("PROPERTY");
+		assertThat(service.getUpdatedBy()).isNull();
+	}
+
+	@Test
+	void discountPriceIsAtMostThePriceAndAlwaysReplacedOnUpdate() {
+		activeCategory();
+		NexHomeServiceCreateRequest tooHigh = new NexHomeServiceCreateRequest(CATEGORY_ID, "Sofa", null, null, null,
+				"PROPERTY", "FIXED", new BigDecimal("500"), new BigDecimal("501"), null, null, null, null, "FIXED",
+				null, null, null, null, null, null, null);
+		assertThatThrownBy(() -> catalogService.createService(tooHigh))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Discount price cannot be more than the base price.");
+
+		NexHomeService service = existingService(30L, "FIXED", "500");
+		service.setServiceTarget("PROPERTY");
+		service.setDiscountPrice(new BigDecimal("450"));
+		catalogService.updateService(serviceUpdate(30L, "Sofa", null, null, null, null));
+		assertThat(service.getDiscountPrice()).isNull();
+	}
+
+	@Test
+	void newServiceGetsItsVariantsWithCodesFromTheirNames() {
+		activeCategory();
+		List<NexHomeServiceVariantInput> variants = List.of(
+				new NexHomeServiceVariantInput(null, "2 Hours", "Small homes", new BigDecimal("499"),
+						new BigDecimal("450"), 120, null),
+				new NexHomeServiceVariantInput(null, "2 hours!", null, new BigDecimal("599"), null, 120, false));
+
+		catalogService.createService(serviceCreate("PROPERTY", "HOURLY", variants, null));
+
+		@SuppressWarnings("unchecked")
+		org.mockito.ArgumentCaptor<List<NexHomeServiceVariant>> saved = org.mockito.ArgumentCaptor.forClass(List.class);
+		verify(variantRepository).saveAll(saved.capture());
+		assertThat(saved.getValue()).extracting(NexHomeServiceVariant::getVariantCode)
+				.containsExactly("V_2_HOURS", "V_2_HOURS_2");
+		assertThat(saved.getValue()).extracting(NexHomeServiceVariant::getDisplayOrder).containsExactly(0, 1);
+		assertThat(saved.getValue().get(0).getDiscountPrice()).isEqualByComparingTo("450");
+		assertThat(saved.getValue().get(1).isActive()).isFalse();
+		assertThat(saved.getValue().get(1).getCreatedBy()).isEqualTo(ACTING_USER_ID);
+	}
+
+	@Test
+	void variantRulesAreCheckedBeforeAnythingIsSaved() {
+		activeCategory();
+		List<NexHomeServiceVariantInput> discounted = List.of(new NexHomeServiceVariantInput(null, "1 BHK", null,
+				new BigDecimal("799"), new BigDecimal("800"), null, null));
+		assertThatThrownBy(() -> catalogService.createService(serviceCreate("PROPERTY", "AREA", discounted, null)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("The discount price of 1 BHK cannot be more than its price.");
+
+		List<NexHomeServiceVariantInput> withoutHours = List.of(new NexHomeServiceVariantInput(null, "Visit", null,
+				new BigDecimal("499"), null, null, null));
+		assertThatThrownBy(() -> catalogService.createService(serviceCreate("PROPERTY", "HOURLY", withoutHours,
+				null)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Give Visit the hours its price covers.");
+
+		List<NexHomeServiceVariantInput> withId = List.of(new NexHomeServiceVariantInput(4L, "1 BHK", null,
+				new BigDecimal("799"), null, null, null));
+		assertThatThrownBy(() -> catalogService.createService(serviceCreate("PROPERTY", "AREA", withId, null)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("The variants of a new service cannot have a service variant ID.");
+		verify(serviceRepository, never()).save(any());
+	}
+
+	@Test
+	void updateSyncsTheVariantsAndRejectsAnotherServicesVariant() {
+		NexHomeService service = existingService(30L, "AREA", "799");
+		service.setServiceTarget("PROPERTY");
+		NexHomeServiceVariant kept = existingVariant(40L, service, true);
+		kept.setVariantCode("ONE_BHK");
+		NexHomeServiceVariant removed = existingVariant(41L, service, true);
+		removed.setVariantCode("TWO_BHK");
+		when(variantRepository.findByServiceIdOrderByDisplayOrderAscNameAsc(30L)).thenReturn(List.of(kept, removed));
+
+		assertThatThrownBy(() -> catalogService.updateService(serviceUpdateWithVariants(30L, List.of(
+				new NexHomeServiceVariantInput(99L, "Other", null, BigDecimal.ONE, null, null, null)))))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Service variant 99 is not a variant of this service.");
+		assertThat(service.getUpdatedBy()).isNull();
+
+		catalogService.updateService(serviceUpdateWithVariants(30L, List.of(
+				new NexHomeServiceVariantInput(null, "One BHK", null, new BigDecimal("1599"), null, null, null),
+				new NexHomeServiceVariantInput(40L, "1 BHK", "Up to 600 sq ft", new BigDecimal("899"),
+						new BigDecimal("850"), null, null))));
+
+		assertThat(kept.getName()).isEqualTo("1 BHK");
+		assertThat(kept.getPriceOverride()).isEqualByComparingTo("899");
+		assertThat(kept.getDiscountPrice()).isEqualByComparingTo("850");
+		assertThat(kept.getDisplayOrder()).isEqualTo(1);
+		verify(variantRepository).deleteAll(List.of(removed));
+		@SuppressWarnings("unchecked")
+		org.mockito.ArgumentCaptor<List<NexHomeServiceVariant>> added = org.mockito.ArgumentCaptor.forClass(List.class);
+		verify(variantRepository).saveAll(added.capture());
+		// ONE_BHK is taken by the kept variant
+		assertThat(added.getValue()).extracting(NexHomeServiceVariant::getVariantCode).containsExactly("ONE_BHK_2");
+	}
+
+	@Test
+	void chosenRequirementsAreSyncedPerSideKeepingTheRestAndTheirOrder() {
+		NexHomeService service = existingService(30L, "FIXED", "500");
+		service.setServiceTarget("PROPERTY");
+		when(lookupService.getActiveLookupValues("CUSTOMER_REQUIREMENT")).thenReturn(List.of(
+				lookupValue("CUSTOMER_REQUIREMENT", "WATER_SUPPLY", "Water supply available",
+						Map.of("requirementType", "PREPARATION")),
+				lookupValue("CUSTOMER_REQUIREMENT", "PARKING", "Parking", Map.of())));
+		NexHomeServiceRequirement water = new NexHomeServiceRequirement();
+		water.setRequirementCode("WATER_SUPPLY");
+		NexHomeServiceRequirement gate = new NexHomeServiceRequirement();
+		gate.setRequirementCode("GATE_ACCESS");
+		when(requirementRepository.findByServiceIdAndRequirementForAndRequirementCodeIsNotNull(30L, "CUSTOMER"))
+				.thenReturn(List.of(water, gate));
+
+		assertThatThrownBy(() -> catalogService.updateService(serviceUpdateWithRequirements(30L,
+				List.of("LADDER")))).isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Customer requirement must be one of: WATER_SUPPLY, PARKING.");
+
+		catalogService.updateService(serviceUpdateWithRequirements(30L, List.of(" PARKING ", "WATER_SUPPLY",
+				"PARKING")));
+
+		assertThat(water.getDisplayOrder()).isEqualTo(1);
+		verify(requirementRepository).deleteAll(List.of(gate));
+		@SuppressWarnings("unchecked")
+		org.mockito.ArgumentCaptor<List<NexHomeServiceRequirement>> added =
+				org.mockito.ArgumentCaptor.forClass(List.class);
+		verify(requirementRepository).saveAll(added.capture());
+		NexHomeServiceRequirement parking = added.getValue().get(0);
+		assertThat(added.getValue()).hasSize(1);
+		assertThat(parking.getRequirementCode()).isEqualTo("PARKING");
+		assertThat(parking.getRequirementFor()).isEqualTo("CUSTOMER");
+		assertThat(parking.getDescription()).isEqualTo("Parking");
+		assertThat(parking.getRequirementType()).isEqualTo("OTHER");
+		assertThat(parking.isMandatory()).isTrue();
+		assertThat(parking.getDisplayOrder()).isZero();
+		// The partner side was not sent, so it is left alone
+		verify(requirementRepository, never())
+				.findByServiceIdAndRequirementForAndRequirementCodeIsNotNull(30L, "PARTNER");
+	}
+
+	@Test
+	void variantCodesComeFromTheNames() {
+		Set<String> taken = new HashSet<>(Set.of("SPLIT_AC"));
+		assertThat(NexHomeCatalogServiceImpl.variantCodeFor("Split AC", taken)).isEqualTo("SPLIT_AC_2");
+		assertThat(NexHomeCatalogServiceImpl.variantCodeFor("Split AC", taken)).isEqualTo("SPLIT_AC_3");
+		assertThat(NexHomeCatalogServiceImpl.variantCodeFor("  Crème brûlée -- XL ", taken))
+				.isEqualTo("CREME_BRULEE_XL");
+		assertThat(NexHomeCatalogServiceImpl.variantCodeFor("3 BHK", taken)).isEqualTo("V_3_BHK");
+		assertThat(NexHomeCatalogServiceImpl.variantCodeFor("पूजा", taken)).isEqualTo("VARIANT");
+	}
+
+	// ----------------------------------------------------------------------------------------------------------------
+	// Images
+	// ----------------------------------------------------------------------------------------------------------------
+
+	@Test
+	void imageTypeComesFromTheBytes() {
+		assertThat(NexHomeCatalogServiceImpl.imageContentType(bytes(0xFF, 0xD8, 0xFF, 0xE0))).isEqualTo("image/jpeg");
+		assertThat(NexHomeCatalogServiceImpl.imageContentType(bytes(0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A)))
+				.isEqualTo("image/png");
+		assertThat(NexHomeCatalogServiceImpl.imageContentType(
+				bytes('R', 'I', 'F', 'F', 1, 2, 3, 4, 'W', 'E', 'B', 'P'))).isEqualTo("image/webp");
+		assertThat(NexHomeCatalogServiceImpl.imageContentType("<svg onload=alert(1)>".getBytes())).isNull();
+		assertThat(NexHomeCatalogServiceImpl.imageContentType(bytes('G', 'I', 'F', '8', '9', 'a'))).isNull();
+		assertThat(NexHomeCatalogServiceImpl.imageContentType(new byte[0])).isNull();
+	}
+
+	@Test
+	void imageFileNameLosesItsPath() {
+		assertThat(NexHomeCatalogServiceImpl.imageFileName("C:\\photos\\sofa.jpg")).isEqualTo("sofa.jpg");
+		assertThat(NexHomeCatalogServiceImpl.imageFileName("../../etc/x.png")).isEqualTo("x.png");
+		assertThat(NexHomeCatalogServiceImpl.imageFileName(null)).isEqualTo("image");
+		assertThat(NexHomeCatalogServiceImpl.imageFileName("a/")).isEqualTo("image");
+		assertThat(NexHomeCatalogServiceImpl.imageFileName("x".repeat(300) + ".jpg")).hasSize(255).endsWith(".jpg");
+	}
+
+	@Test
+	void imagesAreLimitedInNumberSizeAndType() {
+		NexHomeService service = existingService(30L, "FIXED", "500");
+		when(serviceRepository.findLockedById(30L)).thenReturn(Optional.of(service));
+		byte[] jpeg = bytes(0xFF, 0xD8, 0xFF, 0xE0, 0x00);
+		when(imageRepository.countByServiceId(30L)).thenReturn(4L);
+		when(imageRepository.save(any())).thenAnswer(invocation -> {
+			com.nexhome.app.model.NexHomeServiceImage saved = invocation.getArgument(0);
+			saved.setId(70L);
+			saved.setCreationDate(Instant.now());
+			return saved;
+		});
+
+		var image = catalogService.addImage(30L, "sofa.jpg", jpeg);
+		assertThat(image.imageUrl()).isEqualTo("/api/catalog/services/images/70");
+		assertThat(image.contentType()).isEqualTo("image/jpeg");
+		assertThat(image.displayOrder()).isEqualTo(4);
+
+		when(imageRepository.countByServiceId(30L)).thenReturn(5L);
+		assertThatThrownBy(() -> catalogService.addImage(30L, "sixth.jpg", jpeg))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("A service can have at most 5 images.");
+		assertThatThrownBy(() -> catalogService.addImage(30L, "a.gif", bytes('G', 'I', 'F', '8')))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Image must be a JPEG, PNG or WebP file.");
+		assertThatThrownBy(() -> catalogService.addImage(30L, "big.jpg", new byte[5 * 1024 * 1024 + 1]))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Image must be at most 5 MB.");
+		assertThatThrownBy(() -> catalogService.addImage(30L, "empty.jpg", new byte[0]))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Choose an image to upload.");
+		when(serviceRepository.findLockedById(404L)).thenReturn(Optional.empty());
+		assertThatThrownBy(() -> catalogService.addImage(404L, "a.jpg", jpeg))
+				.isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	@Test
 	void slugIsMadeFromTheNameWithoutAccentsOrPunctuation() {
 		assertThat(catalogService.createCategory(categoryRequest("  Crème Brûlée & Café -- Deluxe!! ", null)).slug())
 				.isEqualTo("creme-brulee-cafe-deluxe");
@@ -419,8 +688,7 @@ class NexHomeCatalogServiceImplTest {
 					.hasMessage("Slug is required when the name has no letters a-z or digits.");
 		}
 		activeCategory();
-		assertThatThrownBy(() -> catalogService.createService(new NexHomeServiceCreateRequest(CATEGORY_ID, "---",
-				null, null, null, "FIXED", BigDecimal.TEN, null, null, null, null, "FIXED", null, null, null, null)))
+		assertThatThrownBy(() -> catalogService.createService(new NexHomeServiceCreateRequest(CATEGORY_ID, "---", null, null, null, "PROPERTY", "FIXED", BigDecimal.TEN, null, null, null, null, null, "FIXED", null, null, null, null, null, null, null)))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage("Slug is required when the name has no letters a-z or digits.");
 		verify(categoryRepository, never()).save(any());
@@ -476,9 +744,7 @@ class NexHomeCatalogServiceImplTest {
 		NexHomeService other = existingService(31L, "FIXED", "400");
 		when(serviceRepository.findBySlug("sofa-cleaning")).thenReturn(Optional.of(existing));
 
-		assertThatThrownBy(() -> catalogService.createService(new NexHomeServiceCreateRequest(CATEGORY_ID,
-				"Sofa Cleaning", null, null, null, "FIXED", BigDecimal.TEN, null, null, null, null, "FIXED", null,
-				null, null, null)))
+		assertThatThrownBy(() -> catalogService.createService(new NexHomeServiceCreateRequest(CATEGORY_ID, "Sofa Cleaning", null, null, null, "PROPERTY", "FIXED", BigDecimal.TEN, null, null, null, null, null, "FIXED", null, null, null, null, null, null, null)))
 				.isInstanceOf(DuplicateResourceException.class)
 				.hasMessage("Another service has this slug.");
 		verify(serviceRepository, never()).save(any());
@@ -506,9 +772,7 @@ class NexHomeCatalogServiceImplTest {
 			return Optional.empty();
 		});
 
-		NexHomeServiceResponse response = catalogService.updateService(new NexHomeServiceUpdateRequest(30L, null, 8L,
-				"Fan Repair", "fan-repair", null, null, null, null, null, null, null, null, null, null, null, null,
-				null));
+		NexHomeServiceResponse response = catalogService.updateService(new NexHomeServiceUpdateRequest(30L, null, 8L, "Fan Repair", "fan-repair", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
 
 		assertThat(response.categoryId()).isEqualTo(8L);
 		assertThat(response.slug()).isEqualTo("fan-repair");
@@ -518,14 +782,13 @@ class NexHomeCatalogServiceImplTest {
 	@Test
 	void unknownLookupCodeOnUpdateLeavesTheServiceUnchanged() {
 		NexHomeService service = existingService(30L, "FIXED", "400");
-		doThrow(new InvalidRequestException("Pricing type must be one of: FIXED, HOURLY, PER_UNIT, INSPECTION."))
+		doThrow(new InvalidRequestException("Pricing type must be one of: FIXED, HOURLY, AREA, INSPECTION."))
 				.when(lookupService).validateCode("PRICING_TYPE", "DAILY", "Pricing type");
 		when(categoryRepository.findByIdAndActiveTrue(99L)).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> catalogService.updateService(serviceUpdate(30L, "Renamed", null, "DAILY", null,
 				new BigDecimal("1")))).isInstanceOf(InvalidRequestException.class);
-		assertThatThrownBy(() -> catalogService.updateService(new NexHomeServiceUpdateRequest(30L, null, 99L,
-				"Renamed", null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
+		assertThatThrownBy(() -> catalogService.updateService(new NexHomeServiceUpdateRequest(30L, null, 99L, "Renamed", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
 				.isInstanceOf(ResourceNotFoundException.class);
 
 		assertThat(service.getName()).isEqualTo("Service 30");
@@ -559,8 +822,7 @@ class NexHomeCatalogServiceImplTest {
 		variant.setPriceOverride(new BigDecimal("1999"));
 		variant.setDurationMinutes(240);
 
-		var response = catalogService.updateVariant(new NexHomeServiceVariantUpdateRequest(40L, null, null, null,
-				null, null, null, null, null, null));
+		var response = catalogService.updateVariant(new NexHomeServiceVariantUpdateRequest(40L, null, null, null, null, null, null, null, null, null, null));
 
 		assertThat(response.priceOverride()).isNull();
 		assertThat(response.durationMinutes()).isNull();
@@ -572,8 +834,7 @@ class NexHomeCatalogServiceImplTest {
 		existingService(30L, "FIXED", "400");
 		when(variantRepository.existsByServiceIdAndVariantCode(30L, "BHK_2")).thenReturn(true);
 
-		assertThatThrownBy(() -> catalogService.addVariant(new NexHomeServiceVariantCreateRequest(30L, " BHK_2 ",
-				"2 BHK", null, null, null, null, null)))
+		assertThatThrownBy(() -> catalogService.addVariant(new NexHomeServiceVariantCreateRequest(30L, " BHK_2 ", "2 BHK", null, null, null, null, null, null)))
 				.isInstanceOf(DuplicateResourceException.class);
 		verify(variantRepository, never()).save(any());
 	}
@@ -614,6 +875,7 @@ class NexHomeCatalogServiceImplTest {
 		List<Consumer<Boolean>> uses = List.of(
 				used -> when(variantRepository.existsByServiceId(30L)).thenReturn(used),
 				used -> when(mediaRepository.existsByServiceId(30L)).thenReturn(used),
+				used -> when(imageRepository.existsByServiceId(30L)).thenReturn(used),
 				used -> when(requirementRepository.existsByServiceId(30L)).thenReturn(used),
 				used -> when(faqRepository.existsByServiceId(30L)).thenReturn(used),
 				used -> when(partnerServiceRepository.existsByServiceId(30L)).thenReturn(used));
@@ -622,7 +884,8 @@ class NexHomeCatalogServiceImplTest {
 			use.accept(true);
 			assertThatThrownBy(() -> catalogService.deleteService(30L))
 					.isInstanceOf(DuplicateResourceException.class)
-					.hasMessage("Service has variants, media, requirements, FAQs or partners; deactivate it instead.");
+					.hasMessage(
+							"Service has variants, images, media, requirements, FAQs or partners; deactivate it instead.");
 			use.accept(false);
 		}
 		verify(serviceRepository, never()).delete(any(NexHomeService.class));
@@ -652,20 +915,20 @@ class NexHomeCatalogServiceImplTest {
 	@Test
 	void publicServiceListHidesTheCommissionAndInactiveServices() {
 		NexHomeService service = existingService(30L, "FIXED", "400");
-		when(serviceRepository.search(any(), any(), anyBoolean(), any(), any()))
+		when(serviceRepository.search(any(), any(), any(), anyBoolean(), any(), any()))
 				.thenReturn(new PageImpl<>(List.of(service)));
 
 		NexHomePageResponse<NexHomeServiceResponse> page = catalogService.getServices(null, null, CATEGORY_ID,
-				" FIXED ", "  Sofa ", false);
+				" FIXED ", null, "  Sofa ", false);
 
 		assertThat(page.content()).hasSize(1);
 		assertThat(page.content().get(0).platformCommissionType()).isNull();
 		assertThat(page.content().get(0).platformCommissionValue()).isNull();
 		assertThat(page.size()).isEqualTo(10);
-		verify(serviceRepository).search(eq(CATEGORY_ID), eq("FIXED"),
+		verify(serviceRepository).search(eq(CATEGORY_ID), eq("FIXED"), isNull(),
 				eq(true), eq("sofa"), any());
 
-		assertThatThrownBy(() -> catalogService.getServices(null, null, null, null, null, true))
+		assertThatThrownBy(() -> catalogService.getServices(null, null, null, null, null, null, true))
 				.isInstanceOf(AccessDeniedException.class);
 	}
 
@@ -674,18 +937,19 @@ class NexHomeCatalogServiceImplTest {
 		catalogReader();
 		NexHomeService service = existingService(30L, "FIXED", "400");
 		service.setActive(false);
-		when(serviceRepository.search(any(), any(), anyBoolean(), any(), any()))
+		when(serviceRepository.search(any(), any(), any(), anyBoolean(), any(), any()))
 				.thenReturn(new PageImpl<>(List.of(service)));
 
-		NexHomePageResponse<NexHomeServiceResponse> page = catalogService.getServices(0, 20, null, " ", null, true);
+		NexHomePageResponse<NexHomeServiceResponse> page = catalogService.getServices(0, 20, null, " ", false, null,
+				true);
 
 		assertThat(page.content().get(0).platformCommissionType()).isEqualTo("PERCENTAGE");
 		assertThat(page.content().get(0).platformCommissionValue()).isEqualByComparingTo("15");
-		verify(serviceRepository).search(isNull(), isNull(),
+		verify(serviceRepository).search(isNull(), isNull(), eq(false),
 				eq(false), isNull(), any());
 		verify(lookupService, never()).validateCode(eq("PRICING_TYPE"), any(), any());
 
-		assertThatThrownBy(() -> catalogService.getServices(0, 101, null, null, null, false))
+		assertThatThrownBy(() -> catalogService.getServices(0, 101, null, null, null, null, false))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage("Size must be between 1 and 100.");
 	}
@@ -705,9 +969,7 @@ class NexHomeCatalogServiceImplTest {
 			}
 			assertThat(validator.validate(categoryRequest("Home", "deep-cleaning-2-bhk"))).isEmpty();
 
-			assertThat(validator.validate(new NexHomeServiceCreateRequest(CATEGORY_ID, "Sofa", null, null, null,
-					"FIXED", new BigDecimal("12345678901"), new BigDecimal("1.234"), 0, 0, -5, "FIXED",
-					new BigDecimal("-1"), null, null, null)))
+			assertThat(validator.validate(new NexHomeServiceCreateRequest(CATEGORY_ID, "Sofa", null, null, null, "PROPERTY", "FIXED", new BigDecimal("12345678901"), null, new BigDecimal("1.234"), 0, 0, -5, "FIXED", new BigDecimal("-1"), null, null, null, null, null, null)))
 					.extracting(ConstraintViolation::getMessage)
 					.containsExactlyInAnyOrder(
 							"Base price must have at most 10 digits and 2 decimals",
@@ -717,22 +979,19 @@ class NexHomeCatalogServiceImplTest {
 							"Billing increment must be more than 0 minutes",
 							"Platform commission value cannot be negative");
 
-			assertThat(validator.validate(new NexHomeServiceVariantCreateRequest(30L, "2bhk", "2 BHK", null,
-					new BigDecimal("-0.01"), 0, null, null)))
+			assertThat(validator.validate(new NexHomeServiceVariantCreateRequest(30L, "2bhk", "2 BHK", null, new BigDecimal("-0.01"), null, 0, null, null)))
 					.extracting(ConstraintViolation::getMessage)
 					.containsExactlyInAnyOrder(
 							"Variant code must contain only capital letters, digits and underscores, starting with a letter",
 							"Price override cannot be negative",
 							"Duration must be more than 0 minutes");
 
-			assertThat(validator.validate(new NexHomeServiceVariantUpdateRequest(40L, 30L, "BHK_2", "NHVAR0001", " ",
-					null, null, null, null, null)))
+			assertThat(validator.validate(new NexHomeServiceVariantUpdateRequest(40L, 30L, "BHK_2", "NHVAR0001", " ", null, null, null, null, null, null)))
 					.extracting(ConstraintViolation::getMessage)
 					.containsExactlyInAnyOrder("Service cannot be updated", "Variant code cannot be updated",
 							"Public ID cannot be updated", "Name cannot be blank");
 
-			assertThat(validator.validate(new NexHomeServiceUpdateRequest(30L, "NHSVC0001", null, "", "Bad Slug", null,
-					null, null, null, null, null, null, null, null, null, null, null, null)))
+			assertThat(validator.validate(new NexHomeServiceUpdateRequest(30L, "NHSVC0001", null, "", "Bad Slug", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
 					.extracting(ConstraintViolation::getMessage)
 					.containsExactlyInAnyOrder("Public ID cannot be updated", "Name cannot be blank",
 							"Slug must be lower-case letters and digits separated by single hyphens");
@@ -752,6 +1011,48 @@ class NexHomeCatalogServiceImplTest {
 
 	private void activeCategory() {
 		when(categoryRepository.findByIdAndActiveTrue(CATEGORY_ID)).thenReturn(Optional.of(category));
+	}
+
+	private static byte[] bytes(int... values) {
+		byte[] data = new byte[values.length];
+		for (int index = 0; index < values.length; index++) {
+			data[index] = (byte) values[index];
+		}
+		return data;
+	}
+
+	private static NexHomeLookupValueResponse lookupValue(String typeCode, String valueCode, String displayName,
+			Map<String, Object> metadata) {
+		return new NexHomeLookupValueResponse(1L, 1L, typeCode, valueCode, displayName, null, 0, true, false,
+				metadata, Instant.now());
+	}
+
+	private void serviceTargets() {
+		when(lookupService.getActiveLookupValues("SERVICE_TARGET")).thenReturn(List.of(
+				lookupValue("SERVICE_TARGET", "APPLIANCE", "Appliance / Device",
+						Map.of("pricingTypes", List.of("FIXED", "HOURLY"))),
+				lookupValue("SERVICE_TARGET", "PROPERTY", "Home / Property",
+						Map.of("pricingTypes", List.of("FIXED", "HOURLY", "AREA")))));
+	}
+
+	private static NexHomeServiceCreateRequest serviceCreate(String serviceTarget, String pricingType,
+			List<NexHomeServiceVariantInput> variants, List<String> customerRequirements) {
+		boolean hourly = "HOURLY".equals(pricingType);
+		return new NexHomeServiceCreateRequest(CATEGORY_ID, "Deep Cleaning", null, null, null, serviceTarget,
+				pricingType, new BigDecimal("499"), null, null, null, hourly ? 60 : null, hourly ? 30 : null,
+				"PERCENTAGE", new BigDecimal("15"), null, null, null, variants, customerRequirements, null);
+	}
+
+	private static NexHomeServiceUpdateRequest serviceUpdateWithVariants(Long serviceId,
+			List<NexHomeServiceVariantInput> variants) {
+		return new NexHomeServiceUpdateRequest(serviceId, null, null, null, null, null, null, null, null, null, null,
+				null, null, null, null, null, null, null, null, null, variants, null, null);
+	}
+
+	private static NexHomeServiceUpdateRequest serviceUpdateWithRequirements(Long serviceId,
+			List<String> customerRequirements) {
+		return new NexHomeServiceUpdateRequest(serviceId, null, null, null, null, null, null, null, null, null, null,
+				null, null, null, null, null, null, null, null, null, null, customerRequirements, null);
 	}
 
 	private static NexHomeServiceCategory category(Long id, String name, String slug, boolean active) {
@@ -807,14 +1108,11 @@ class NexHomeCatalogServiceImplTest {
 	private static NexHomeServiceCreateRequest serviceRequest(String pricingType, Integer minimumMinutes,
 			Integer incrementMinutes, String commissionType, String commissionValue, Boolean instant,
 			Boolean scheduled) {
-		return new NexHomeServiceCreateRequest(CATEGORY_ID, "Sofa Cleaning", null, null, null, pricingType,
-				new BigDecimal("400"), null, null, minimumMinutes, incrementMinutes, commissionType,
-				commissionValue == null ? null : new BigDecimal(commissionValue), instant, scheduled, null);
+		return new NexHomeServiceCreateRequest(CATEGORY_ID, "Sofa Cleaning", null, null, null, "PROPERTY", pricingType, new BigDecimal("400"), null, null, null, minimumMinutes, incrementMinutes, commissionType, commissionValue == null ? null : new BigDecimal(commissionValue), instant, scheduled, null, null, null, null);
 	}
 
 	private static NexHomeServiceUpdateRequest serviceUpdate(Long id, String name, String slug, String pricingType,
 			String commissionType, BigDecimal basePrice) {
-		return new NexHomeServiceUpdateRequest(id, null, null, name, slug, null, null, pricingType, basePrice, null,
-				null, null, null, commissionType, null, null, null, null);
+		return new NexHomeServiceUpdateRequest(id, null, null, name, slug, null, null, null, pricingType, basePrice, null, null, null, null, null, commissionType, null, null, null, null, null, null, null);
 	}
 }

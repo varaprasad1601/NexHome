@@ -19,7 +19,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * A prerequisite or instruction for the customer of a service, e.g. "Keep the area clear".
+ * A prerequisite of a service for the customer (e.g. "Keep the area clear") or the partner (e.g. "Ladder"). One
+ * picked from the CUSTOMER_REQUIREMENT / PARTNER_REQUIREMENT options carries its code, once per service.
  */
 @Entity
 @Table(name = "nexhome_service_requirements")
@@ -44,6 +45,14 @@ public class NexHomeServiceRequirement {
 
 	@Column(name = "description", nullable = false, columnDefinition = "text")
 	private String description;
+
+	/** CUSTOMER or PARTNER. */
+	@Column(name = "requirement_for", nullable = false, length = 30)
+	private String requirementFor;
+
+	/** The option's value code, or null for a free-text requirement. */
+	@Column(name = "requirement_code", length = 60)
+	private String requirementCode;
 
 	@Column(name = "is_mandatory", nullable = false)
 	private boolean mandatory = true;

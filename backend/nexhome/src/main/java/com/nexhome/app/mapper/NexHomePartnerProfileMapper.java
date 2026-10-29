@@ -35,7 +35,7 @@ public class NexHomePartnerProfileMapper {
 	private final NexHomeFieldEncryptor encryptor;
 
 	/**
-	 * A new profile is a DRAFT, PENDING verification and OFFLINE, registered today by the acting user unless staff
+	 * A new profile is NOT_STARTED (a DRAFT once its fields are saved), PENDING verification and OFFLINE, registered today by the acting user unless staff
 	 * gave another date. The submitted fields are applied by {@link #applyPartnerProfileFields}.
 	 */
 	public NexHomePartnerProfile toPartnerProfileEntity(NexHomeUser user, Long actingUserId) {
@@ -43,8 +43,8 @@ public class NexHomePartnerProfileMapper {
 		profile.setUser(user);
 		profile.setRegistrationDate(LocalDate.now());
 		profile.setRegisteredBy(actingUserId);
-		profile.setOnboardingStatus(PartnerOnboardingStatus.DRAFT);
-		profile.setVerificationStatus(VerificationStatus.PENDING);
+		profile.setOnboardingStatus(PartnerOnboardingStatus.NOT_STARTED);
+		profile.setApprovalStatus(VerificationStatus.PENDING);
 		profile.setAvailabilityStatus(PartnerAvailabilityStatus.OFFLINE);
 		profile.setCreatedBy(actingUserId);
 		profile.setUpdatedBy(actingUserId);
@@ -147,18 +147,12 @@ public class NexHomePartnerProfileMapper {
 		if (fields.emergencyContactNumber() != null) {
 			profile.setEmergencyContactNumber(trimToNull(fields.emergencyContactNumber()));
 		}
-		if (fields.emergencyContactPermission() != null) {
-			profile.setEmergencyContactPermission(fields.emergencyContactPermission());
-		}
 		profile.setUpdatedBy(actingUserId);
 	}
 
-	/**
-	 * @param showEmergencyContact false hides the emergency contact (for viewers other than the partner while the
-	 *        partner has not given permission)
-	 */
-	public NexHomePartnerProfileResponse toPartnerProfileDto(NexHomePartnerProfile profile,
-			boolean showEmergencyContact) {
+	/** The profile; the documents and bank account checks are worked out by the service from those records. */
+	public NexHomePartnerProfileResponse toPartnerProfileDto(NexHomePartnerProfile profile, boolean documentsVerified,
+			boolean bankAccVerified) {
 		return new NexHomePartnerProfileResponse(
 				profile.getId(),
 				profile.getPublicId(),
@@ -196,17 +190,21 @@ public class NexHomePartnerProfileMapper {
 				profile.getMaxTravelKm(),
 				readAvailability(profile.getWeeklyAvailability()),
 				profile.getWeekendAvailability(),
-				showEmergencyContact ? profile.getEmergencyContactName() : null,
-				showEmergencyContact ? profile.getEmergencyContactRelationship() : null,
-				showEmergencyContact ? profile.getEmergencyContactNumber() : null,
-				profile.isEmergencyContactPermission(),
+				profile.getEmergencyContactName(),
+				profile.getEmergencyContactRelationship(),
+				profile.getEmergencyContactNumber(),
 				profile.getOnboardingStatus(),
-				profile.getVerificationStatus(),
+				profile.getApprovalStatus(),
 				profile.getAvailabilityStatus(),
 				profile.getApprovedBy(),
 				profile.getApprovedAt(),
 				profile.getRejectionReason(),
-				profile.getCreationDate());
+				profile.getCreationDate(),
+				profile.isAccountVerified(),
+				profile.getAccountVerifiedBy(),
+				profile.getAccountVerifiedAt(),
+				documentsVerified,
+				bankAccVerified);
 	}
 
 	/** Serializes a normalized list or availability map for a JSONB column. */

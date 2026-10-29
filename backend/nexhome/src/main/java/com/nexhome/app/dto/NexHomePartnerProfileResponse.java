@@ -51,10 +51,9 @@ public record NexHomePartnerProfileResponse(
 		String weekendAvailability,
 		String emergencyContactName,
 		String emergencyContactRelationship,
-		String emergencyContactNumber,
-		boolean emergencyContactPermission,
+		String emergencyContactNumber,
 		String onboardingStatus,
-		String verificationStatus,
+		String approvalStatus,
 		String availabilityStatus,
 		Long approvedBy,
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
@@ -63,5 +62,14 @@ public record NexHomePartnerProfileResponse(
 		String rejectionReason,
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
 				timezone = "Asia/Kolkata")
-		Instant creationDate) {
+		Instant creationDate,
+		boolean accountVerified,
+		Long accountVerifiedBy,
+		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
+				timezone = "Asia/Kolkata")
+		Instant accountVerifiedAt,
+		/** Every document VERIFIED, at least one of them a government ID (from the documents, V24). */
+		boolean documentsVerified,
+		/** The primary bank account VERIFIED (from the bank accounts, V24). */
+		boolean bankAccVerified) {
 }

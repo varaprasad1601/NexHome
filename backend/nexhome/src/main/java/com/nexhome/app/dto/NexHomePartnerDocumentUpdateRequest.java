@@ -36,7 +36,14 @@ public record NexHomePartnerDocumentUpdateRequest(
 		LocalDate expiryDate,
 
 		@Null(message = "Verification status cannot be updated here")
-		String verificationStatus) {
+		String verificationStatus,
+
+		// GOVERNMENT_ID_TYPE code, for a GOVERNMENT_ID document
+		String idType,
+
+		@Pattern(regexp = "(?s).*\\S.*", message = "Document name cannot be blank")
+		@Size(max = 150, message = "Document name must be at most 150 characters")
+		String documentName) {
 
 	/** Never print the document number, e.g. when the request is logged. */
 	@Override

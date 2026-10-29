@@ -45,6 +45,8 @@ public class NexHomePartnerServiceMapper {
 				partnerService.getPartner().getId(),
 				service.getId(),
 				service.getName(),
+				service.getCategory().getId(),
+				service.getCategory().getName(),
 				partnerService.getExperienceYears() == null ? null : partnerService.getExperienceYears().intValue(),
 				partnerService.isPrimaryService(),
 				partnerService.isActive(),

@@ -32,6 +32,7 @@ import com.nexhome.app.mapper.NexHomeCustomerProfileMapper;
 import com.nexhome.app.model.NexHomeAdminProfile;
 import com.nexhome.app.model.NexHomeCustomerProfile;
 import com.nexhome.app.model.NexHomeUser;
+import com.nexhome.app.repository.NexHomeAddressRepository;
 import com.nexhome.app.repository.NexHomeAdminProfileRepository;
 import com.nexhome.app.repository.NexHomeCustomerProfileRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
@@ -80,7 +81,8 @@ class NexHomeProfileServiceImplTest {
 		when(permissionService.isSelfOrCan(any(), any(), any())).thenReturn(true);
 		profileService = new NexHomeProfileServiceImpl(customerProfileRepository, adminProfileRepository,
 				userRepository, userRoleRepository, lookupService, permissionService,
-				new NexHomeCustomerProfileMapper(), new NexHomeAdminProfileMapper());
+				new NexHomeCustomerProfileMapper(), new NexHomeAdminProfileMapper(),
+				mock(NexHomeAddressRepository.class), mock(NexHomeAuditUsers.class));
 	}
 
 	// ------------------------------------------------------------------------------------------------------------

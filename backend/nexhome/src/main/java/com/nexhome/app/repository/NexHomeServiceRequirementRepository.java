@@ -12,5 +12,9 @@ public interface NexHomeServiceRequirementRepository extends JpaRepository<NexHo
 
 	List<NexHomeServiceRequirement> findByServiceIdOrderByDisplayOrderAscIdAsc(Long serviceId);
 
+	/** A service's requirements picked from the options for the customer or the partner. */
+	List<NexHomeServiceRequirement> findByServiceIdAndRequirementForAndRequirementCodeIsNotNull(Long serviceId,
+			String requirementFor);
+
 	boolean existsByServiceId(Long serviceId);
 }

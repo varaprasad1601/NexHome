@@ -39,11 +39,11 @@ public interface NexHomeUserService {
 
 	/**
 	 * Current PARTNER holders with their onboarding profile, newest first. {@code onboardingStatus} is a
-	 * PARTNER_ONBOARDING_STATUS code or NOT_STARTED (no profile yet); {@code search} also matches the profile's name
-	 * and public id.
+	 * PARTNER_ONBOARDING_STATUS code or NOT_STARTED (no profile yet); {@code mainServiceCategoryId} keeps partners whose
+	 * profile has that main service category; {@code search} also matches the profile's name and public id.
 	 */
 	NexHomePageResponse<NexHomePartnerResponse> getPartners(Integer page, Integer size, String accountStatus,
-			String onboardingStatus, String search);
+			String onboardingStatus, Long mainServiceCategoryId, String search);
 
 	NexHomePartnerStatsResponse getPartnerStats();
 

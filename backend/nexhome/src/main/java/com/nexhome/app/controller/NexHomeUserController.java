@@ -92,14 +92,16 @@ public class NexHomeUserController {
 	/**
 	 * Users who currently hold the PARTNER role, with their onboarding profile's id, public id, name, city, main
 	 * service category and statuses (null until the profile is started). Query parameters as /customers, plus
-	 * {@code onboardingStatus} (a PARTNER_ONBOARDING_STATUS code, or NOT_STARTED for partners without a profile).
+	 * {@code onboardingStatus} (a PARTNER_ONBOARDING_STATUS code, or NOT_STARTED for partners without a profile) and
+	 * {@code mainServiceCategoryId} (partners whose main service category it is).
 	 */
 	@GetMapping("/partners")
 	@PreAuthorize("@permissions.can('PARTNER_MANAGE', 'READ')")
 	public NexHomePageResponse<NexHomePartnerResponse> getPartners(@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size, @RequestParam(required = false) String accountStatus,
-			@RequestParam(required = false) String onboardingStatus, @RequestParam(required = false) String search) {
-		return userService.getPartners(page, size, accountStatus, onboardingStatus, search);
+			@RequestParam(required = false) String onboardingStatus,
+			@RequestParam(required = false) Long mainServiceCategoryId, @RequestParam(required = false) String search) {
+		return userService.getPartners(page, size, accountStatus, onboardingStatus, mainServiceCategoryId, search);
 	}
 
 	/** Partner counts: total, approved, awaiting review, not submitted, online (the console's Manage Partners tiles). */

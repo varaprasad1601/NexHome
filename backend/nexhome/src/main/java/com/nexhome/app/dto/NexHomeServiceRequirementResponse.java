@@ -9,6 +9,10 @@ public record NexHomeServiceRequirementResponse(
 
 		Long serviceId,
 
+		String requirementFor,
+
+		String requirementCode,
+
 		String requirementType,
 
 		String description,

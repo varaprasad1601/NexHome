@@ -20,6 +20,8 @@ public record NexHomeServiceVariantResponse(
 
 		BigDecimal priceOverride,
 
+		BigDecimal discountPrice,
+
 		Integer durationMinutes,
 
 		int displayOrder,

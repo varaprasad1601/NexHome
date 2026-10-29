@@ -25,9 +25,13 @@ public record NexHomeServiceResponse(
 
 		String description,
 
+		String serviceTarget,
+
 		String pricingType,
 
 		BigDecimal basePrice,
+
+		BigDecimal discountPrice,
 
 		BigDecimal minimumCharge,
 
