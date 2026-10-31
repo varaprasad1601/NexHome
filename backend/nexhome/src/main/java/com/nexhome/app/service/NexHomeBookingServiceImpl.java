@@ -88,6 +88,8 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 
 	static final String BOOKING_MANAGE = "BOOKING_MANAGE";
 	private static final ZoneId ZONE = ZoneId.of("Asia/Kolkata");
+	/** How long before a CONFIRMED booking's start staff are warned it still has no partner. */
+	static final Duration UNASSIGNED_ALERT_WINDOW = Duration.ofHours(2);
 	/** Months in the dashboard's booking trend, this one included. */
 	private static final int STATS_MONTHS = 10;
 	private static final int DEFAULT_OFFER_MINUTES = 30;
@@ -448,6 +450,13 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		after.put("reason", reason);
 		auditRecorder.record("CANCELLED", "BOOKING", booking.getPublicId(), Map.of("bookingStatus", previous), after,
 				actingUserId);
+		if (isCustomer(booking)) {
+			// The staff who handle bookings hear the customer cancelled (the partner's time is free again)
+			notifier.notifyStaff(BOOKING_MANAGE, new NexHomeNotifier.Message(NotificationType.BOOKING,
+					"Booking " + booking.getPublicId() + " cancelled by the customer",
+					booking.getServiceNameSnapshot() + (reason == null ? "" : ": " + reason), NexHomeNotifier.BOOKING,
+					booking.getId()), actingUserId);
+		}
 		log.info("Booking {} cancelled by User ID {}", booking.getPublicId(), actingUserId);
 		return bookingMapper.toBookingDto(booking);
 	}
@@ -663,12 +672,42 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 	public int expireOffers() {
 		List<NexHomeBookingAssignment> expired = assignmentRepository
 				.findByAssignmentStatusAndExpiresAtLessThanEqual(AssignmentStatus.OFFERED, Instant.now());
-		expired.forEach(assignment -> assignment.setAssignmentStatus(AssignmentStatus.EXPIRED));
+		expired.forEach(assignment -> {
+			assignment.setAssignmentStatus(AssignmentStatus.EXPIRED);
+			// Nobody answered: the staff who handle bookings offer it to another partner
+			NexHomeBooking booking = assignment.getBooking();
+			notifier.notifyStaff(BOOKING_MANAGE, new NexHomeNotifier.Message(NotificationType.BOOKING,
+					"Offer expired: " + booking.getPublicId(),
+					"Partner " + assignment.getPartner().getPublicId() + " did not answer in time; offer "
+							+ booking.getServiceNameSnapshot() + " to another partner.",
+					NexHomeNotifier.BOOKING, booking.getId()).high(), null);
+		});
 		if (!expired.isEmpty()) {
 			// Their slot holds ran out at the same time and are marked EXPIRED by the availability job
 			log.info("{} booking offer(s) expired", expired.size());
 		}
 		return expired.size();
+	}
+
+	@Override
+	@Transactional
+	public int alertUnassignedBookings() {
+		Instant now = Instant.now();
+		List<NexHomeBooking> soon = bookingRepository
+				.findByBookingStatusAndPartnerIsNullAndUnassignedAlertAtIsNullAndScheduledStartAtBetween(
+						BookingStatus.CONFIRMED, now, now.plus(UNASSIGNED_ALERT_WINDOW));
+		soon.forEach(booking -> {
+			notifier.notifyStaff(BOOKING_MANAGE, new NexHomeNotifier.Message(NotificationType.BOOKING,
+					"No partner yet: " + booking.getPublicId(),
+					booking.getServiceNameSnapshot() + " starts within " + UNASSIGNED_ALERT_WINDOW.toHours()
+							+ " hours and has no partner; assign one.",
+					NexHomeNotifier.BOOKING, booking.getId()).high(), null);
+			booking.setUnassignedAlertAt(now);
+		});
+		if (!soon.isEmpty()) {
+			log.info("{} booking(s) starting soon without a partner: staff warned", soon.size());
+		}
+		return soon.size();
 	}
 
 	// ------------------------------------------------------------------------------------------------------------

@@ -221,21 +221,22 @@ const PROFILE_LIST_ERRORS = [[400, "Page must be 0 or more."], [400, "Size must 
 const ERRORS = {
   "auth-register": [[400, "Mobile number must be 6 to 15 digits"], [400, "Role must be CUSTOMER or PARTNER"],
     [404, "Role Not Found or Inactive"], [409, "An account already exists with this mobile number. Log in instead."],
-    [409, "An account already exists with this email"]],
+    [409, "An account already exists with this email"], [503, "We could not send the OTP right now; please try again shortly."]],
   "auth-otp-request": [[400, "Purpose must be one of: LOGIN, REGISTRATION, PHONE_CHANGE, SERVICE_START, SERVICE_COMPLETION."],
     [400, "Use the phone change endpoints to change a mobile number."], [400, NOT_ACTIVE],
     [400, "This mobile number is already verified. Log in instead."], [404, "No account exists with this mobile number."],
-    [429, "Please wait 42 seconds before requesting another OTP."]],
+    [429, "Please wait 42 seconds before requesting another OTP."], [503, "We could not send the OTP right now; please try again shortly."]],
   "auth-admin-otp-request": [[400, "Mobile number must be 6 to 15 digits"],
     [404, "Invalid user. This mobile number does not have admin access."],
-    [429, "Please wait 42 seconds before requesting another OTP."]],
+    [429, "Please wait 42 seconds before requesting another OTP."],
+    [503, "We could not send the OTP right now; please try again shortly."]],
   "auth-otp-verify": [[400, "OTP must be 4 to 8 digits"], [400, NO_PENDING], [400, "OTP is incorrect."],
     [400, "Too many wrong attempts. Request a new OTP."], [400, "OTP has expired. Request a new one."], [400, NOT_ACTIVE]],
   "auth-refresh": [[400, "Refresh token is required"], [401, "The refresh token is invalid or has expired."], [401, NOT_ACTIVE]],
   "auth-logout": [[400, "Refresh token is required"]],
   "auth-logout-all": [],
   "auth-phone-request": [[400, NOT_ACTIVE], [409, "An account already exists with this mobile number"],
-    [429, "Please wait 42 seconds before requesting another OTP."]],
+    [429, "Please wait 42 seconds before requesting another OTP."], [503, "We could not send the OTP right now; please try again shortly."]],
   "auth-phone-verify": [[400, NO_PENDING], [400, "OTP is incorrect."], [400, "OTP has expired. Request a new one."],
     [409, "An account already exists with this mobile number"]],
   "users-create": [[400, "Mobile number must be 6 to 15 digits"], [400, "Role is required"],
@@ -607,7 +608,7 @@ const ORDER_RESPONSE = { paymentOrderId: 3, publicId: "NHPORD0003", checkoutId: 
   customerName: "Anitha Rao", provider: "MANUAL", providerOrderId: "manual_order_5c1d0f3e9b2a4c7d8e6f", amount: 400, currency: "INR",
   paymentStatus: "CREATED", expiresAt: DATE, creationDate: DATE };
 const PAYMENT_RESPONSE = { paymentId: 7, paymentOrderId: 3, paymentOrderPublicId: "NHPORD0003", bookingId: 12, bookingPublicId: "NHBOOK0012",
-  customerProfileId: 5, customerName: "Anitha Rao", provider: "MANUAL", providerPaymentId: "UPI1234567", paymentMethod: "ONLINE", amount: 400,
+  customerProfileId: 5, customerName: "Anitha Rao", bookingTotalAmount: 400, provider: "MANUAL", providerPaymentId: "UPI1234567", paymentMethod: "ONLINE", amount: 400,
   refundedAmount: 0, currency: "INR", status: "CAPTURED", failureCode: null, failureMessage: null, capturedAt: DATE, creationDate: DATE };
 const REFUND_RESPONSE = { refundId: 2, paymentId: 7, bookingId: 12, bookingPublicId: "NHBOOK0012", customerName: "Anitha Rao",
   providerRefundId: "manual_refund_8d2f", amount: 100, reason: "Goodwill", status: "SUCCEEDED", requestedBy: 20, completedAt: DATE, creationDate: DATE };
@@ -682,8 +683,8 @@ const SERVICE_FIELDS = (update) => [
   ["partnerRequirements", "array", O, "PARTNER_REQUIREMENT codes (at most 30), in order." + (update ? " When sent, replaces the chosen partner options." : "")]];
 
 const REVIEW_RESPONSE = { reviewId: 4, bookingId: 31, bookingPublicId: "NHBOOK0031", serviceName: "Tap Repair", customerProfileId: 9, customerPublicId: "NHCUST0009", customerName: "Meena Rao", partnerProfileId: 3, partnerPublicId: "NHPART0003", partnerName: "Kiran Rao", serviceRating: 4, partnerRating: 5, reviewText: "On time and tidy.", reviewStatus: "PUBLISHED", creationDate: DATE, createdBy: 22, updatedDate: DATE, updatedBy: 22 };
-const TICKET_RESPONSE = { supportTicketId: 7, publicId: "NHTICK0007", requesterUserId: 22, requesterName: "Meena Rao", requesterRole: "Customer", requesterMobile: "+91 9876543210", bookingId: 31, bookingPublicId: "NHBOOK0031", paymentId: null, paymentReference: null, category: "SERVICE_QUALITY", subject: "Partner was late", description: "The partner came an hour late.", priority: "MEDIUM", status: "OPEN", assignedToUserId: null, assignedToName: null, assignedToRole: null, resolvedAt: null, closedAt: null, creationDate: DATE, createdBy: 22, createdByName: "Meena Rao", updatedDate: DATE, updatedBy: 22 };
-const NOTIFICATION_RESPONSE = { notificationId: 41, userId: 22, userName: null, userRole: null, notificationType: "BOOKING", title: "Booking NHBOOK0031 completed", message: "Tap Repair is done. Rate your service and partner.", referenceType: "BOOKING", referenceId: 31, isRead: false, readAt: null, creationDate: DATE };
+const TICKET_RESPONSE = { supportTicketId: 7, publicId: "NHTICK0007", requesterUserId: 22, requesterName: "Meena Rao", requesterRole: "Customer", requesterRoleCode: "CUSTOMER", requesterMobile: "+91 9876543210", bookingId: 31, bookingPublicId: "NHBOOK0031", paymentId: null, paymentReference: null, category: "SERVICE_QUALITY", subject: "Partner was late", description: "The partner came an hour late.", priority: "MEDIUM", status: "OPEN", assignedToUserId: null, assignedToName: null, assignedToRole: null, resolvedAt: null, closedAt: null, creationDate: DATE, createdBy: 22, createdByName: "Meena Rao", updatedDate: DATE, updatedBy: 22 };
+const NOTIFICATION_RESPONSE = { notificationId: 41, userId: 22, userName: null, userRole: null, notificationType: "BOOKING", title: "Booking NHBOOK0031 completed", message: "Tap Repair is done. Rate your service and partner.", referenceType: "BOOKING", referenceId: 31, priority: "NORMAL", isRead: false, readAt: null, creationDate: DATE };
 const API = [  { group: "Authentication", items: [
     { id: "auth-register", method: "POST", path: "/api/auth/register", title: "Sign up (customer / partner)", success: 201, access: "public",
       desc: "Creates an ACTIVE account for a new mobile number with the CUSTOMER or PARTNER role, with its empty customer profile (NHCUST id) or DRAFT partner profile (NHPART id), and sends a <b>REGISTRATION</b> OTP. Then call <a href=\"#auth-otp-verify\">Verify OTP</a> with purpose <code>REGISTRATION</code>, which verifies the number and signs the user in. Staff accounts are created by an admin with <a href=\"#users-create\">Create user</a>.",
@@ -1126,11 +1127,11 @@ const API = [  { group: "Authentication", items: [
       returns: { total: 42, byStatus: { CONFIRMED: 6, ASSIGNED: 3, COMPLETED: 30, CANCELLED: 3 }, scheduledToday: 4, addedThisMonth: 9,
         months: [{ month: "2026-09", added: 12, total: 33 }, { month: "2026-10", added: 9, total: 42 }] } },
     { id: "bookings-customer-stats", method: "GET", path: "/api/bookings/customer-stats/{customerProfileId}", title: "Customer booking figures", success: 200, access: "owner or BOOKING_MANAGE READ",
-      desc: "A customer's bookings: all of them, then by stage (counted as the partner's): pending, confirmed, partnerAssigned (ASSIGNED, not accepted yet), accepted (ASSIGNED with an ACCEPTED assignment, or PARTNER_EN_ROUTE), inProgress (IN_PROGRESS or PAUSED), completed, cancelled, partnerRejected (assignments of their bookings that partners declined), and spend (online payments captured, transaction fees included, plus cash collected, less SUCCEEDED refunds). averageRating is null until reviews exist.",
+      desc: "A customer's bookings: all of them, then by stage (counted as the partner's): pending, confirmed, partnerAssigned (ASSIGNED, not accepted yet), accepted (ASSIGNED with an ACCEPTED assignment, or PARTNER_EN_ROUTE), inProgress (IN_PROGRESS or PAUSED), completed, cancelled, partnerRejected (assignments of their bookings that partners declined), and spend (online payments captured, transaction fees included, plus cash collected, less SUCCEEDED refunds). averageRating is the average of the partner ratings the customer gave (null without reviews).",
       params: [["customerProfileId", "number", P, "Must exist."]], pathDefaults: { customerProfileId: "" },
       returns: { totalBookings: 8, pending: 1, confirmed: 1, partnerAssigned: 0, accepted: 0, inProgress: 0, completed: 6, cancelled: 1, partnerRejected: 2, totalSpend: 3240.5, averageRating: null } },
     { id: "bookings-partner-stats", method: "GET", path: "/api/bookings/partner-stats/{partnerProfileId}", title: "Partner job figures", success: 200, access: "owner or BOOKING_MANAGE READ",
-      desc: "A partner's jobs: bookings they hold, then by stage (counted as the customer's): assigned (ASSIGNED, not accepted yet), accepted (ASSIGNED with an ACCEPTED assignment, or PARTNER_EN_ROUTE), inProgress (IN_PROGRESS or PAUSED), completed, cancelled, rejected (their assignments REJECTED), and earnings (the net of their payouts that are not cancelled plus the cash they collected; null for staff without PAYOUT_MANAGE read). averageRating is null until reviews exist.",
+      desc: "A partner's jobs: bookings they hold, then by stage (counted as the customer's): assigned (ASSIGNED, not accepted yet), accepted (ASSIGNED with an ACCEPTED assignment, or PARTNER_EN_ROUTE), inProgress (IN_PROGRESS or PAUSED), completed, cancelled, rejected (their assignments REJECTED), and earnings (the net of their payouts that are not cancelled plus the cash they collected; null for staff without PAYOUT_MANAGE read). averageRating is the average partner rating of the partner's PUBLISHED reviews (null without any). Earnings count the partner's share only: payouts' net plus each collected cash job less the service's commission.",
       params: [["partnerProfileId", "number", P, "Must exist."]], pathDefaults: { partnerProfileId: "" },
       returns: { totalJobs: 12, assigned: 1, accepted: 1, inProgress: 0, completed: 9, cancelled: 1, rejected: 2, totalEarnings: 5420.5, averageRating: null } },
     { id: "bookings-me", method: "GET", path: "/api/bookings/me", title: "My bookings (customer)", success: 200, access: "token",
@@ -1279,8 +1280,8 @@ const API = [  { group: "Authentication", items: [
   ]},
   { group: "Support", items: [
     { id: "support-create", method: "POST", path: "/api/support/tickets/create", title: "Open ticket", success: 201, access: "token",
-      desc: "Anyone for themself; for another user (requesterId) SUPPORT_MANAGE write. The booking (and the payment, which must be of that booking) must be the requester's unless staff open it. Status OPEN, public id NHTICK. The staff who read support tickets are notified, and the requester when staff opened it for them.",
-      params: [["requesterId", "number", O, "Default: the caller."], ["bookingId", "number", O, ""], ["paymentId", "number", O, ""], ["category", "string", R, "SUPPORT_CATEGORY."], ["subject", "string", R, "At most 200."], ["description", "string", R, "At most 5000."], ["priority", "string", O, "SUPPORT_PRIORITY, default MEDIUM."]],
+      desc: "Anyone for themself; for another user (requesterId) SUPPORT_MANAGE write. The booking (and the payment, which must be of that booking) must be the requester's unless staff open it. requesterRole is the app the ticket comes from (CUSTOMER, PARTNER or STAFF; the requester must hold it, 400 otherwise): the requester is shown in that role, with that profile's name. Missing, it is the requester's only one (400 for an account that is both a customer and a partner). Status OPEN, public id NHTICK. The staff who read support tickets are notified, and the requester when staff opened it for them.",
+      params: [["requesterId", "number", O, "Default: the caller."], ["requesterRole", "string", O, "CUSTOMER (customer app), PARTNER (partner app) or STAFF."], ["bookingId", "number", O, ""], ["paymentId", "number", O, ""], ["category", "string", R, "SUPPORT_CATEGORY."], ["subject", "string", R, "At most 200."], ["description", "string", R, "At most 5000."], ["priority", "string", O, "SUPPORT_PRIORITY, default MEDIUM."]],
       example: { bookingId: 31, category: "SERVICE_QUALITY", subject: "Partner was late", description: "The partner came an hour late." },
       returns: TICKET_RESPONSE },
     { id: "support-update", method: "PUT", path: "/api/support/tickets/update", title: "Update ticket", success: 200, access: "SUPPORT_MANAGE WRITE",
@@ -1298,7 +1299,7 @@ const API = [  { group: "Authentication", items: [
       example: { supportTicketId: 7, storageKey: "support/7/photo.jpg", fileType: "image/jpeg" },
       returns: { attachmentId: 2, messageId: null, storageKey: "support/7/photo.jpg", fileType: "image/jpeg", createdBy: 22, creationDate: DATE } },
     { id: "support-list", method: "GET", path: "/api/support/tickets", title: "Tickets", success: 200, access: "SUPPORT_MANAGE READ",
-      desc: "Every ticket, newest first; search: ticket id and subject.",
+      desc: "Every ticket, newest first; search: ticket id and subject. Each requester is shown in the role of the app the ticket came from (requesterRole Customer / Partner with that profile's name, or their staff role; requesterRoleCode CUSTOMER / PARTNER / STAFF).",
       params: [["page", "number", Q, ""], ["size", "number", Q, ""], ["status", "string", Q, ""], ["priority", "string", Q, ""], ["category", "string", Q, ""], ["assignedTo", "number", Q, "User id."], ["requesterId", "number", Q, ""], ["bookingId", "number", Q, ""], ["search", "string", Q, ""]],
       returns: PAGE(TICKET_RESPONSE) },
     { id: "support-stats", method: "GET", path: "/api/support/tickets/stats", title: "Ticket counts", success: 200, access: "SUPPORT_MANAGE READ",
@@ -1310,14 +1311,14 @@ const API = [  { group: "Authentication", items: [
     { id: "support-me", method: "GET", path: "/api/support/tickets/me", title: "My tickets", success: 200, access: "token",
       desc: "The caller's own tickets, newest first.", params: [["page", "number", Q, ""], ["size", "number", Q, ""]], returns: PAGE(TICKET_RESPONSE) },
     { id: "support-get", method: "GET", path: "/api/support/tickets/{supportTicketId}", title: "Ticket", success: 200, access: "owner or SUPPORT_MANAGE READ",
-      desc: "The ticket, its messages oldest first (internal notes only for staff) and attachments.",
+      desc: "The ticket, its messages oldest first (internal notes only for staff) and attachments. The requester's own messages carry the same name and role as the ticket's requester (the app the ticket came from).",
       params: [["supportTicketId", "number", P, ""]], pathDefaults: { supportTicketId: "" },
       returns: { ticket: TICKET_RESPONSE, messages: [], attachments: [] } }
   ]},
   { group: "Notifications", items: [
     { id: "notifications-me", method: "GET", path: "/api/notifications/me", title: "My notifications", success: 200, access: "token",
-      desc: "The caller's in-app notifications, newest first. referenceType / referenceId say what each is about (BOOKING, SUPPORT_TICKET, REVIEW, PARTNER_PROFILE).",
-      params: [["page", "number", Q, ""], ["size", "number", Q, ""], ["unread", "boolean", Q, "true: only unread."], ["notificationType", "string", Q, "NOTIFICATION_TYPE."]],
+      desc: "The caller's in-app notifications, newest first. referenceType / referenceId say what each is about (BOOKING, SUPPORT_TICKET, REVIEW, PARTNER_PROFILE); priority is NORMAL or HIGH (act now: an offer expired, a booking soon without a partner, a failed payment or payout, disputed cash, an urgent ticket).",
+      params: [["page", "number", Q, ""], ["size", "number", Q, ""], ["unread", "boolean", Q, "true: only unread (the console polls ?size=10&unread=true every 20 s for its desktop alerts)."], ["notificationType", "string", Q, "NOTIFICATION_TYPE."]],
       returns: PAGE(NOTIFICATION_RESPONSE) },
     { id: "notifications-summary", method: "GET", path: "/api/notifications/me/summary", title: "My notification counts", success: 200, access: "token",
       desc: "How many the caller has, unread, and unread by type (the console's bell).", returns: { total: 14, unread: 3, unreadByType: { BOOKING: 2, SUPPORT: 1 } } },

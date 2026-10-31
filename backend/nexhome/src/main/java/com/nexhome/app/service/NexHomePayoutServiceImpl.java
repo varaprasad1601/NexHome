@@ -241,6 +241,13 @@ public class NexHomePayoutServiceImpl implements NexHomePayoutService {
 		payout.setUpdatedBy(actingUserId);
 		auditRecorder.record(settled ? "PAYOUT_PAID" : "PAYOUT_FAILED", "PAYOUT", payout.getPublicId(), null,
 				Map.of("netAmount", payout.getNetAmount(), "transferStatus", transfer.getStatus()), actingUserId);
+		if (!settled) {
+			notifier.notifyStaff("PAYOUT_MANAGE", new NexHomeNotifier.Message(NotificationType.PAYMENT,
+					"Payout failed: " + payout.getPublicId(),
+					"The transfer of " + payout.getNetAmount().toPlainString() + " to partner "
+							+ payout.getPartner().getPublicId() + " failed; try again.",
+					NexHomeNotifier.BOOKING, payout.getBooking().getId()).high(), actingUserId);
+		}
 		if (settled) {
 			notifier.notify(payout.getPartner().getUser().getId(), new NexHomeNotifier.Message(
 					NotificationType.PAYMENT, "Payout " + payout.getPublicId() + " sent",

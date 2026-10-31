@@ -15,7 +15,7 @@ import {
   searchInputClass
 } from '../../components/admin/system/systemStyles';
 import { useAdminAuth } from '../../context/adminAuth';
-import { SUPPORT_LOOKUPS, supportBadgeClass } from '../../data/supportOptions';
+import { SUPPORT_LOOKUPS, requesterRoleClass, supportBadgeClass } from '../../data/supportOptions';
 import useDebounced from '../../hooks/useDebounced';
 import useLookupLabels from '../../hooks/useLookupLabels';
 import { formatNumber } from '../../utils/format';
@@ -98,7 +98,7 @@ export default function SupportTicketsPage() {
       cell: (row) => (
         <span className="block max-w-[12rem] truncate" title={row.requesterName ?? row.requesterMobile}>
           {row.requesterName ?? row.requesterMobile}
-          {row.requesterRole && <span className="ml-1.5 text-xs text-[var(--muted)]">{row.requesterRole}</span>}
+          {row.requesterRole && <span className={requesterRoleClass(row.requesterRoleCode)}>{row.requesterRole}</span>}
         </span>
       )
     },

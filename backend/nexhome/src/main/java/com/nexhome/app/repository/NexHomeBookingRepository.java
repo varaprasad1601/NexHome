@@ -87,6 +87,10 @@ public interface NexHomeBookingRepository extends JpaRepository<NexHomeBooking, 
 	List<NexHomeBooking> findByPartnerIdAndBookingStatusOrderByActualEndAtDescIdDesc(Long partnerId,
 			String bookingStatus);
 
+	/** Bookings in a status without a partner, not warned about yet, starting in [from, to] (V45). */
+	List<NexHomeBooking> findByBookingStatusAndPartnerIsNullAndUnassignedAlertAtIsNullAndScheduledStartAtBetween(
+			String bookingStatus, Instant from, Instant to);
+
 	/** One row of {@link #countByMonth}. */
 	interface MonthlyCount {
 

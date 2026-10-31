@@ -1,6 +1,7 @@
 package com.nexhome.app.service;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,6 +36,7 @@ import com.nexhome.app.model.NexHomeLookupCodes.SupportPriority;
 import com.nexhome.app.model.NexHomeLookupCodes.SupportTicketStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.Types;
 import com.nexhome.app.model.NexHomePayment;
+import com.nexhome.app.model.NexHomeRole;
 import com.nexhome.app.model.NexHomeSupportTicket;
 import com.nexhome.app.model.NexHomeSupportTicketAttachment;
 import com.nexhome.app.model.NexHomeSupportTicketMessage;
@@ -56,8 +58,14 @@ import lombok.extern.slf4j.Slf4j;
 public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 
 	static final String SUPPORT_MANAGE = "SUPPORT_MANAGE";
+	/** Priorities staff should act on now: tickets with them notify as HIGH. */
+	private static final Set<String> PRESSING = Set.of(SupportPriority.HIGH, SupportPriority.URGENT);
 	/** Statuses in which a ticket is done with. */
 	private static final Set<String> FINISHED = Set.of(SupportTicketStatus.RESOLVED, SupportTicketStatus.CLOSED);
+	/** A staff member's own ticket from the console (requester role). */
+	private static final String STAFF = "STAFF";
+	private static final Set<String> STAFF_ROLES = Set.of(NexHomeRole.SUPER_USER, NexHomeRole.ADMIN,
+			NexHomeRole.SUB_ADMIN);
 
 	private final NexHomeSupportTicketRepository ticketRepository;
 	private final NexHomeSupportTicketMessageRepository messageRepository;
@@ -87,6 +95,7 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 				: lookupService.validateCode(Types.SUPPORT_PRIORITY, request.priority(), "Priority");
 		NexHomeUser requester = userRepository.findById(requesterId)
 				.orElseThrow(() -> new ResourceNotFoundException("User does not exist."));
+		String requesterRole = requesterRoleOf(requesterId, request.requesterRole());
 
 		NexHomeBooking booking = request.bookingId() == null ? null : bookingRepository.findById(request.bookingId())
 				.orElseThrow(() -> new ResourceNotFoundException("Booking does not exist."));
@@ -104,6 +113,7 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 
 		NexHomeSupportTicket ticket = new NexHomeSupportTicket();
 		ticket.setRequester(requester);
+		ticket.setRequesterRole(requesterRole);
 		ticket.setBooking(booking);
 		ticket.setPayment(payment);
 		ticket.setCategory(category);
@@ -115,16 +125,17 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 		ticket.setUpdatedBy(actingUserId);
 		ticketRepository.saveAndFlush(ticket);
 
-		notifier.notifyStaff(SUPPORT_MANAGE, new NexHomeNotifier.Message(NotificationType.SUPPORT,
+		NexHomeNotifier.Message opened = new NexHomeNotifier.Message(NotificationType.SUPPORT,
 				"New support ticket " + ticket.getPublicId(), ticket.getSubject(), NexHomeNotifier.SUPPORT_TICKET,
-				ticket.getId()), actingUserId);
+				ticket.getId());
+		notifier.notifyStaff(SUPPORT_MANAGE, PRESSING.contains(priority) ? opened.high() : opened, actingUserId);
 		notifier.notify(requesterId, new NexHomeNotifier.Message(NotificationType.SUPPORT,
 				"Support ticket " + ticket.getPublicId() + " opened",
 				"We opened a support ticket for you: " + ticket.getSubject(), NexHomeNotifier.SUPPORT_TICKET,
 				ticket.getId()), actingUserId);
 		log.info("Support ticket {} opened for User ID {} by User ID {}", ticket.getPublicId(), requesterId,
 				actingUserId);
-		return supportMapper.toTicketDto(ticket, auditUsers.people(peopleOf(ticket)));
+		return toDto(ticket);
 	}
 
 	@Override
@@ -164,6 +175,7 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 			after.put("category", category);
 			ticket.setCategory(category);
 		}
+		boolean raised = priority != null && PRESSING.contains(priority) && !PRESSING.contains(ticket.getPriority());
 		if (priority != null && !priority.equals(ticket.getPriority())) {
 			before.put("priority", ticket.getPriority());
 			after.put("priority", priority);
@@ -194,6 +206,11 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 		ticket.setUpdatedBy(actingUserId);
 		auditRecorder.record("TICKET_UPDATED", "SUPPORT_TICKET", ticket.getPublicId(), before, after, actingUserId);
 
+		if (raised) {
+			notifier.notifyStaff(SUPPORT_MANAGE, new NexHomeNotifier.Message(NotificationType.SUPPORT,
+					"Ticket " + ticket.getPublicId() + " raised to " + readable(ticket.getPriority()),
+					ticket.getSubject(), NexHomeNotifier.SUPPORT_TICKET, ticket.getId()).high(), actingUserId);
+		}
 		if (assigned) {
 			notifier.notify(assignee.getId(), new NexHomeNotifier.Message(NotificationType.SUPPORT,
 					"Ticket " + ticket.getPublicId() + " assigned to you", ticket.getSubject(),
@@ -205,7 +222,7 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 					NexHomeNotifier.SUPPORT_TICKET, ticket.getId()), actingUserId);
 		}
 		log.info("Support ticket {} updated by User ID {}: {}", ticket.getPublicId(), actingUserId, after.keySet());
-		return supportMapper.toTicketDto(ticket, auditUsers.people(peopleOf(ticket)));
+		return toDto(ticket);
 	}
 
 	@Override
@@ -238,11 +255,13 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 
 		if (!internal && requester) {
 			// The requester writing again reopens a resolved ticket and tells whoever handles it
-			if (SupportTicketStatus.RESOLVED.equals(ticket.getStatus())) {
+			boolean reopened = SupportTicketStatus.RESOLVED.equals(ticket.getStatus());
+			if (reopened) {
 				moveTo(ticket, SupportTicketStatus.IN_PROGRESS);
 			}
 			NexHomeNotifier.Message reply = new NexHomeNotifier.Message(NotificationType.SUPPORT,
-					"New reply on ticket " + ticket.getPublicId(), excerpt(message.getMessage()),
+					(reopened ? "Ticket " + ticket.getPublicId() + " reopened by the requester"
+							: "New reply on ticket " + ticket.getPublicId()), excerpt(message.getMessage()),
 					NexHomeNotifier.SUPPORT_TICKET, ticket.getId());
 			if (ticket.getAssignedTo() != null) {
 				notifier.notify(ticket.getAssignedTo().getId(), reply, actingUserId);
@@ -261,7 +280,9 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 					NexHomeNotifier.SUPPORT_TICKET, ticket.getId()), actingUserId);
 		}
 		Long requesterId = ticket.getRequester().getId();
-		return supportMapper.toMessageDto(message, requesterId, auditUsers.people(Set.of(actingUserId)));
+		Map<Long, NexHomeAuditUsers.Person> people = auditUsers.people(Set.of(actingUserId));
+		return supportMapper.toMessageDto(message, requesterId, people,
+				requestersOf(List.of(ticket), people).get(ticket.getId()));
 	}
 
 	@Override
@@ -309,8 +330,11 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 		messages.forEach(message -> userIds.add(message.getSender().getId()));
 		Map<Long, NexHomeAuditUsers.Person> people = auditUsers.people(userIds);
 		Long requesterId = ticket.getRequester().getId();
-		return new NexHomeSupportTicketDetailResponse(supportMapper.toTicketDto(ticket, people),
-				messages.stream().map(message -> supportMapper.toMessageDto(message, requesterId, people)).toList(),
+		NexHomeAuditUsers.Person requester = requestersOf(List.of(ticket), people).get(ticket.getId());
+		return new NexHomeSupportTicketDetailResponse(supportMapper.toTicketDto(ticket, people, requester),
+				messages.stream()
+						.map(message -> supportMapper.toMessageDto(message, requesterId, people, requester))
+						.toList(),
 				attachmentRepository.findByTicketIdOrderByIdAsc(supportTicketId).stream()
 						.map(supportMapper::toAttachmentDto).toList());
 	}
@@ -375,8 +399,90 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 		Set<Long> userIds = new HashSet<>();
 		tickets.forEach(ticket -> userIds.addAll(peopleOf(ticket)));
 		Map<Long, NexHomeAuditUsers.Person> people = auditUsers.people(userIds);
-		return NexHomePaging.toPageResponse(pageRequest, tickets,
-				tickets.stream().map(ticket -> supportMapper.toTicketDto(ticket, people)).toList());
+		Map<Long, NexHomeAuditUsers.Person> requesters = requestersOf(tickets.getContent(), people);
+		return NexHomePaging.toPageResponse(pageRequest, tickets, tickets.stream()
+				.map(ticket -> supportMapper.toTicketDto(ticket, people, requesters.get(ticket.getId())))
+				.toList());
+	}
+
+	private NexHomeSupportTicketResponse toDto(NexHomeSupportTicket ticket) {
+		Map<Long, NexHomeAuditUsers.Person> people = auditUsers.people(peopleOf(ticket));
+		return supportMapper.toTicketDto(ticket, people, requestersOf(List.of(ticket), people).get(ticket.getId()));
+	}
+
+	/**
+	 * The app a new ticket comes from: the one sent (the requester must hold that role, or any staff role for STAFF),
+	 * else the requester's only one of customer, partner and staff.
+	 */
+	private String requesterRoleOf(Long requesterId, String sent) {
+		boolean customer = userRoleRepository.existsByUserIdAndRoleCodeAndActiveTrueAndRoleActiveFlagTrue(requesterId,
+				NexHomeRole.CUSTOMER);
+		boolean partner = userRoleRepository.existsByUserIdAndRoleCodeAndActiveTrueAndRoleActiveFlagTrue(requesterId,
+				NexHomeRole.PARTNER);
+		boolean staff = userRoleRepository.existsByUserIdAndRoleCodeInAndActiveTrueAndRoleActiveFlagTrue(requesterId,
+				STAFF_ROLES);
+		String role = NexHomeText.upperCase(NexHomeText.trimToNull(sent));
+		if (role != null) {
+			boolean holds = switch (role) {
+				case NexHomeRole.CUSTOMER -> customer;
+				case NexHomeRole.PARTNER -> partner;
+				case STAFF -> staff;
+				default -> throw new InvalidRequestException("Requester role must be one of: CUSTOMER, PARTNER, STAFF.");
+			};
+			if (!holds) {
+				throw new InvalidRequestException("The requester is not a " + role.toLowerCase() + ".");
+			}
+			return role;
+		}
+		if (customer && partner) {
+			throw new InvalidRequestException(
+					"Requester role is required: the requester is both a customer and a partner.");
+		}
+		if (customer) {
+			return NexHomeRole.CUSTOMER;
+		}
+		if (partner) {
+			return NexHomeRole.PARTNER;
+		}
+		if (staff) {
+			return STAFF;
+		}
+		throw new InvalidRequestException("The requester has no active customer, partner or staff role.");
+	}
+
+	/**
+	 * Each ticket's requester (by ticket id) as the app it came from shows them: a customer by their customer
+	 * profile's name, a partner by their partner profile's, with that role; staff as {@code people} has them.
+	 */
+	private Map<Long, NexHomeAuditUsers.Person> requestersOf(List<NexHomeSupportTicket> tickets,
+			Map<Long, NexHomeAuditUsers.Person> people) {
+		Set<Long> customers = new HashSet<>();
+		Set<Long> partners = new HashSet<>();
+		tickets.forEach(ticket -> {
+			if (NexHomeRole.CUSTOMER.equals(ticket.getRequesterRole())) {
+				customers.add(ticket.getRequester().getId());
+			}
+			else if (NexHomeRole.PARTNER.equals(ticket.getRequesterRole())) {
+				partners.add(ticket.getRequester().getId());
+			}
+		});
+		Map<Long, String> customerNames = auditUsers.profileNames(customers, NexHomeRole.CUSTOMER);
+		Map<Long, String> partnerNames = auditUsers.profileNames(partners, NexHomeRole.PARTNER);
+		Map<Long, NexHomeAuditUsers.Person> requesters = new HashMap<>();
+		tickets.forEach(ticket -> {
+			NexHomeUser user = ticket.getRequester();
+			NexHomeAuditUsers.Person known = people.getOrDefault(user.getId(), new NexHomeAuditUsers.Person(null, null));
+			String mobile = user.getCountryCode() + " " + user.getMobileNumber();
+			NexHomeAuditUsers.Person requester = switch (ticket.getRequesterRole()) {
+				case NexHomeRole.CUSTOMER ->
+					new NexHomeAuditUsers.Person(customerNames.getOrDefault(user.getId(), mobile), "Customer");
+				case NexHomeRole.PARTNER ->
+					new NexHomeAuditUsers.Person(partnerNames.getOrDefault(user.getId(), mobile), "Partner");
+				default -> known;
+			};
+			requesters.put(ticket.getId(), requester);
+		});
+		return requesters;
 	}
 
 	/** Sets the status with its times: RESOLVED and CLOSED say when; reopening clears them. */

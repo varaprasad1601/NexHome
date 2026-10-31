@@ -108,3 +108,48 @@ html.nh-admin-scale::-webkit-scrollbar-thumb:hover,
 .nh-rich-text > :last-child {
   margin-bottom: 0;
 }
+
+/* Notification alert cards (NotificationsMenu): slide in from the right; leaving, slide out and fade, then the gap
+   closes so the cards above glide down */
+.nh-alert-card {
+  display: grid;
+  /* One column no wider than the stack: an auto column would grow to the one-line text and push the card off screen */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 1fr;
+  max-width: 100%;
+  margin-top: 0.625rem;
+  animation: nh-alert-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease,
+    grid-template-rows 0.3s ease 0.25s,
+    margin-top 0.3s ease 0.25s;
+}
+.nh-alert-card > * {
+  min-height: 0;
+  min-width: 0;
+}
+.nh-alert-card.is-leaving {
+  opacity: 0;
+  transform: translateX(110%);
+  grid-template-rows: 0fr;
+  margin-top: 0;
+}
+.nh-alert-card.is-leaving > * {
+  overflow: hidden;
+}
+@keyframes nh-alert-in {
+  from {
+    opacity: 0;
+    transform: translateX(110%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nh-alert-card {
+    animation: none;
+    transition: opacity 0.2s ease;
+  }
+  .nh-alert-card.is-leaving {
+    transform: none;
+  }
+}

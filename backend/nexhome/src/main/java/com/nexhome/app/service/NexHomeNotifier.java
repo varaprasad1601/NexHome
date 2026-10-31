@@ -44,8 +44,26 @@ class NexHomeNotifier {
 	private final NexHomeUserRepository userRepository;
 	private final NexHomeUserRoleRepository userRoleRepository;
 
-	/** One notification. {@code referenceType} / {@code referenceId}: what it is about, both or neither. */
-	record Message(String type, String title, String message, String referenceType, Long referenceId) {
+	static final String CUSTOMER_PROFILE = "CUSTOMER_PROFILE";
+	/** Notification priorities (V45). */
+	static final String NORMAL = "NORMAL";
+	static final String HIGH = "HIGH";
+
+	/**
+	 * One notification. {@code referenceType} / {@code referenceId}: what it is about, both or neither;
+	 * {@code priority} NORMAL (the default) or HIGH.
+	 */
+	record Message(String type, String title, String message, String referenceType, Long referenceId,
+			String priority) {
+
+		Message(String type, String title, String message, String referenceType, Long referenceId) {
+			this(type, title, message, referenceType, referenceId, NORMAL);
+		}
+
+		/** The same message as HIGH priority. */
+		Message high() {
+			return new Message(type, title, message, referenceType, referenceId, HIGH);
+		}
 	}
 
 	/** Notifies one user, unless it is the actor or the system account. */
@@ -75,6 +93,7 @@ class NexHomeNotifier {
 			notification.setMessage(message.message());
 			notification.setReferenceType(message.referenceType());
 			notification.setReferenceId(message.referenceId());
+			notification.setPriority(message.priority());
 			notification.setCreatedBy(actingUserId);
 			notification.setUpdatedBy(actingUserId);
 			notifications.add(notification);

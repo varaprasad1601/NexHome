@@ -100,3 +100,13 @@ export const NOTIFICATION_AUDIENCES = [
   { value: 'STAFF', label: 'All Staff' },
   { value: 'USER', label: 'One User (by mobile number)' }
 ];
+
+/** The tag after a ticket requester's name: the app the ticket came from (requesterRoleCode). */
+export const requesterRoleClass = (code) =>
+  `ml-1.5 inline-block rounded-full px-2 py-0.5 align-middle text-[0.6875rem] font-bold ${
+    code === 'CUSTOMER'
+      ? 'bg-[#EDF6FD] text-[var(--blue)]'
+      : code === 'PARTNER'
+        ? 'bg-[#E8F7EE] text-[#1F8A4C]'
+        : 'bg-[var(--light)] text-[var(--muted)]'
+  }`;

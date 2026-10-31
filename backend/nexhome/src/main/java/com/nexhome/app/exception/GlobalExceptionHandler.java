@@ -71,6 +71,12 @@ public class GlobalExceptionHandler {
 		return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
 	}
 
+	@ExceptionHandler(ServiceUnavailableException.class)
+	public ResponseEntity<ExceptionBody> handleServiceUnavailable(ServiceUnavailableException ex,
+			HttpServletRequest request) {
+		return build(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
+	}
+
 	@ExceptionHandler(TooManyRequestsException.class)
 	public ResponseEntity<ExceptionBody> handleTooManyRequests(TooManyRequestsException ex,
 			HttpServletRequest request) {

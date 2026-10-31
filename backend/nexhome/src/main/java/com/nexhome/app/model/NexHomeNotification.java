@@ -57,6 +57,10 @@ public class NexHomeNotification {
 	@Column(name = "read_at")
 	private Instant readAt;
 
+	/** NORMAL, or HIGH for what staff should act on now (V45). */
+	@Column(name = "priority", nullable = false, length = 20, updatable = false)
+	private String priority = "NORMAL";
+
 	@CreationTimestamp
 	@Column(name = "creation_date", nullable = false, updatable = false)
 	private Instant creationDate;

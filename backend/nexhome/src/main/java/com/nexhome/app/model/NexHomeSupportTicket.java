@@ -45,6 +45,10 @@ public class NexHomeSupportTicket {
 	@JoinColumn(name = "requester_id", referencedColumnName = "id", nullable = false, updatable = false)
 	private NexHomeUser requester;
 
+	/** The app the ticket came from, so the requester is shown in that role: CUSTOMER, PARTNER or STAFF (V46). */
+	@Column(name = "requester_role", nullable = false, updatable = false, length = 20)
+	private String requesterRole;
+
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "booking_id", referencedColumnName = "id", updatable = false)
 	private NexHomeBooking booking;

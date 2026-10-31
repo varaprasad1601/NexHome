@@ -207,6 +207,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 					+ "submitted; this one is " + profile.getOnboardingStatus() + ".");
 		}
 		requireReadyForReview(profile);
+		boolean resubmitted = PartnerOnboardingStatus.CHANGES_REQUESTED.equals(profile.getOnboardingStatus());
 
 		profile.setOnboardingStatus(PartnerOnboardingStatus.UNDER_REVIEW);
 		profile.setApprovalStatus(VerificationStatus.IN_REVIEW);
@@ -214,11 +215,25 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		profile.setUpdatedBy(actingUserId);
 
 		notifier.notifyStaff("PARTNER_ONBOARDING_MANAGE", new NexHomeNotifier.Message(NotificationType.ONBOARDING,
-				"Partner " + profile.getPublicId() + " submitted for review",
-				nameOf(profile) + " is waiting to be verified and approved.", NexHomeNotifier.PARTNER_PROFILE,
+				"Partner " + profile.getPublicId() + (resubmitted ? " resubmitted for review" : " submitted for review"),
+				nameOf(profile) + (resubmitted ? " made the requested changes and is waiting to be reviewed again."
+						: " is waiting to be verified and approved."), NexHomeNotifier.PARTNER_PROFILE,
 				profile.getId()), actingUserId);
 		log.info("Partner profile {} submitted for review", profile.getPublicId());
 		return toProfileDto(profile);
+	}
+
+	/**
+	 * A document or bank account added or changed on a profile under review or approved needs verifying: the staff
+	 * who verify partners hear of it (not the one who made the change). Drafts are verified at review instead.
+	 */
+	private void needsVerifying(NexHomePartnerProfile partner, String what, Long actingUserId) {
+		if (PartnerOnboardingStatus.UNDER_REVIEW.equals(partner.getOnboardingStatus())
+				|| PartnerOnboardingStatus.APPROVED.equals(partner.getOnboardingStatus())) {
+			notifier.notifyStaff("PARTNER_VERIFY", new NexHomeNotifier.Message(NotificationType.ONBOARDING,
+					"To verify: partner " + partner.getPublicId(), nameOf(partner) + " " + what + "; verify it.",
+					NexHomeNotifier.PARTNER_PROFILE, partner.getId()), actingUserId);
+		}
 	}
 
 	/** "First Last", else the partner id. */
@@ -489,6 +504,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		document.setIdType(idType);
 		document = partnerDocumentRepository.save(document);
 
+		needsVerifying(partner, "added a document", actingUserId);
 		log.info("Document {} ({}) added to partner profile {}", document.getId(), documentType,
 				partner.getPublicId());
 		return partnerDocumentMapper.toPartnerDocumentDto(document);
@@ -512,6 +528,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 			document.setIdType(idType);
 		}
 
+		needsVerifying(document.getPartner(), "changed a document", permissionService.currentUserId());
 		log.info("Document {} updated and sent back for verification", document.getId());
 		return partnerDocumentMapper.toPartnerDocumentDto(document);
 	}
@@ -607,6 +624,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		account.setPrimary(makePrimary);
 		NexHomePartnerBankAccount saved = partnerBankAccountRepository.save(account);
 
+		needsVerifying(partner, "added a bank account", actingUserId);
 		log.info("Bank account {} added to partner profile {}", saved.getId(), partner.getPublicId());
 		return partnerBankAccountMapper.toPartnerBankAccountDto(saved);
 	}
@@ -628,6 +646,9 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 			account.setPrimary(false);
 		}
 
+		if (VerificationStatus.PENDING.equals(account.getVerificationStatus())) {
+			needsVerifying(account.getPartner(), "changed a bank account", actingUserId);
+		}
 		log.info("Bank account {} updated", account.getId());
 		return partnerBankAccountMapper.toPartnerBankAccountDto(account);
 	}

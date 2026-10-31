@@ -19,14 +19,15 @@ public class NexHomeSupportMapper {
 
 	private static final Person NOBODY = new Person(null, null);
 
-	public NexHomeSupportTicketResponse toTicketDto(NexHomeSupportTicket ticket, Map<Long, Person> people) {
+	/** {@code requesterPerson}: the requester's name and role as the app the ticket came from shows them. */
+	public NexHomeSupportTicketResponse toTicketDto(NexHomeSupportTicket ticket, Map<Long, Person> people,
+			Person requesterPerson) {
 		NexHomeUser requester = ticket.getRequester();
 		NexHomeUser assignee = ticket.getAssignedTo();
-		Person requesterPerson = people.getOrDefault(requester.getId(), NOBODY);
 		Person assigneePerson = assignee == null ? NOBODY : people.getOrDefault(assignee.getId(), NOBODY);
 		Person creator = ticket.getCreatedBy() == null ? NOBODY : people.getOrDefault(ticket.getCreatedBy(), NOBODY);
 		return new NexHomeSupportTicketResponse(ticket.getId(), ticket.getPublicId(), requester.getId(),
-				requesterPerson.name(), requesterPerson.role(),
+				requesterPerson.name(), requesterPerson.role(), ticket.getRequesterRole(),
 				requester.getCountryCode() + " " + requester.getMobileNumber(),
 				ticket.getBooking() == null ? null : ticket.getBooking().getId(),
 				ticket.getBooking() == null ? null : ticket.getBooking().getPublicId(),
@@ -38,10 +39,11 @@ public class NexHomeSupportMapper {
 				creator.name(), ticket.getUpdatedDate(), ticket.getUpdatedBy());
 	}
 
+	/** The requester's own messages show them as the ticket does ({@code requesterPerson}). */
 	public NexHomeSupportMessageResponse toMessageDto(NexHomeSupportTicketMessage message, Long requesterId,
-			Map<Long, Person> people) {
+			Map<Long, Person> people, Person requesterPerson) {
 		Long senderId = message.getSender().getId();
-		Person sender = people.getOrDefault(senderId, NOBODY);
+		Person sender = senderId.equals(requesterId) ? requesterPerson : people.getOrDefault(senderId, NOBODY);
 		return new NexHomeSupportMessageResponse(message.getId(), senderId, sender.name(), sender.role(),
 				!senderId.equals(requesterId), message.getMessage(), message.isInternalNote(),
 				message.getCreationDate());

@@ -6,7 +6,9 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 
 /**
  * A support ticket. Requester and assignee names and roles are as audit entries show them (staff by their staff
- * profile, others by their partner or customer profile, else the mobile number).
+ * profile, others by their partner or customer profile, else the mobile number); the requester is shown in the role
+ * of the app the ticket came from ({@code requesterRoleCode} CUSTOMER, PARTNER or STAFF: the customer or partner
+ * profile's name with Customer / Partner, a staff member as above).
  */
 public record NexHomeSupportTicketResponse(
 		Long supportTicketId,
@@ -14,6 +16,7 @@ public record NexHomeSupportTicketResponse(
 		Long requesterUserId,
 		String requesterName,
 		String requesterRole,
+		String requesterRoleCode,
 		String requesterMobile,
 		Long bookingId,
 		String bookingPublicId,

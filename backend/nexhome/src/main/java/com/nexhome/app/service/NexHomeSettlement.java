@@ -175,6 +175,11 @@ class NexHomeSettlement {
 			paymentRepository.save(payment);
 			booking.setPaymentStatus(BookingPaymentStatus.FAILED);
 			booking.setUpdatedBy(actingUserId);
+			notifier.notifyStaff("PAYMENT_MANAGE", new NexHomeNotifier.Message(NotificationType.PAYMENT,
+					"Payment failed: " + booking.getPublicId(),
+					"The online payment for " + booking.getServiceNameSnapshot() + " failed"
+							+ (message == null ? "." : ": " + message),
+					NexHomeNotifier.BOOKING, booking.getId()).high(), actingUserId);
 		}
 		order.setPaymentStatus(PaymentOrderStatus.FAILED);
 		order.setUpdatedBy(actingUserId);

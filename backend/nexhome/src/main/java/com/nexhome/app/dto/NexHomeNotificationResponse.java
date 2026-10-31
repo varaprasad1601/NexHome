@@ -19,6 +19,8 @@ public record NexHomeNotificationResponse(
 		String message,
 		String referenceType,
 		Long referenceId,
+		/** NORMAL or HIGH (V45). */
+		String priority,
 		boolean isRead,
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
 				timezone = "Asia/Kolkata")

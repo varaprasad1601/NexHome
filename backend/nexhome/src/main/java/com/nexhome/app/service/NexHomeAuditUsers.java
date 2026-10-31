@@ -80,6 +80,27 @@ public class NexHomeAuditUsers {
 		return people;
 	}
 
+	/**
+	 * The names of the users' customer profiles (role CUSTOMER) or partner profiles (PARTNER), for someone shown in
+	 * that role; users without a named profile of that kind are left out.
+	 */
+	public Map<Long, String> profileNames(java.util.Collection<Long> userIds, String roleCode) {
+		Map<Long, String> names = new HashMap<>();
+		Set<Long> ids = userIds.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+		if (ids.isEmpty()) {
+			return names;
+		}
+		if (NexHomeRole.CUSTOMER.equals(roleCode)) {
+			customerProfileRepository.findByUserIdIn(ids).forEach(profile -> putName(names,
+					profile.getUser().getId(), profile.getFirstName(), profile.getLastName()));
+		}
+		else if (NexHomeRole.PARTNER.equals(roleCode)) {
+			partnerProfileRepository.findByUserIdIn(ids).forEach(profile -> putName(names,
+					profile.getUser().getId(), profile.getFirstName(), profile.getLastName()));
+		}
+		return names;
+	}
+
 	/** Only what has happened, newest first. */
 	public List<NexHomeAuditEntry> newestFirst(List<Line> lines) {
 		return entries(lines.stream()

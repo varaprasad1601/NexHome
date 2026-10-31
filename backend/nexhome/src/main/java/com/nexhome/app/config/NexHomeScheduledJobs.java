@@ -24,4 +24,10 @@ public class NexHomeScheduledJobs {
 	public void expireBookingOffers() {
 		bookingService.expireOffers();
 	}
+
+	/** CONFIRMED bookings starting within 2 hours without a partner: staff are warned once (every 5 minutes). */
+	@Scheduled(fixedDelayString = "${nexhome.bookings.unassigned-alert-interval-ms:300000}", initialDelay = 45000)
+	public void alertUnassignedBookings() {
+		bookingService.alertUnassignedBookings();
+	}
 }

@@ -38,6 +38,7 @@ import com.nexhome.app.dto.NexHomeUserResponse;
 import com.nexhome.app.exception.DuplicateResourceException;
 import com.nexhome.app.exception.InvalidRequestException;
 import com.nexhome.app.exception.ResourceNotFoundException;
+import com.nexhome.app.exception.ServiceUnavailableException;
 import com.nexhome.app.exception.TooManyRequestsException;
 import com.nexhome.app.exception.UnauthorizedException;
 import com.nexhome.app.mapper.NexHomeAuthOtpRequestMapper;
@@ -96,6 +97,9 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 	private final NexHomeCustomerProfileMapper customerProfileMapper;
 	private final NexHomePartnerProfileRepository partnerProfileRepository;
 	private final NexHomePartnerProfileMapper partnerProfileMapper;
+	private final NexHomeSmsSender smsSender;
+	private final NexHomeNotifier notifier;
+	private final com.nexhome.app.repository.NexHomeNotificationDeliveryLogRepository deliveryLogRepository;
 
 	@Override
 	@Transactional
@@ -125,7 +129,13 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 		}
 		// A partner gets the DRAFT partner profile, and so the NHPART partner id, at sign-up (V16)
 		if (NexHomeRole.PARTNER.equals(role.getCode())) {
-			partnerProfileRepository.save(partnerProfileMapper.toPartnerProfileEntity(user, user.getId()));
+			com.nexhome.app.model.NexHomePartnerProfile profile = partnerProfileRepository.save(
+					partnerProfileMapper.toPartnerProfileEntity(user, user.getId()));
+			// The staff who manage partners hear of a new partner (onboarding not started yet)
+			notifier.notifyStaff("PARTNER_MANAGE", new NexHomeNotifier.Message(
+					com.nexhome.app.model.NexHomeLookupCodes.NotificationType.ACCOUNT, "New partner signed up",
+					countryCode + " " + mobileNumber + " signed up as a partner; onboarding has not started.",
+					NexHomeNotifier.PARTNER_PROFILE, profile.getId()), user.getId());
 		}
 
 		log.info("User registered with User ID {} with Role {}", user.getId(), role.getCode());
@@ -343,7 +353,20 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 				countryCode, mobileNumber, purpose, user, passwordEncoder.encode(otp),
 				now.plus(Duration.ofMinutes(otpProperties.expiryMinutes())), user.getId()));
 
-		// TODO: send the OTP by SMS once a provider is integrated
+		// By SMS (nexhome.sms.provider); a failure undoes the OTP (and a sign-up with it), so the client can retry at
+		// once: the resend wait has not started
+		String messageId;
+		try {
+			messageId = smsSender.sendOtp(countryCode, mobileNumber, otp);
+		}
+		catch (NexHomeSmsSender.NexHomeSmsException ex) {
+			log.error("OTP {} for User ID {} ({}) not sent: {}", otpRequest.getId(), user.getId(), purpose,
+					ex.getMessage());
+			throw new ServiceUnavailableException("We could not send the OTP right now; please try again shortly.");
+		}
+		if (smsSender.providerName() != null) {
+			recordSms(user, messageId, now);
+		}
 		if (otpProperties.logPlaintext()) {
 			log.info("OTP {} for {} {} ({}): {}", otpRequest.getId(), countryCode, mobileNumber, purpose, otp);
 		}
@@ -351,6 +374,20 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 			log.info("OTP {} created for User ID {} ({})", otpRequest.getId(), user.getId(), purpose);
 		}
 		return otpRequest;
+	}
+
+	/** The SMS in the delivery logs (no notification; never the OTP itself). */
+	private void recordSms(NexHomeUser user, String messageId, Instant sentAt) {
+		com.nexhome.app.model.NexHomeNotificationDeliveryLog delivery =
+				new com.nexhome.app.model.NexHomeNotificationDeliveryLog();
+		delivery.setUser(user);
+		delivery.setChannel(com.nexhome.app.model.NexHomeLookupCodes.NotificationChannel.SMS);
+		delivery.setDeliveryStatus(com.nexhome.app.model.NexHomeLookupCodes.DeliveryStatus.SENT);
+		delivery.setProviderMessageId(messageId);
+		delivery.setSentAt(sentAt);
+		delivery.setCreatedBy(user.getId());
+		delivery.setUpdatedBy(user.getId());
+		deliveryLogRepository.save(delivery);
 	}
 
 	/**

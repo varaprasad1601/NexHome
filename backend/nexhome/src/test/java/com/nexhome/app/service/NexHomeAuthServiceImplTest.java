@@ -80,6 +80,7 @@ class NexHomeAuthServiceImplTest {
 	private NexHomeLookupService lookupService;
 	private NexHomePermissionService permissionService;
 	private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
+	private NexHomeSmsSender smsSender;
 	private NexHomeAuthServiceImpl authService;
 
 	@BeforeEach
@@ -92,6 +93,7 @@ class NexHomeAuthServiceImplTest {
 		customerProfileRepository = mock(NexHomeCustomerProfileRepository.class);
 		lookupService = mock(NexHomeLookupService.class);
 		permissionService = mock(NexHomePermissionService.class);
+		smsSender = mock(NexHomeSmsSender.class);
 		when(userRepository.findByCountryCodeAndMobileNumber(any(), any())).thenReturn(Optional.empty());
 		when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
 		when(otpRequestRepository.findFirstByCountryCodeAndMobileNumberAndPurposeOrderByCreationDateDesc(any(),
@@ -118,7 +120,34 @@ class NexHomeAuthServiceImplTest {
 				new NimbusJwtEncoder(new ImmutableSecret<>(KEY)), new NexHomeOtpProperties(6, 5, 3, 60, false),
 				new NexHomeSecurityProperties("unused", "nexhome", 15, 30, List.of(), "unused"),
 				customerProfileRepository, new NexHomeCustomerProfileMapper(), mock(NexHomePartnerProfileRepository.class),
-				mock(NexHomePartnerProfileMapper.class));
+				mock(NexHomePartnerProfileMapper.class), smsSender, mock(NexHomeNotifier.class),
+				mock(com.nexhome.app.repository.NexHomeNotificationDeliveryLogRepository.class));
+	}
+
+	@Test
+	void theOtpIsSentBySmsToTheNumber() {
+		existingUser();
+
+		authService.requestOtp(new NexHomeAuthOtpCreateRequest(CC, MOBILE, "LOGIN"));
+
+		ArgumentCaptor<String> otp = ArgumentCaptor.forClass(String.class);
+		verify(smsSender).sendOtp(eq(CC), eq(MOBILE), otp.capture());
+		// The code sent is the one whose hash is stored
+		ArgumentCaptor<NexHomeAuthOtpRequest> saved = ArgumentCaptor.forClass(NexHomeAuthOtpRequest.class);
+		verify(otpRequestRepository).save(saved.capture());
+		assertThat(otp.getValue()).matches("\\d{6}");
+		assertThat(passwordEncoder.matches(otp.getValue(), saved.getValue().getOtpHash())).isTrue();
+	}
+
+	@Test
+	void anSmsThatCannotBeSentIsAServiceUnavailable() {
+		existingUser();
+		when(smsSender.sendOtp(any(), any(), any()))
+				.thenThrow(new NexHomeSmsSender.NexHomeSmsException("MSG91 did not send the OTP: invalid template"));
+
+		assertThatThrownBy(() -> authService.requestOtp(new NexHomeAuthOtpCreateRequest(CC, MOBILE, "LOGIN")))
+				.isInstanceOf(com.nexhome.app.exception.ServiceUnavailableException.class)
+				.hasMessage("We could not send the OTP right now; please try again shortly.");
 	}
 
 	@Test

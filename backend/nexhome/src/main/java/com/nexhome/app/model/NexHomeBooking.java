@@ -132,6 +132,10 @@ public class NexHomeBooking {
 	@Column(name = "currency", nullable = false, length = 3)
 	private String currency = "INR";
 
+	/** When staff were warned it starts soon without a partner (V45; once per booking). */
+	@Column(name = "unassigned_alert_at")
+	private Instant unassignedAlertAt;
+
 	@Column(name = "cancellation_reason", columnDefinition = "text")
 	private String cancellationReason;
 

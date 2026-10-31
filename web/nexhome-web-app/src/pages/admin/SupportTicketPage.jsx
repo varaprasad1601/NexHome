@@ -9,7 +9,7 @@ import Toggle from '../../components/admin/common/Toggle';
 import { BookingLink, When } from '../../components/admin/payment/moneyParts';
 import { cardClass, fieldClass } from '../../components/admin/system/systemStyles';
 import { useAdminAuth } from '../../context/adminAuth';
-import { SUPPORT_LOOKUPS } from '../../data/supportOptions';
+import { SUPPORT_LOOKUPS, requesterRoleClass } from '../../data/supportOptions';
 import useLookupLabels from '../../hooks/useLookupLabels';
 import { SupportBadge } from './SupportTicketsPage';
 
@@ -336,7 +336,7 @@ export default function SupportTicketPage() {
               <div className="flex items-center gap-2">
                 <UserRound size={15} className="text-[var(--blue)]" />
                 <span className="font-bold text-[var(--ink)]">{ticket.requesterName ?? 'Name not added'}</span>
-                {ticket.requesterRole && <span className="text-xs text-[var(--muted)]">{ticket.requesterRole}</span>}
+                {ticket.requesterRole && <span className={requesterRoleClass(ticket.requesterRoleCode)}>{ticket.requesterRole}</span>}
               </div>
               <div className="flex items-center gap-2 text-[var(--muted)]">
                 <Phone size={15} className="text-[var(--blue)]" />

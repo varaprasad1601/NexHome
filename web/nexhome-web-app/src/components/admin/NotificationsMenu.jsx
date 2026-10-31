@@ -1,20 +1,46 @@
-import { Bell, BellOff, Check, Settings, X } from 'lucide-react';
+import { Bell, BellOff, BellRing, Check, Settings, Volume2, VolumeX, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 
 import { useAdminAuth } from '../../context/adminAuth';
 import { notificationLink, notificationStyle, timeAgo } from '../../data/supportOptions';
 import useLookupLabels from '../../hooks/useLookupLabels';
+import {
+  loadAlertPrefs,
+  playChime,
+  popupPermission,
+  requestPopupPermission,
+  saveAlertPrefs,
+  showSystemPopup,
+  unlockAudioOnFirstGesture
+} from '../../utils/notificationAlerts';
 
 const TYPE_LOOKUP = ['NOTIFICATION_TYPE'];
 /** The panel lists this many of the newest; the rest are on the notifications page. */
 const PANEL_SIZE = 30;
-/** How often the unread count is refreshed while the console is open. */
-const REFRESH_MS = 60000;
+/** How often new notifications are looked for while the console is open (the badge, popups and sound). */
+const REFRESH_MS = 20000;
+/** At most this many alert cards on screen at once: a newer one makes the oldest slide out. */
+const MAX_POPUPS = 5;
+/** Several arrivals at once are announced one after another, this far apart (card, popup and sound each). */
+const ANNOUNCE_GAP_MS = 1500;
+/** How long each alert card stays, counted from its own arrival (HIGH ones too). */
+const CARD_MS = 10000;
+/** How long a card's exit effect takes (slide out, then the gap closes). */
+const CARD_EXIT_MS = 600;
+/** What the Test button announces. */
+const TEST_ALERT = {
+  notificationId: 0,
+  notificationType: 'SYSTEM',
+  title: 'Test alert',
+  message: 'Popups and sound are working.',
+  priority: 'NORMAL'
+};
 
 /**
- * One notification as a list row (sample 12): icon, title, message, time and type; unread rows have a bold title and
- * a blue dot on the right. Their own actions (mark read, remove) replace the dot on hover or focus.
+ * One notification as a list row (sample 12): icon, title (with a red High tag for HIGH priority), message, time and
+ * type; unread rows have a bold title and a blue dot on the right. Their own actions (mark read, remove) replace the dot on hover or focus.
  */
 export function NotificationItem({ notification, typeLabel, onOpen, onRead, onRemove }) {
   const style = notificationStyle(notification.notificationType);
@@ -31,8 +57,15 @@ export function NotificationItem({ notification, typeLabel, onOpen, onRead, onRe
           <Icon size={18} strokeWidth={2} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className={`block text-sm ${unread ? 'font-black text-[var(--navy)]' : 'font-bold text-[var(--ink)]'}`}>
-            {notification.title}
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className={`text-sm ${unread ? 'font-black text-[var(--navy)]' : 'font-bold text-[var(--ink)]'}`}>
+              {notification.title}
+            </span>
+            {notification.priority === 'HIGH' && (
+              <span className="rounded-full bg-[#FDECEC] px-2 py-px text-[0.625rem] font-black uppercase tracking-wide text-[#C53030]">
+                High
+              </span>
+            )}
           </span>
           <span className="mt-0.5 line-clamp-2 block text-[0.8125rem] leading-snug text-[var(--muted)]">
             {notification.message}
@@ -79,10 +112,15 @@ export function NotificationItem({ notification, typeLabel, onOpen, onRead, onRe
 
 /**
  * The top bar's bell and its panel (samples 12, 4 and 11 of Admin Sreens/notification-samples), with the signed-in
- * staff member's own notifications (GET /api/notifications/me and /me/summary, refreshed every minute and on open): a
- * header with Mark all as read and Clear all, All / Unread tabs, type chips (only the types present), list rows
- * (opening one marks it read and goes to its page; each can be marked read or removed on hover), and a footer with
- * View all notifications and settings. Escape or a click outside closes it.
+ * staff member's own notifications (GET /api/notifications/me and /me/summary, refreshed every 20 seconds and on open): a
+ * header with Mark all as read and Clear all, All / Unread tabs, type chips (only the types present), list rows,
+ * newest first (opening one marks it read and goes to its page; each can be marked read or removed on hover), and a footer with
+ * View all notifications, the Popups and Sound switches, and settings. Escape or a click outside closes it.
+ *
+ * Every 20 seconds it looks for new notifications: those that arrived since the last look (not the ones there at
+ * sign-in) pop up as system notifications (the browser asks for permission the first time the bell is opened;
+ * clicking one opens its page) and play a chime (twice for HIGH). The switches are kept in this browser
+ * (utils/notificationAlerts).
  */
 export default function NotificationsMenu() {
   const { authRequest } = useAdminAuth();
@@ -96,6 +134,39 @@ export default function NotificationsMenu() {
   const [notifications, setNotifications] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [prefs, setPrefs] = useState(loadAlertPrefs);
+  const [permission, setPermission] = useState(popupPermission);
+  // The newest notification id already known: anything newer that arrives is announced (null until the first look,
+  // so what was there at sign-in is not)
+  const lastSeenRef = useRef(null);
+  const prefsRef = useRef(prefs);
+  const openFromPopupRef = useRef(() => {});
+  // The console's own alert cards (bottom right): shown for every arrival, whatever the browser allows
+  const [cards, setCards] = useState([]);
+  // Leaving cards play their exit effect (admin.css .nh-alert-card) before they are taken out
+  const dismissCard = useCallback((key) => {
+    setCards((current) => current.map((card) => (card.key === key ? { ...card, leaving: true } : card)));
+    setTimeout(() => setCards((current) => current.filter((card) => card.key !== key)), CARD_EXIT_MS);
+  }, []);
+  const showCards = useCallback(
+    (items) => {
+      const added = items.map((item, index) => ({ ...item, key: `${item.notificationId}-${Date.now()}-${index}` }));
+      // Only the most recent MAX_POPUPS stay: older ones leave with the exit effect to make room
+      const all = [...cards, ...added].filter((card) => !card.leaving);
+      all.slice(0, Math.max(0, all.length - MAX_POPUPS)).forEach((card) => dismissCard(card.key));
+      setCards((current) => [...current, ...added]);
+      added.forEach((card) => setTimeout(() => dismissCard(card.key), CARD_MS));
+    },
+    [cards, dismissCard]
+  );
+  const showCardsRef = useRef(showCards);
+  useEffect(() => {
+    showCardsRef.current = showCards;
+  }, [showCards]);
+  useEffect(() => {
+    prefsRef.current = prefs;
+    saveAlertPrefs(prefs);
+  }, [prefs]);
 
   const loadSummary = useCallback(
     () =>
@@ -116,12 +187,54 @@ export default function NotificationsMenu() {
     [authRequest]
   );
 
-  // The badge stays current while the console is open
+  // The badge stays current while the console is open, and new arrivals pop up (system notification) and chime
   useEffect(() => {
-    loadSummary();
-    const timer = setInterval(loadSummary, REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [loadSummary]);
+    let cancelled = false;
+    const check = () => {
+      loadSummary();
+      authRequest('/api/notifications/me?size=10&unread=true')
+        .then((page) => {
+          if (cancelled) return;
+          const newestId = page.content.reduce((max, item) => Math.max(max, item.notificationId), 0);
+          if (lastSeenRef.current === null) {
+            lastSeenRef.current = newestId;
+            return;
+          }
+          const arrived = page.content.filter((item) => item.notificationId > lastSeenRef.current).reverse();
+          lastSeenRef.current = Math.max(lastSeenRef.current, newestId);
+          if (!arrived.length) return;
+          // Oldest first, each with its own card, popup and sound, stacking up like a ladder
+          arrived.forEach((item, index) =>
+            setTimeout(() => {
+              if (cancelled) return;
+              showCardsRef.current([item]);
+              if (prefsRef.current.popups) showSystemPopup(item, (n) => openFromPopupRef.current(n));
+              if (prefsRef.current.sound) playChime(item.priority);
+            }, index * ANNOUNCE_GAP_MS)
+          );
+        })
+        .catch(() => {});
+    };
+    check();
+    const timer = setInterval(check, REFRESH_MS);
+    const stopUnlock = unlockAudioOnFirstGesture();
+    // Browsers only ask for permission from a click: the first click anywhere in the console asks, while popups are on
+    const askOnClick = () => {
+      window.removeEventListener('click', askOnClick);
+      if (prefsRef.current.popups && popupPermission() === 'default') requestPopupPermission().then(setPermission);
+    };
+    window.addEventListener('click', askOnClick);
+    // A permission changed in the browser's site settings shows when the tab is back
+    const refreshPermission = () => setPermission(popupPermission());
+    document.addEventListener('visibilitychange', refreshPermission);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      stopUnlock();
+      window.removeEventListener('click', askOnClick);
+      document.removeEventListener('visibilitychange', refreshPermission);
+    };
+  }, [authRequest, loadSummary]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -143,6 +256,7 @@ export default function NotificationsMenu() {
 
   const unread = summary.unread;
   const types = [...new Set(notifications.map((notification) => notification.notificationType))];
+  // Newest first, as the server sends them; HIGH ones are tagged, not moved
   const shown = notifications.filter(
     (notification) => (tab === 'unread' ? !notification.isRead : true) && (type === 'all' || notification.notificationType === type)
   );
@@ -189,6 +303,39 @@ export default function NotificationsMenu() {
     if (to) go(to);
     else setOpen(false);
   };
+  // A popup clicked later opens its page with the handlers of that moment
+  useEffect(() => {
+    openFromPopupRef.current = openNotification;
+  });
+
+  const toggleBell = () => {
+    // Opening the bell is a click, so the browser lets the console ask for popups once
+    if (!open && prefs.popups && permission === 'default') {
+      requestPopupPermission().then(setPermission);
+    }
+    setOpen((value) => !value);
+  };
+  const togglePopups = () => {
+    if (!prefs.popups && permission === 'default') requestPopupPermission().then(setPermission);
+    setPrefs((current) => ({ ...current, popups: !current.popups }));
+  };
+  const allowPopups = () => requestPopupPermission().then(setPermission);
+  // Shows the card, the system popup and the chime at once, to check what this browser lets through
+  const testAlert = () => {
+    showCards([TEST_ALERT]);
+    if (prefs.popups) showSystemPopup(TEST_ALERT, () => {});
+    if (prefs.sound) playChime();
+  };
+  const openCard = (card) => {
+    dismissCard(card.key);
+    if (card.notificationId) openNotification(card);
+  };
+
+  const toggleSound = () => {
+    const sound = !prefs.sound;
+    setPrefs((current) => ({ ...current, sound }));
+    if (sound) playChime();
+  };
 
   const tabClass = (key) =>
     `relative flex items-center gap-1.5 whitespace-nowrap pb-2.5 text-[0.8125rem] font-bold transition ${
@@ -213,7 +360,7 @@ export default function NotificationsMenu() {
         aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggleBell}
       >
         <Bell size={18} />
         {unread > 0 && (
@@ -311,15 +458,82 @@ export default function NotificationsMenu() {
             </ul>
           )}
 
-          {/* Footer: the full list and notification settings */}
-          <div className="flex items-center justify-between border-t border-[var(--line)] px-5 py-2.5">
+          {prefs.popups && permission !== 'granted' && permission !== 'unsupported' && (
+            <div className="flex items-center justify-between gap-3 border-t border-[#F7DFA8] bg-[#FFF8E6] px-5 py-2 text-xs text-[#8A5A00]">
+              {permission === 'denied' ? (
+                <span>
+                  Desktop popups are <b>blocked</b> for this site. Click the icon left of the address bar, set Notifications
+                  to Allow, then reload.
+                </span>
+              ) : (
+                <>
+                  <span>Desktop popups need your permission.</span>
+                  <button
+                    type="button"
+                    onClick={allowPopups}
+                    className="rounded-md bg-[var(--blue)] px-2.5 py-1 font-bold text-white hover:bg-[var(--navy)]"
+                  >
+                    Allow
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Footer: the full list, the alert switches and notification settings */}
+          <div className="flex items-center justify-between gap-3 border-t border-[var(--line)] px-5 py-2.5">
             <button
               type="button"
               onClick={() => go('/admin/notifications')}
-              className="rounded-md py-1 text-xs font-bold text-[var(--blue)] hover:text-[var(--navy)]"
+              className="whitespace-nowrap rounded-md py-1 text-xs font-bold text-[var(--blue)] hover:text-[var(--navy)]"
             >
               View all notifications →
             </button>
+            <div className="ml-auto flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={togglePopups}
+                aria-pressed={prefs.popups && permission === 'granted'}
+                disabled={permission === 'unsupported'}
+                title={
+                  permission === 'denied'
+                    ? 'Desktop popups are blocked: allow notifications for this site in the browser'
+                    : prefs.popups
+                      ? 'Desktop popups on'
+                      : 'Desktop popups off'
+                }
+                className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                  prefs.popups && permission === 'granted'
+                    ? 'border-[#C7E3FC] bg-[#EDF6FD] text-[var(--blue)]'
+                    : permission === 'denied' && prefs.popups
+                      ? 'border-[#F5C2C2] bg-[#FDECEC] text-[#C53030]'
+                      : 'border-[var(--line)] text-[var(--muted)] hover:bg-[var(--light)]'
+                }`}
+              >
+                <BellRing size={14} />
+                {permission === 'denied' && prefs.popups ? 'Blocked' : 'Popups'}
+              </button>
+              <button
+                type="button"
+                onClick={toggleSound}
+                aria-pressed={prefs.sound}
+                title={prefs.sound ? 'Sound on' : 'Sound off'}
+                aria-label={prefs.sound ? 'Turn notification sound off' : 'Turn notification sound on'}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg border transition ${
+                  prefs.sound ? 'border-[#C7E3FC] bg-[#EDF6FD] text-[var(--blue)]' : 'border-[var(--line)] text-[var(--muted)] hover:bg-[var(--light)]'
+                }`}
+              >
+                {prefs.sound ? <Volume2 size={15} /> : <VolumeX size={15} />}
+              </button>
+              <button
+                type="button"
+                onClick={testAlert}
+                title="Show a test alert (popup and sound)"
+                className="flex h-8 items-center rounded-lg border border-[var(--line)] px-2.5 text-xs font-bold text-[var(--muted)] hover:bg-[var(--light)] hover:text-[var(--ink)]"
+              >
+                Test
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => go('/admin/settings')}
@@ -331,6 +545,56 @@ export default function NotificationsMenu() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* In the console's root, not the top bar: the bar's backdrop blur would pin a fixed element to the bar */}
+      {cards.length > 0 &&
+        createPortal(
+        <div className="fixed bottom-5 right-5 z-[60] flex w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col" aria-live="polite">
+          {cards.map((card) => (
+            <div
+              key={card.key}
+              className={`nh-alert-card ${card.leaving ? 'is-leaving' : ''}`}
+            >
+              <div
+                className={`flex w-full items-start gap-3 rounded-2xl border bg-white p-3.5 shadow-[0_12px_32px_rgba(16,42,67,0.18)] ${
+                  card.priority === 'HIGH' ? 'border-[#F5C2C2]' : 'border-[var(--line)]'
+                }`}
+              >
+                <span
+                  className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                    card.priority === 'HIGH' ? 'bg-[#FDECEC] text-[#C53030]' : 'bg-[#EDF6FD] text-[var(--blue)]'
+                  }`}
+                >
+                  <BellRing size={15} />
+                </span>
+                <button type="button" onClick={() => openCard(card)} className="min-w-0 flex-1 text-left">
+                  <span className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-[var(--ink)]" title={card.title}>
+                    {card.priority === 'HIGH' && (
+                      <span className="shrink-0 rounded-full bg-[#FDECEC] px-1.5 py-0.5 text-[0.625rem] font-black uppercase text-[#C53030]">
+                        High
+                      </span>
+                    )}
+                    <span className="min-w-0 truncate">{card.title}</span>
+                  </span>
+                  {/* One line each: longer text ends in "…" (the full text on hover) */}
+                  <span className="mt-0.5 block truncate text-xs text-[var(--muted)]" title={card.message}>
+                    {card.message}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dismissCard(card.key)}
+                  className="rounded-md p-1 text-[var(--muted)] hover:bg-[var(--light)] hover:text-[var(--ink)]"
+                  aria-label="Dismiss"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>,
+        document.querySelector('.nh-admin') ?? document.body
       )}
     </div>
   );

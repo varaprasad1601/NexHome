@@ -87,6 +87,8 @@ export default function CreateTicketModal({ lookups, onClose, onCreated }) {
         method: 'POST',
         body: {
           requesterId: requester.userId,
+          // The ticket is the customer's or the partner's, as chosen (an account may be both)
+          requesterRole: requester.kind === 'Partner' ? 'PARTNER' : 'CUSTOMER',
           bookingId,
           category: form.category,
           priority: form.priority,

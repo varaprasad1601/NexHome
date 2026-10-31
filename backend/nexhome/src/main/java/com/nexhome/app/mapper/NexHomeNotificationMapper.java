@@ -16,7 +16,8 @@ public class NexHomeNotificationMapper {
 		return new NexHomeNotificationResponse(notification.getId(), notification.getUser().getId(),
 				person == null ? null : person.name(), person == null ? null : person.role(),
 				notification.getNotificationType(), notification.getTitle(), notification.getMessage(),
-				notification.getReferenceType(), notification.getReferenceId(), notification.getReadAt() != null,
+				notification.getReferenceType(), notification.getReferenceId(), notification.getPriority(),
+				notification.getReadAt() != null,
 				notification.getReadAt(), notification.getCreationDate());
 	}
 

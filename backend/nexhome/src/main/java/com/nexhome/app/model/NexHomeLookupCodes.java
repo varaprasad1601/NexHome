@@ -444,6 +444,8 @@ public final class NexHomeLookupCodes {
 	public static final class SupportPriority {
 
 		public static final String MEDIUM = "MEDIUM";
+		public static final String HIGH = "HIGH";
+		public static final String URGENT = "URGENT";
 
 		private SupportPriority() {
 		}
@@ -468,6 +470,7 @@ public final class NexHomeLookupCodes {
 	public static final class NotificationChannel {
 
 		public static final String IN_APP = "IN_APP";
+		public static final String SMS = "SMS";
 
 		private NotificationChannel() {
 		}

@@ -72,4 +72,10 @@ public interface NexHomeBookingService {
 
 	/** Offers that ran out become EXPIRED (run on a schedule); returns how many. */
 	int expireOffers();
+
+	/**
+	 * Warns the staff who handle bookings, once per booking, of CONFIRMED bookings starting within 2 hours without a
+	 * partner (scheduled job); returns how many.
+	 */
+	int alertUnassignedBookings();
 }

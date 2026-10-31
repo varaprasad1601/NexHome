@@ -96,6 +96,7 @@ public class NexHomePaymentServiceImpl implements NexHomePaymentService {
 	private final JsonMapper jsonMapper;
 	private final NexHomeAuditRecorder auditRecorder;
 	private final NexHomeBookingCreator bookingCreator;
+	private final NexHomeNotifier notifier;
 
 	// ------------------------------------------------------------------------------------------------------------
 	// Orders and capture
@@ -386,6 +387,15 @@ public class NexHomePaymentServiceImpl implements NexHomePaymentService {
 
 		auditRecorder.record("CASH_" + target, "BOOKING", booking.getPublicId(), Map.of("cashStatus",
 				cash.getStatus()), Map.of("cashStatus", target), actingUserId);
+		if (CashCollectionStatus.DISPUTED.equals(target)) {
+			notifier.notifyStaff(PAYMENT_MANAGE, new NexHomeNotifier.Message(
+					com.nexhome.app.model.NexHomeLookupCodes.NotificationType.PAYMENT,
+					"Cash disputed: " + booking.getPublicId(),
+					"The cash of " + cash.getAmount().toPlainString() + " is disputed"
+							+ (NexHomeText.trimToNull(request.notes()) == null ? "."
+									: ": " + NexHomeText.trimToNull(request.notes())),
+					NexHomeNotifier.BOOKING, booking.getId()).high(), actingUserId);
+		}
 		cash.setStatus(target);
 		if (request.notes() != null) {
 			cash.setNotes(NexHomeText.trimToNull(request.notes()));
