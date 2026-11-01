@@ -1,5 +1,6 @@
 package com.nexhome.app.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -288,6 +289,81 @@ class NexHomeSupportFlowTest {
 	}
 
 	/** An approved partner who offers the service and works Monday mornings and evenings. */
+	@Test
+	void bookingNotificationsReachOnlyThatBookingsCustomerAndPartner() throws Exception {
+		String staff = accessToken(newUser("SUPER_USER").getId());
+		String suffix = UUID.randomUUID().toString().substring(0, 8);
+		long categoryId = json(perform(post("/api/catalog/categories/create"), staff,
+				"{\"name\": \"Notices %s\"}".formatted(suffix))
+				.andExpect(status().isCreated())).get("serviceCategoryId").asLong();
+		long serviceId = json(perform(post("/api/catalog/services/create"), staff, """
+				{"categoryId": %d, "name": "Fan Repair %s", "serviceTarget": "APPLIANCE", "pricingType": "FIXED",
+				 "basePrice": 300, "minimumCharge": 0, "estimatedDurationMinutes": 60,
+				 "platformCommissionType": "PERCENTAGE", "platformCommissionValue": 10, "isActive": true}"""
+				.formatted(categoryId, suffix))
+				.andExpect(status().isCreated())).get("serviceId").asLong();
+		LocalDate monday = LocalDate.now(IST).plusDays(1).with(TemporalAdjusters.nextOrSame(DayOfWeek.MONDAY));
+
+		// Two customers and two partners, each pair with a booking of its own
+		String[] customers = new String[2];
+		String[] partners = new String[2];
+		long[] bookings = new long[2];
+		String[] publicIds = new String[2];
+		for (int i = 0; i < 2; i++) {
+			NexHomeUser customerUser = newUser("CUSTOMER");
+			customers[i] = accessToken(customerUser.getId());
+			long customerId = json(perform(post("/api/profiles/customers/create"), customers[i],
+					"{\"userId\": %d, \"firstName\": \"Cust\", \"lastName\": \"Omer\"}".formatted(customerUser.getId()))
+					.andExpect(status().isCreated())).get("customerProfileId").asLong();
+			long addressId = json(perform(post("/api/addresses/create"), customers[i], """
+					{"userId": %d, "contactName": "Cust", "mobileNumber": "9876543210", "addressType": "HOME",
+					 "label": "Home", "addressLine1": "Plot 7", "city": "Hyderabad", "state": "Telangana",
+					 "postalCode": "500081"}""".formatted(customerUser.getId()))
+					.andExpect(status().isCreated())).get("addressId").asLong();
+			NexHomeUser partnerUser = newUser("PARTNER");
+			partners[i] = accessToken(partnerUser.getId());
+			long partnerId = approvedPartner(staff, partnerUser, categoryId, serviceId);
+			JsonNode booking = json(perform(post("/api/bookings/create"), staff, """
+					{"customerProfileId": %d, "serviceId": %d, "addressId": %d, "bookingType": "SCHEDULED",
+					 "scheduledStartAt": "%s", "paymentMethod": "CASH"}""".formatted(customerId, serviceId, addressId,
+					monday.atTime(10, 0).atZone(IST).toInstant()))
+					.andExpect(status().isCreated()));
+			bookings[i] = booking.get("bookingId").asLong();
+			publicIds[i] = booking.get("publicId").asString();
+			perform(put("/api/bookings/status/update"), staff,
+					"{\"bookingId\": %d, \"bookingStatus\": \"CONFIRMED\"}".formatted(bookings[i]))
+					.andExpect(status().isOk());
+			perform(post("/api/bookings/assignments/offer"), staff,
+					"{\"bookingId\": %d, \"partnerProfileId\": %d, \"direct\": true}".formatted(bookings[i], partnerId))
+					.andExpect(status().isCreated());
+		}
+		// The first job is done, the second cancelled by its customer
+		for (String event : List.of("START", "STOP")) {
+			perform(post("/api/bookings/timer"), partners[0],
+					"{\"bookingId\": %d, \"eventType\": \"%s\"}".formatted(bookings[0], event))
+					.andExpect(status().isCreated());
+		}
+		perform(put("/api/bookings/cancel"), customers[1],
+				"{\"bookingId\": %d, \"reason\": \"Plans changed\"}".formatted(bookings[1]))
+				.andExpect(status().isOk());
+
+		// Each customer and partner hears only of their own booking, never of the other pair's
+		for (int i = 0; i < 2; i++) {
+			for (String account : List.of(customers[i], partners[i])) {
+				JsonNode notices = json(perform(get("/api/notifications/me?size=100"), account, null)
+						.andExpect(status().isOk())).get("content");
+				assertThat(notices.size()).isPositive();
+				for (JsonNode notice : notices) {
+					if ("BOOKING".equals(notice.get("referenceType").asString())) {
+						assertThat(notice.get("referenceId").asLong()).isEqualTo(bookings[i]);
+					}
+					String text = notice.get("title").asString() + " " + notice.get("message").asString();
+					assertThat(text).doesNotContain(publicIds[1 - i]);
+				}
+			}
+		}
+	}
+
 	private long approvedPartner(String staff, NexHomeUser partnerUser, long categoryId, long serviceId)
 			throws Exception {
 		long partnerId = json(perform(post("/api/partners/profiles/create"), staff, """

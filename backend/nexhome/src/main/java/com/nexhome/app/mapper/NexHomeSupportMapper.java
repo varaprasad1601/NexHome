@@ -52,7 +52,9 @@ public class NexHomeSupportMapper {
 	public NexHomeSupportAttachmentResponse toAttachmentDto(NexHomeSupportTicketAttachment attachment) {
 		return new NexHomeSupportAttachmentResponse(attachment.getId(),
 				attachment.getSupportMessage() == null ? null : attachment.getSupportMessage().getId(),
-				attachment.getStorageKey(), attachment.getFileType(), attachment.getCreatedBy(),
+				attachment.getFile() == null ? null : attachment.getFile().getId(),
+				attachment.getFile() == null ? null : attachment.getFile().getOriginalName(), attachment.getFileType(),
+				attachment.getFile() == null ? null : attachment.getFile().getFileSize(), attachment.getCreatedBy(),
 				attachment.getCreationDate());
 	}
 }

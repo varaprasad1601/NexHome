@@ -1,2 +1,5 @@
 # Design screenshots for the admin screens (reference only)
 /Admin Sreens/
+
+# Cloud storage keys (they belong in backend/nexhome/.env)
+/cloudflare.properties

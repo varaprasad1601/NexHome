@@ -5,6 +5,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import com.nexhome.app.service.NexHomeBookingService;
+import com.nexhome.app.service.NexHomeFileService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -18,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 public class NexHomeScheduledJobs {
 
 	private final NexHomeBookingService bookingService;
+	private final NexHomeFileService fileService;
 
 	/** Booking offers that ran out become EXPIRED (every minute by default; nexhome.slots.expire-interval-ms). */
 	@Scheduled(fixedDelayString = "${nexhome.slots.expire-interval-ms:60000}", initialDelay = 35000)
@@ -29,5 +31,11 @@ public class NexHomeScheduledJobs {
 	@Scheduled(fixedDelayString = "${nexhome.bookings.unassigned-alert-interval-ms:300000}", initialDelay = 45000)
 	public void alertUnassignedBookings() {
 		bookingService.alertUnassignedBookings();
+	}
+
+	/** Uploads never given to anything within a day are removed (every hour; nexhome.files.cleanup-interval-ms). */
+	@Scheduled(fixedDelayString = "${nexhome.files.cleanup-interval-ms:3600000}", initialDelay = 120000)
+	public void removeUnattachedUploads() {
+		fileService.removeUnattachedUploads();
 	}
 }

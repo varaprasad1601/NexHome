@@ -8,6 +8,7 @@ import {
   CalendarX,
   CircleCheckBig,
   Clock,
+  Eye,
   FileText,
   HeartHandshake,
   History,
@@ -44,6 +45,7 @@ import ActivityLog from '../../components/admin/profile/ActivityLog';
 import FilteredBookings from '../../components/admin/booking/FilteredBookings';
 import PartnerEarnings from '../../components/admin/payment/PartnerEarnings';
 import PartnerSchedule from '../../components/admin/partner/PartnerSchedule';
+import { openFile, savePhoto, uploadFile } from '../../api/files';
 import CompletionAvatar from '../../components/admin/profile/CompletionAvatar';
 import StatusMenu from '../../components/admin/profile/StatusMenu';
 import { InfoRow, InfoSection, PendingTab, StatTile } from '../../components/admin/profile/ProfileParts';
@@ -310,7 +312,7 @@ function ListHeader({ title, count, addLabel, onAdd }) {
 }
 
 /** A row of a list tab (services, documents, bank accounts): an icon tile, the main line, details and a badge. */
-function ListRow({ icon: Icon, title, details, badge, onEdit, onDelete }) {
+function ListRow({ icon: Icon, title, details, badge, onView, onEdit, onDelete }) {
   return (
     <div className="flex flex-wrap items-center gap-4 rounded-xl border border-[var(--line)] p-4">
       <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[#EDF6FD] text-[var(--blue)]">
@@ -321,6 +323,18 @@ function ListRow({ icon: Icon, title, details, badge, onEdit, onDelete }) {
         <div className="mt-0.5 text-sm text-[var(--muted)]">{details}</div>
       </div>
       {badge}
+      {onView && (
+        <button
+          type="button"
+          onClick={onView}
+          aria-label={`View the file of ${title}`}
+          title="View file"
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line)] px-2.5 text-xs font-bold text-[var(--blue)] hover:bg-[#EDF6FD]"
+        >
+          <Eye size={14} />
+          View
+        </button>
+      )}
       {onEdit && <EditButton onClick={onEdit} />}
       {onDelete && (
         <button
@@ -560,6 +574,7 @@ export default function PartnerProfilePage() {
     showToast(message);
     setReloadKey((key) => key + 1);
   };
+  const viewFile = (fileId) => openFile(authRequest, fileId).catch((err) => showToast(err.message, 'error'));
   const updateProfile = (body) =>
     authRequest('/api/partners/profiles/update', {
       method: 'PUT',
@@ -589,6 +604,10 @@ export default function PartnerProfilePage() {
           }));
       saved(item ? 'Service updated.' : 'Service added.');
     } else if (kind === 'document') {
+      // The scan or photo is uploaded first and given to the document by its id
+      if (formValues.file instanceof File) {
+        body.fileId = (await uploadFile(authRequest, formValues.file, 'PARTNER_DOCUMENT')).fileId;
+      }
       await (item
         ? authRequest('/api/partners/documents/update', {
             method: 'PUT',
@@ -645,6 +664,9 @@ export default function PartnerProfilePage() {
             name={name}
             initials={initials}
             canEdit={can('PARTNER_MANAGE', 'WRITE')}
+            onPhotoSave={(file) =>
+              savePhoto(authRequest, user.userId, file).then((updated) => setState((current) => ({ ...current, user: updated })))
+            }
           />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-3">
@@ -1029,10 +1051,12 @@ export default function PartnerProfilePage() {
                             key={document.partnerDocumentId}
                             icon={section.icon}
                             title={documentTitle(document)}
+                            onView={document.fileId ? () => viewFile(document.fileId) : undefined}
                             onEdit={canEdit ? open('document', document) : undefined}
                             details={[
                               document.documentNumber,
                               document.expiryDate && `Expires ${formatLocalDate(document.expiryDate)}`,
+                              document.fileId ? document.fileName : 'No file uploaded',
                               document.rejectionReason
                             ]
                               .filter(Boolean)

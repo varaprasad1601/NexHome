@@ -28,6 +28,7 @@ import com.nexhome.app.dto.NexHomeStaffResponse;
 import com.nexhome.app.dto.NexHomeStaffStatsResponse;
 import com.nexhome.app.dto.NexHomeUserStatsResponse;
 import com.nexhome.app.dto.NexHomeUserStatusUpdateRequest;
+import com.nexhome.app.dto.NexHomeUserPhotoUpdateRequest;
 import com.nexhome.app.dto.NexHomeUserUpdateRequest;
 import com.nexhome.app.exception.DuplicateResourceException;
 import com.nexhome.app.exception.InvalidRequestException;
@@ -45,6 +46,8 @@ import com.nexhome.app.model.NexHomeLookupCodes.AccountStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.PartnerOnboardingStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.Types;
 import com.nexhome.app.model.NexHomeRole;
+import com.nexhome.app.model.NexHomeFile;
+import com.nexhome.app.model.NexHomeLookupCodes.FilePurpose;
 import com.nexhome.app.model.NexHomeUser;
 import com.nexhome.app.model.NexHomeUserRole;
 import com.nexhome.app.model.NexHomeUserRoleId;
@@ -86,6 +89,7 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 	private final NexHomePartnerProfileRepository partnerProfileRepository;
 	private final NexHomePartnerTimeOffRepository timeOffRepository;
 	private final NexHomePartnerProfileMapper partnerProfileMapper;
+	private final NexHomeFiles files;
 
 	@Override
 	@Transactional
@@ -390,11 +394,30 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 			user.setEmail(email);
 		}
 		if (request.profilePhotoUrl() != null) {
-			user.setProfilePhotoUrl(trimToNull(request.profilePhotoUrl()));
+			String photoUrl = trimToNull(request.profilePhotoUrl());
+			// Another address (or none) leaves the stored photo unused
+			if (!java.util.Objects.equals(photoUrl, user.getProfilePhotoUrl())) {
+				files.releaseAttached(NexHomeFiles.USER, user.getId(), null, permissionService.currentUserId());
+			}
+			user.setProfilePhotoUrl(photoUrl);
 		}
 		user.setUpdatedBy(permissionService.currentUserId());
 
 		log.info("User updated with User ID {}", user.getId());
+		return toUserDto(user);
+	}
+
+	@Override
+	@Transactional
+	public NexHomeUserResponse updateUserPhoto(NexHomeUserPhotoUpdateRequest request) {
+		NexHomeUser user = findUser(request.userId());
+		Long actingUserId = permissionService.currentUserId();
+		NexHomeFile photo = request.fileId() == null ? null
+				: files.attach(request.fileId(), FilePurpose.PROFILE_PHOTO, NexHomeFiles.USER, user.getId(), actingUserId);
+		files.releaseAttached(NexHomeFiles.USER, user.getId(), photo == null ? null : photo.getId(), actingUserId);
+		user.setProfilePhotoUrl(photo == null ? null : NexHomeFiles.publicPath(photo));
+		user.setUpdatedBy(actingUserId);
+		log.info("Profile photo of User ID {} {}", user.getId(), photo == null ? "removed" : "set");
 		return toUserDto(user);
 	}
 

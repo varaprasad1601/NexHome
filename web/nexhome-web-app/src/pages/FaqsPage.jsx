@@ -1,12 +1,13 @@
-import { ALL_FAQS } from '../data/siteData';
 import AppLink from '../components/common/AppLink';
 import Icon from '../components/common/Icon';
 import PageHeader from '../components/common/PageHeader';
 import { useSiteState } from '../context/siteState';
+import { useSiteFaqs } from '../hooks/useSiteCatalog';
 
-/** All frequently asked questions. */
+/** Every published customer FAQ. */
 export default function FaqsPage() {
   const { openFaqIndex, setOpenFaqIndex } = useSiteState();
+  const { loading, faqs } = useSiteFaqs();
 
   return (
     <div className="bg-[#F8FAFC]">
@@ -21,9 +22,16 @@ export default function FaqsPage() {
       <div className="container max-w-6xl py-12">
 
         <div className="bg-white rounded-3xl p-6 sm:p-10 border border-gray-100 shadow-sm space-y-4 mb-10">
-          {ALL_FAQS.map((faq, i) => (
+          {loading &&
+            Array.from({ length: 5 }, (_, i) => (
+              <div key={i} className="h-16 rounded-2xl border border-gray-100 bg-gray-50 animate-pulse" />
+            ))}
+          {!loading && faqs.length === 0 && (
+            <p className="m-0 text-center text-sm text-gray-500">Answers to common questions will be listed here soon.</p>
+          )}
+          {faqs.map((faq, i) => (
             <div
-              key={i}
+              key={faq.faqId}
               className="border border-gray-100 rounded-2xl overflow-hidden transition-colors"
             >
               <button
@@ -31,7 +39,7 @@ export default function FaqsPage() {
                 className="w-full text-left p-5 flex items-center justify-between gap-4 font-bold text-[#0B315F] hover:bg-gray-50/70 transition"
                 onClick={() => setOpenFaqIndex(openFaqIndex === i ? null : i)}
               >
-                <span className="text-sm sm:text-base">{faq.q}</span>
+                <span className="text-sm sm:text-base">{faq.question}</span>
                 <span
                   className={`transform transition-transform text-[#0B438B] ${
                     openFaqIndex === i ? 'rotate-180' : ''
@@ -42,7 +50,7 @@ export default function FaqsPage() {
               </button>
               {openFaqIndex === i && (
                 <div className="px-5 pb-5 pt-1 text-xs sm:text-sm text-gray-600 leading-relaxed border-t border-gray-50 bg-[#FBFDFF]">
-                  {faq.a}
+                  {faq.answer}
                 </div>
               )}
             </div>

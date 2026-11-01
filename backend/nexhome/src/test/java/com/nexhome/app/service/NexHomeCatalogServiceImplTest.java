@@ -93,6 +93,7 @@ class NexHomeCatalogServiceImplTest {
 		variantRepository = mock(NexHomeServiceVariantRepository.class);
 		mediaRepository = mock(NexHomeServiceMediaRepository.class);
 		imageRepository = mock(NexHomeServiceImageRepository.class);
+		NexHomeFiles files = mock(NexHomeFiles.class);
 		requirementRepository = mock(NexHomeServiceRequirementRepository.class);
 		faqRepository = mock(NexHomeFaqRepository.class);
 		partnerProfileRepository = mock(NexHomePartnerProfileRepository.class);
@@ -123,7 +124,7 @@ class NexHomeCatalogServiceImplTest {
 				partnerServiceRepository, lookupService, permissionService, new NexHomeServiceCategoryMapper(),
 				new NexHomeServiceMapper(), new NexHomeServiceVariantMapper(), new NexHomeServiceMediaMapper(),
 				new NexHomeServiceRequirementMapper(), mock(NexHomeAdminProfileRepository.class),
-				mock(NexHomeUserRepository.class));
+				mock(NexHomeUserRepository.class), files);
 	}
 
 	// ----------------------------------------------------------------------------------------------------------------
@@ -1008,7 +1009,7 @@ class NexHomeCatalogServiceImplTest {
 							"Slug must be lower-case letters and digits separated by single hyphens");
 
 			assertThat(validator.validate(new NexHomeServiceCategoryUpdateRequest(CATEGORY_ID, null, null, null, null,
-					"", null, null))).isEmpty();
+					"", null, null, null))).isEmpty();
 		}
 	}
 
@@ -1109,11 +1110,11 @@ class NexHomeCatalogServiceImplTest {
 	}
 
 	private static NexHomeServiceCategoryCreateRequest categoryRequest(String name, String slug) {
-		return new NexHomeServiceCategoryCreateRequest(name, slug, null, null, null, null);
+		return new NexHomeServiceCategoryCreateRequest(name, slug, null, null, null, null, null);
 	}
 
 	private static NexHomeServiceCategoryUpdateRequest categoryUpdate(Long id, String name, String slug) {
-		return new NexHomeServiceCategoryUpdateRequest(id, null, name, slug, null, null, null, null);
+		return new NexHomeServiceCategoryUpdateRequest(id, null, name, slug, null, null, null, null, null);
 	}
 
 	private static NexHomeServiceCreateRequest serviceRequest(String pricingType, Integer minimumMinutes,

@@ -157,7 +157,8 @@ class NexHomePartnerOnboardingServiceImplTest {
 				partnerProfileMapper, partnerDocumentMapper, partnerBankAccountMapper,
 				mock(NexHomeServiceCategoryRepository.class), mock(NexHomeServiceRepository.class),
 				mock(NexHomePartnerServiceRepository.class), new NexHomePartnerServiceMapper(),
-				mock(NexHomeAuditUsers.class), mock(NexHomeNotifier.class), mock(NexHomeAuditRecorder.class));
+				mock(NexHomeAuditUsers.class), mock(NexHomeNotifier.class), mock(NexHomeAuditRecorder.class),
+				mock(NexHomeFiles.class));
 	}
 
 	// ------------------------------------------------------------------------------------------------------------
@@ -777,13 +778,12 @@ class NexHomePartnerOnboardingServiceImplTest {
 		when(permissionService.currentUserId()).thenReturn(OWNER_ID);
 
 		partnerService.updatePartnerDocument(new NexHomePartnerDocumentUpdateRequest(40L, null, null, null,
-				"partners/30/pan-v2.pdf", null, null, null, null));
+				null, null, null, null, null));
 
 		assertThat(document.getVerificationStatus()).isEqualTo("PENDING");
 		assertThat(document.getVerifiedBy()).isNull();
 		assertThat(document.getVerifiedAt()).isNull();
 		assertThat(document.getRejectionReason()).isNull();
-		assertThat(document.getFileStorageKey()).isEqualTo("partners/30/pan-v2.pdf");
 	}
 
 	@Test
@@ -801,11 +801,11 @@ class NexHomePartnerOnboardingServiceImplTest {
 				.hasMessage("Certificate name is required for a skill certificate.");
 		verify(partnerDocumentRepository, never()).save(any());
 
-		// No file is needed until storage exists
+		// A file is optional
 		var id = partnerService.addPartnerDocument(new NexHomePartnerDocumentCreateRequest(PROFILE_ID,
 				"GOVERNMENT_ID", "ABCDE1234F", null, null, " PAN ", null));
 		assertThat(id.idType()).isEqualTo("PAN");
-		assertThat(id.fileStorageKey()).isNull();
+		assertThat(id.fileId()).isNull();
 		assertThat(id.verificationStatus()).isEqualTo("PENDING");
 		var certificate = partnerService.addPartnerDocument(new NexHomePartnerDocumentCreateRequest(PROFILE_ID,
 				"CERTIFICATION", "ITI-2020-118", null, null, null, " ITI Electrician "));
@@ -819,7 +819,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 		when(permissionService.isSelfOrCan(OWNER_ID, "PARTNER_ONBOARDING_MANAGE", "WRITE")).thenReturn(false);
 
 		assertThatThrownBy(() -> partnerService.addPartnerDocument(new NexHomePartnerDocumentCreateRequest(
-				PROFILE_ID, "GOVERNMENT_ID", null, "k", null, "PAN", null)))
+				PROFILE_ID, "GOVERNMENT_ID", null, null, null, "PAN", null)))
 				.isInstanceOf(AccessDeniedException.class);
 		verify(partnerDocumentRepository, never()).save(any());
 	}
@@ -1072,7 +1072,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 	private NexHomePartnerDocument existingDocument(String verificationStatus, LocalDate expiryDate) {
 		NexHomePartnerDocument document = partnerDocumentMapper.toPartnerDocumentEntity(
 				new NexHomePartnerDocumentCreateRequest(PROFILE_ID, "GOVERNMENT_ID", "ABCDE1234F",
-						"partners/30/pan.pdf", expiryDate, "PAN", null),
+						null, expiryDate, "PAN", null),
 				completeProfile("DRAFT"), "GOVERNMENT_ID", OWNER_ID);
 		document.setId(40L);
 		document.setVerificationStatus(verificationStatus);

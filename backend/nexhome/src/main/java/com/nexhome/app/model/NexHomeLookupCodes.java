@@ -70,6 +70,7 @@ public final class NexHomeLookupCodes {
 		public static final String SUPPORT_PRIORITY = "SUPPORT_PRIORITY";
 		public static final String SUPPORT_TICKET_STATUS = "SUPPORT_TICKET_STATUS";
 		public static final String NOTIFICATION_TYPE = "NOTIFICATION_TYPE";
+		public static final String FILE_PURPOSE = "FILE_PURPOSE";
 		public static final String NOTIFICATION_CHANNEL = "NOTIFICATION_CHANNEL";
 		public static final String DELIVERY_STATUS = "DELIVERY_STATUS";
 
@@ -496,6 +497,19 @@ public final class NexHomeLookupCodes {
 		public static final String BOTH = "BOTH";
 
 		private Audience() {
+		}
+	}
+
+	/** Values of {@link Types#FILE_PURPOSE} (V47): what an uploaded file is for. */
+	public static final class FilePurpose {
+
+		public static final String PROFILE_PHOTO = "PROFILE_PHOTO";
+		public static final String CATEGORY_IMAGE = "CATEGORY_IMAGE";
+		public static final String SERVICE_IMAGE = "SERVICE_IMAGE";
+		public static final String PARTNER_DOCUMENT = "PARTNER_DOCUMENT";
+		public static final String SUPPORT_ATTACHMENT = "SUPPORT_ATTACHMENT";
+
+		private FilePurpose() {
 		}
 	}
 }

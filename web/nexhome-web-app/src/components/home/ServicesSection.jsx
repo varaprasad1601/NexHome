@@ -1,10 +1,21 @@
-import { SERVICES } from '../../data/siteData';
+import { useSiteCatalog } from '../../hooks/useSiteCatalog';
 import AppLink from '../common/AppLink';
-import ServiceCard from '../common/ServiceCard';
+import ServiceCard, { ServiceCardSkeleton } from '../common/ServiceCard';
 import Icon from '../common/Icon';
 
-/** Four featured services and the "see all services" card. */
+/** Services listed on each category card here; the card's page and the Services page list them all. */
+const SERVICES_PER_CARD = 5;
+/** Category cards before the "see all services" card. */
+const FEATURED = 4;
+
+/**
+ * The first four service categories from the catalogue, each with up to five of its services and "+N more…", and the
+ * "see all services" card with the counts.
+ */
 export default function ServicesSection() {
+  const { loading, categories, serviceCount } = useSiteCatalog();
+  const featured = categories.slice(0, FEATURED);
+  const moreCategories = categories.length - featured.length;
   return (
     <section className="py-16 bg-[#F8FAFC]" id="services">
       <div className="container max-w-6xl">
@@ -20,15 +31,20 @@ export default function ServicesSection() {
           </div>
 
           <p className="text-xs text-gray-500 max-w-md m-0">
-            {SERVICES.length} essential home services, all in one place. Professional. Reliable. Convenient.
+            {loading
+              ? 'Essential home services, all in one place.'
+              : `${serviceCount} home services in ${categories.length} ${categories.length === 1 ? 'category' : 'categories'}, all in one place.`}{' '}
+            Professional. Reliable. Convenient.
           </p>
         </div>
 
         {/* 4 Featured Services + 5th Stacked "See All Services" Card */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
-          {SERVICES.slice(0, 4).map((s) => (
-            <ServiceCard key={s.slug} service={s} />
-          ))}
+          {loading
+            ? Array.from({ length: FEATURED }, (_, index) => <ServiceCardSkeleton key={index} />)
+            : featured.map((category) => (
+                <ServiceCard key={category.slug} category={category} limit={SERVICES_PER_CARD} />
+              ))}
 
           {/* 5th Case: Full See All Services Card Visual */}
           <AppLink
@@ -50,14 +66,14 @@ export default function ServicesSection() {
               {/* Center Front Card */}
               <div className="relative z-10 w-32 h-20 rounded-2xl bg-white border-2 border-[#168F5B]/50 shadow-md p-2 flex flex-col items-center justify-center text-center group-hover:shadow-lg group-hover:scale-105 transition-all duration-300">
                 <span className="text-[10px] font-black text-[#0B438B] tracking-wider uppercase">
-                  +{SERVICES.length - 4} MORE
+                  {moreCategories > 0 ? `+${moreCategories} MORE` : 'ALL'}
                 </span>
                 <span className="text-xs font-black text-[#168F5B] leading-tight mt-0.5">
                   SERVICES
                 </span>
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <span className="w-2 h-2 rounded-full bg-[#168F5B] animate-pulse" />
-                  <span className="text-[9px] text-gray-500 font-bold">{SERVICES.length} Total</span>
+                  <span className="text-[9px] text-gray-500 font-bold">{serviceCount} Total</span>
                 </div>
               </div>
             </div>

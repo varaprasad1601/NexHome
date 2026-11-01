@@ -28,7 +28,6 @@ public class NexHomePartnerDocumentMapper {
 		document.setPartner(partner);
 		document.setDocumentType(documentType);
 		document.setDocumentNumberEncrypted(encryptor.encrypt(upperCase(request.documentNumber())));
-		document.setFileStorageKey(trimToNull(request.fileStorageKey()));
 		document.setExpiryDate(request.expiryDate());
 		document.setDocumentName(trimToNull(request.documentName()));
 		document.setVerificationStatus(VerificationStatus.PENDING);
@@ -45,9 +44,6 @@ public class NexHomePartnerDocumentMapper {
 			NexHomePartnerDocumentUpdateRequest request, Long actingUserId) {
 		if (request.documentNumber() != null) {
 			document.setDocumentNumberEncrypted(encryptor.encrypt(upperCase(request.documentNumber())));
-		}
-		if (request.fileStorageKey() != null) {
-			document.setFileStorageKey(trimToNull(request.fileStorageKey()));
 		}
 		if (request.expiryDate() != null) {
 			document.setExpiryDate(request.expiryDate());
@@ -68,7 +64,10 @@ public class NexHomePartnerDocumentMapper {
 				document.getPartner().getId(),
 				document.getDocumentType(),
 				NexHomeFieldEncryptor.mask(encryptor.decrypt(document.getDocumentNumberEncrypted())),
-				document.getFileStorageKey(),
+				document.getFile() == null ? null : document.getFile().getId(),
+				document.getFile() == null ? null : document.getFile().getOriginalName(),
+				document.getFile() == null ? null : document.getFile().getContentType(),
+				document.getFile() == null ? null : document.getFile().getFileSize(),
 				document.getVerificationStatus(),
 				document.getVerifiedBy(),
 				document.getVerifiedAt(),

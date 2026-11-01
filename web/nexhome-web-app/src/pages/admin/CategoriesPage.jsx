@@ -15,7 +15,8 @@ import {
   searchInputClass
 } from '../../components/admin/system/systemStyles';
 import { useAdminAuth } from '../../context/adminAuth';
-import { categoryBody, categoryFields, categoryForm } from '../../data/catalogForms';
+import { fileUrl } from '../../api/files';
+import { categoryFields, categoryForm, categoryRequestBody } from '../../data/catalogForms';
 import useAdminList from '../../hooks/useAdminList';
 import useClientPaging from '../../hooks/useClientPaging';
 import { formatNumber } from '../../utils/format';
@@ -50,7 +51,7 @@ function CategoryAvatar({ category, tint }) {
     .toUpperCase();
   return category.iconUrl && !failed ? (
     <img
-      src={category.iconUrl}
+      src={fileUrl(category.iconUrl)}
       alt=""
       onError={() => setFailed(true)}
       className="h-8 w-8 flex-shrink-0 rounded-full border border-[var(--line)] bg-white object-cover"
@@ -104,7 +105,7 @@ export default function CategoriesPage() {
   const { pageRows, pageData, setPage } = useClientPaging(rows);
 
   const save = async (values) => {
-    const body = categoryBody(values);
+    const body = await categoryRequestBody(authRequest, values);
     const saved =
       editing === 'new'
         ? await authRequest('/api/catalog/categories/create', { method: 'POST', body })

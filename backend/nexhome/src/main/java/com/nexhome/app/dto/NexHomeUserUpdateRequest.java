@@ -26,7 +26,8 @@ public record NexHomeUserUpdateRequest(
 		@Size(max = 255, message = "Email must be at most 255 characters")
 		String email,
 
-		@Pattern(regexp = "^$|^https?://\\S+$", message = "Profile photo URL must be an http or https URL")
+		@Pattern(regexp = "^$|^https?://\\S+$|^/api/files/public/[0-9a-f-]{36}$",
+				message = "Profile photo URL must be an http or https URL")
 		String profilePhotoUrl,
 
 		@Null(message = "Account status cannot be updated here")

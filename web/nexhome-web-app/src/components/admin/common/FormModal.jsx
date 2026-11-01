@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import FormField from '../system/FormField';
 import DatePicker from './DatePicker';
+import FileUploadField from './FileUploadField';
 import ImageUploadField from './ImageUploadField';
 import { fieldClass } from '../system/systemStyles';
 import Modal from './Modal';
@@ -14,7 +15,8 @@ import Toggle from './Toggle';
  * partner details). Each field:
  *
  * - `key`, `label`, `type`: text, textarea (`rows`, `counter`), number, money (₹ prefix), code (upper-cased, A-Z 0-9
- *   _), image (a File, with `currentUrl`; see ImageUploadField), select (`options` [{ value, label }]), multiselect
+ *   _), image (a File, with `currentUrl`; see ImageUploadField), file (a File for `purpose`, with `currentName`;
+ *   FileUploadField), select (`options` [{ value, label }]), multiselect
  *   (an array of option values, chips below the box), date
  *   (yyyy-MM-dd with the console's DatePicker, `min` / `max`) or toggle (`onText` / `offText` beside it)
  * - `required`, `hint`, `placeholder`, `maxLength`, `wide` (both columns), `disabled` (e.g. fixed after create)
@@ -200,6 +202,18 @@ export default function FormModal({
               {values[field.key] ? (field.onText ?? 'Yes') : (field.offText ?? 'No')}
             </span>
           </div>
+        );
+      case 'file':
+        return (
+          <FileUploadField
+            id={id}
+            value={values[field.key] ?? null}
+            onChange={(file) => set(field.key, file)}
+            purpose={field.purpose}
+            currentName={field.currentName}
+            error={error}
+            disabled={field.disabled}
+          />
         );
       case 'image':
         return (

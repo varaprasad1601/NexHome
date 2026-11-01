@@ -1,10 +1,11 @@
-import { SERVICES } from '../data/siteData';
+import { useSiteCatalog } from '../hooks/useSiteCatalog';
 import Icon from '../components/common/Icon';
 import PageHeader from '../components/common/PageHeader';
 import { useSiteState } from '../context/siteState';
 
 /** Join as a Professional page with the registration options. */
 export default function JoinPage() {
+  const { categories } = useSiteCatalog();
   const {
     workerForm,
     setWorkerForm,
@@ -157,7 +158,7 @@ export default function JoinPage() {
                           required
                         >
                           <option value="">Select your skill</option>
-                          {SERVICES.map((s) => (
+                          {categories.map((s) => (
                             <option key={s.slug} value={s.name}>
                               {s.name}
                             </option>

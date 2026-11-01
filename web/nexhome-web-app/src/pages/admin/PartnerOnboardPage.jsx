@@ -6,6 +6,7 @@ import {
   CircleCheckBig,
   CircleX,
   ExternalLink,
+  Eye,
   FileText,
   History,
   IdCard,
@@ -19,6 +20,7 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { openFile } from '../../api/files';
 import AdminPageHeader from '../../components/admin/AdminPageHeader';
 import FormModal from '../../components/admin/common/FormModal';
 import Toast from '../../components/admin/common/Toast';
@@ -617,7 +619,8 @@ export default function PartnerOnboardPage() {
                       {[
                         label('DOCUMENT_TYPE', document.documentType),
                         document.documentNumber,
-                        document.expiryDate && `Expires ${document.expiryDate}`
+                        document.expiryDate && `Expires ${document.expiryDate}`,
+                        !document.fileId && 'No file uploaded'
                       ]
                         .filter(Boolean)
                         .join(' · ')}
@@ -626,6 +629,18 @@ export default function PartnerOnboardPage() {
                       <div className="text-sm text-[#C53030]">{document.rejectionReason}</div>
                     )}
                   </div>
+                  {/* Opening a partner's document is recorded in the audit log */}
+                  {document.fileId && (
+                    <button
+                      type="button"
+                      onClick={() => openFile(authRequest, document.fileId).catch((err) => showToast(err.message, 'error'))}
+                      title={document.fileName}
+                      className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line)] px-2.5 text-xs font-bold text-[var(--blue)] hover:bg-[#EDF6FD]"
+                    >
+                      <Eye size={14} />
+                      View file
+                    </button>
+                  )}
                   {canVerify && (
                     <RecordActions
                       status={document.verificationStatus}

@@ -38,6 +38,7 @@ import ActivityLog from '../../components/admin/profile/ActivityLog';
 import FilteredBookings from '../../components/admin/booking/FilteredBookings';
 import CustomerPayments from '../../components/admin/payment/CustomerPayments';
 import CreateBookingModal from '../../components/admin/booking/CreateBookingModal';
+import { savePhoto } from '../../api/files';
 import CompletionAvatar from '../../components/admin/profile/CompletionAvatar';
 import StatusMenu from '../../components/admin/profile/StatusMenu';
 import {
@@ -469,6 +470,9 @@ export default function CustomerProfilePage() {
             name={name}
             initials={initials}
             canEdit={canEdit}
+            onPhotoSave={(file) =>
+              savePhoto(authRequest, user.userId, file).then((updated) => setState((current) => ({ ...current, user: updated })))
+            }
           />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-3">

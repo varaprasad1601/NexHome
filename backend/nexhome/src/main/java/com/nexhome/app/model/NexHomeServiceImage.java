@@ -19,8 +19,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * An image of a service, stored in the database until file storage exists: JPEG, PNG or WebP, at most 5 MB, at most
- * 5 per service. Lists read it without the bytes ({@code NexHomeServiceImageRepository.Info}).
+ * An image of a service: JPEG, PNG or WebP, at most 5 MB, at most 5 per service. Its bytes are in file storage
+ * ({@code file}, V47); images added before were kept in {@code image_data}, which the application moves to storage at
+ * startup ({@code NexHomeServiceImageMover}). Lists read it without the bytes ({@code NexHomeServiceImageRepository.Info}).
  */
 @Entity
 @Table(name = "nexhome_service_images")
@@ -49,8 +50,13 @@ public class NexHomeServiceImage {
 	@Column(name = "file_size", nullable = false)
 	private int fileSize;
 
-	@Column(name = "image_data", nullable = false, updatable = false)
+	/** Only until the image is moved to storage (then null). */
+	@Column(name = "image_data")
 	private byte[] imageData;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "file_id", referencedColumnName = "id")
+	private NexHomeFile file;
 
 	@Column(name = "display_order", nullable = false)
 	private int displayOrder = 0;

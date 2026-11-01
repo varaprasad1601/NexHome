@@ -58,6 +58,8 @@ public class NexHomeSecurityConfig {
 			"/api/catalog/services/*",
 			"/api/catalog/services/slug/*",
 			"/api/catalog/services/images/*",
+			"/api/files/public/*",
+			"/api/files/content/*",
 			"/api/faqs",
 			"/api/policies/current",
 			"/api/policies/current/*" };

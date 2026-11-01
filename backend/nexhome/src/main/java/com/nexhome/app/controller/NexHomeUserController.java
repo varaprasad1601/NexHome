@@ -25,6 +25,7 @@ import com.nexhome.app.dto.NexHomeUserRoleAssignRequest;
 import com.nexhome.app.dto.NexHomeUserRoleUpdateRequest;
 import com.nexhome.app.dto.NexHomeUserStatsResponse;
 import com.nexhome.app.dto.NexHomeUserStatusUpdateRequest;
+import com.nexhome.app.dto.NexHomeUserPhotoUpdateRequest;
 import com.nexhome.app.dto.NexHomeUserUpdateRequest;
 import com.nexhome.app.model.NexHomeRole;
 import com.nexhome.app.service.NexHomePermissionService;
@@ -182,6 +183,13 @@ public class NexHomeUserController {
 	@PreAuthorize("@permissions.isSelfOrCanManageAccount(#request.userId(), 'WRITE')")
 	public NexHomeUserResponse updateUser(@Valid @RequestBody NexHomeUserUpdateRequest request) {
 		return userService.updateUser(request);
+	}
+
+	/** The profile photo from an upload (purpose PROFILE_PHOTO); no fileId removes it. Self or the account's function. */
+	@PutMapping("/photo/update")
+	@PreAuthorize("@permissions.isSelfOrCanManageAccount(#request.userId(), 'WRITE')")
+	public NexHomeUserResponse updateUserPhoto(@Valid @RequestBody NexHomeUserPhotoUpdateRequest request) {
+		return userService.updateUserPhoto(request);
 	}
 
 	/**

@@ -12,6 +12,7 @@ import com.nexhome.app.dto.NexHomeUserRoleAssignRequest;
 import com.nexhome.app.dto.NexHomeUserRoleUpdateRequest;
 import com.nexhome.app.dto.NexHomeUserStatsResponse;
 import com.nexhome.app.dto.NexHomeUserStatusUpdateRequest;
+import com.nexhome.app.dto.NexHomeUserPhotoUpdateRequest;
 import com.nexhome.app.dto.NexHomeUserUpdateRequest;
 
 public interface NexHomeUserService {
@@ -76,6 +77,9 @@ public interface NexHomeUserService {
 	NexHomeUserStatsResponse getUserStats();
 
 	NexHomeUserResponse updateUser(NexHomeUserUpdateRequest request);
+
+	/** Sets (or with no file removes) the profile photo from an upload; the old stored photo is deleted. */
+	NexHomeUserResponse updateUserPhoto(NexHomeUserPhotoUpdateRequest request);
 
 	/**
 	 * Admin: sets the account status to an active ACCOUNT_STATUS code. Users are deactivated, never deleted; leaving

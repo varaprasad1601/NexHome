@@ -19,6 +19,7 @@ import { useParams } from 'react-router-dom';
 
 import AdminPageHeader from '../../components/admin/AdminPageHeader';
 import ActivityLog from '../../components/admin/profile/ActivityLog';
+import { savePhoto } from '../../api/files';
 import CompletionAvatar from '../../components/admin/profile/CompletionAvatar';
 import StatusMenu from '../../components/admin/profile/StatusMenu';
 import { InfoRow, InfoSection, SectionActions } from '../../components/admin/profile/ProfileParts';
@@ -337,6 +338,9 @@ export default function AdminProfilePage({ self = false, list = 'admins' }) {
             name={name}
             initials={initials}
             canEdit={canEdit}
+            onPhotoSave={(file) =>
+              savePhoto(authRequest, user.userId, file).then((updated) => setState((current) => ({ ...current, user: updated })))
+            }
           />
 
           <div className="min-w-0 flex-1">

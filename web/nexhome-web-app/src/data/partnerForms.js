@@ -430,8 +430,9 @@ export function serviceDialog(item, catalogue, offered) {
 
 /**
  * Add / edit a document: a Government ID (its type from GOVERNMENT_ID_TYPE: Aadhaar Card, PAN Card, ...) or a Skill
- * Certificate (its name), with the number and an optional expiry date. The kind is fixed once added; the stored
- * number is only shown masked, so on edit an empty number keeps it.
+ * Certificate (its name), with the number, an optional expiry date and the scan or photo (`file`: a picked File the
+ * page uploads on save and sends as fileId). The kind is fixed once added; the stored number is only shown masked, so
+ * on edit an empty number keeps it, and no new file keeps the current one.
  */
 export function documentDialog(item, values, kind = item?.documentType) {
   const noun = DOCUMENT_KINDS.find((option) => option.value === kind)?.label ?? 'Document';
@@ -469,9 +470,19 @@ export function documentDialog(item, values, kind = item?.documentType) {
         hint: item ? 'Leave empty to keep the current number.' : undefined,
         validate: check(DOCUMENT_NUMBER, '4 to 30 letters, digits, spaces, / or -')
       },
-      { key: 'expiryDate', label: 'Expiry Date', type: 'date', min: today() }
+      { key: 'expiryDate', label: 'Expiry Date', type: 'date', min: today() },
+      {
+        key: 'file',
+        label: item?.fileName ? 'Document File' : 'Upload Document',
+        type: 'file',
+        purpose: 'PARTNER_DOCUMENT',
+        currentName: item?.fileName ?? null,
+        wide: true,
+        hint: 'A scan or photo of the document: PDF, JPG or PNG up to 10 MB.'
+      }
     ],
     initial: {
+      file: null,
       documentType: item?.documentType ?? kind ?? 'GOVERNMENT_ID',
       idType: text(item?.idType),
       documentName: text(item?.documentName),

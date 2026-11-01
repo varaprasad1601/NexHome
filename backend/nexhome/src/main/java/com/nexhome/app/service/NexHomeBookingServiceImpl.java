@@ -868,7 +868,6 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 	// Helpers
 	// ------------------------------------------------------------------------------------------------------------
 
-	/** Sets the status and writes its history row in the same transaction. */
 	/** A booking notification to one user (none for a null user, the actor or the system account). */
 	private void tell(Long userId, String title, String message, NexHomeBooking booking, Long actingUserId) {
 		notifier.notify(userId, new NexHomeNotifier.Message(NotificationType.BOOKING, title, message,

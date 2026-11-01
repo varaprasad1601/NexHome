@@ -1,10 +1,11 @@
-import { SERVICES } from '../../data/siteData';
+import { useSiteCatalog } from '../../hooks/useSiteCatalog';
 import AppLink from '../common/AppLink';
 import Icon from '../common/Icon';
 import { buildWhatsAppUrl } from '../../utils/whatsapp';
 
 /** Hero banner with the headline, calls to action and trust cards. */
 export default function HeroSection() {
+  const { loading, categories } = useSiteCatalog();
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-[#edf6fd] via-[#f5fafe] to-[#eaf4fc] border-b border-[#dcebf8]">
       {/* Soft Light Blue Ambient Glow Orbs */}
@@ -89,7 +90,7 @@ export default function HeroSection() {
                 <Icon name="gear" size={17} />
               </div>
               <div>
-                <div className="text-sm font-black text-[#0B438B] leading-none">{SERVICES.length}</div>
+                <div className="text-sm font-black text-[#0B438B] leading-none">{loading ? '–' : categories.length}</div>
                 <div className="text-[10px] text-gray-600 font-medium mt-0.5">Service Categories</div>
               </div>
             </div>

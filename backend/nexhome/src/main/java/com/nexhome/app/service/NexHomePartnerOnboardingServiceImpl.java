@@ -62,6 +62,8 @@ import com.nexhome.app.model.NexHomeLookupCodes.Types;
 import com.nexhome.app.model.NexHomeLookupCodes.VerificationStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.WeekendAvailability;
 import com.nexhome.app.model.NexHomePartnerBankAccount;
+import com.nexhome.app.model.NexHomeFile;
+import com.nexhome.app.model.NexHomeLookupCodes.FilePurpose;
 import com.nexhome.app.model.NexHomePartnerDocument;
 import com.nexhome.app.model.NexHomePartnerProfile;
 import com.nexhome.app.model.NexHomePartnerService;
@@ -131,6 +133,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	private final NexHomeAuditUsers auditUsers;
 	private final NexHomeNotifier notifier;
 	private final NexHomeAuditRecorder auditRecorder;
+	private final NexHomeFiles files;
 
 	// ------------------------------------------------------------------------------------------------------------
 	// Partner profiles
@@ -503,6 +506,9 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 				actingUserId);
 		document.setIdType(idType);
 		document = partnerDocumentRepository.save(document);
+		if (request.fileId() != null) {
+			attachFile(document, request.fileId(), actingUserId);
+		}
 
 		needsVerifying(partner, "added a document", actingUserId);
 		log.info("Document {} ({}) added to partner profile {}", document.getId(), documentType,
@@ -522,6 +528,12 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		}
 		String idType = request.idType() == null || request.idType().isBlank() ? null
 				: lookupService.validateCode(Types.GOVERNMENT_ID_TYPE, request.idType(), "ID type");
+		// A new file replaces the old one (checked before the document changes)
+		if (request.fileId() != null) {
+			NexHomeFile previous = document.getFile();
+			attachFile(document, request.fileId(), permissionService.currentUserId());
+			files.release(previous, permissionService.currentUserId());
+		}
 
 		partnerDocumentMapper.updatePartnerDocumentEntity(document, request, permissionService.currentUserId());
 		if (idType != null) {
@@ -579,8 +591,17 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		if (VerificationStatus.VERIFIED.equals(document.getVerificationStatus())) {
 			throw new InvalidRequestException("A verified document cannot be deleted.");
 		}
+		files.release(document.getFile(), permissionService.currentUserId());
 		partnerDocumentRepository.delete(document);
 		log.info("Document {} deleted", partnerDocumentId);
+	}
+
+	/** Gives the acting user's upload (purpose PARTNER_DOCUMENT) to the document. */
+	private void attachFile(NexHomePartnerDocument document, Long fileId, Long actingUserId) {
+		NexHomeFile file = files.attach(fileId, FilePurpose.PARTNER_DOCUMENT, NexHomeFiles.PARTNER_DOCUMENT,
+				document.getId(), actingUserId);
+		document.setFile(file);
+		document.setFileStorageKey(file.getStorageKey());
 	}
 
 	@Override

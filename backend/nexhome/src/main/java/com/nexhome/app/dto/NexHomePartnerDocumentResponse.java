@@ -5,13 +5,19 @@ import java.time.LocalDate;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 
-/** A partner document. The document number is masked ({@code XXXXXX1234}). */
+/**
+ * A partner document. The document number is masked ({@code XXXXXX1234}). The file (when one was uploaded) opens
+ * through {@code GET /api/files/download-url/{fileId}}.
+ */
 public record NexHomePartnerDocumentResponse(
 		Long partnerDocumentId,
 		Long partnerProfileId,
 		String documentType,
 		String documentNumber,
-		String fileStorageKey,
+		Long fileId,
+		String fileName,
+		String fileContentType,
+		Long fileSize,
 		String verificationStatus,
 		Long verifiedBy,
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",

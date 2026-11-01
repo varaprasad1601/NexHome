@@ -1,3 +1,5 @@
+import { fileUrl, uploadFile } from '../api/files';
+
 /**
  * Catalogue helpers: price, duration and commission formatting, and the category form (common/FormModal fields) with
  * its request body (no slug: the backend makes it from the name on create and keeps it on update). The service form
@@ -38,8 +40,8 @@ export function categoryFields(editing, category = null) {
       key: 'image',
       label: 'Category Image',
       type: 'image',
-      currentUrl: category?.iconUrl ?? null,
-      hint: 'Uploading comes once cloud storage is connected; the current image stays until then.'
+      currentUrl: fileUrl(category?.iconUrl) ?? null,
+      hint: 'A PNG, JPG or WebP image of up to 2 MB; a new image replaces the current one.'
     },
     { key: 'description', label: 'Description', type: 'textarea', maxLength: 300, rows: 3, counter: true },
     {
@@ -55,12 +57,22 @@ export function categoryFields(editing, category = null) {
 export function categoryForm(category) {
   return {
     name: text(category?.name),
-    // The picked image File; not sent until cloud storage exists (the category keeps its iconUrl)
+    // A newly picked image File, uploaded on save (categoryRequestBody); null keeps the current image
     image: null,
     displayOrder: text(category?.displayOrder ?? 0),
     description: text(category?.description),
     isActive: category?.isActive ?? true
   };
+}
+
+/** The request body with a newly picked image uploaded first (purpose CATEGORY_IMAGE) and sent as iconFileId. */
+export async function categoryRequestBody(authRequest, values) {
+  const body = categoryBody(values);
+  if (values.image instanceof File) {
+    const uploaded = await uploadFile(authRequest, values.image, 'CATEGORY_IMAGE');
+    body.iconFileId = uploaded.fileId;
+  }
+  return body;
 }
 
 export function categoryBody(values) {

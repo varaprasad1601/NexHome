@@ -9,8 +9,8 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
- * Replaces the number, file or expiry date of a document that is not VERIFIED; the document goes back to PENDING
- * verification. A null (or missing) field keeps its current value and an empty document number clears it. The
+ * Replaces the number, file ({@code fileId}: a new upload) or expiry date of a document that is not VERIFIED; the
+ * document goes back to PENDING verification. A null (or missing) field keeps its current value and an empty document number clears it. The
  * partner and document type are fixed: they are only declared here so that a request containing them is rejected
  * with a clear message (add a new document instead).
  */
@@ -28,9 +28,8 @@ public record NexHomePartnerDocumentUpdateRequest(
 				message = "Document number must be 4 to 30 letters, digits, spaces, slashes or hyphens")
 		String documentNumber,
 
-		@Pattern(regexp = "(?s).*\\S.*", message = "File storage key cannot be blank")
-		@Size(max = 1024, message = "File storage key must be at most 1024 characters")
-		String fileStorageKey,
+		// A new upload (purpose PARTNER_DOCUMENT) replacing the file; null keeps it
+		Long fileId,
 
 		@FutureOrPresent(message = "Expiry date cannot be in the past")
 		LocalDate expiryDate,

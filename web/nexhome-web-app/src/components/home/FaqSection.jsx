@@ -1,11 +1,15 @@
-import { HOMEPAGE_FAQS } from '../../data/siteData';
+import { useSiteFaqs } from '../../hooks/useSiteCatalog';
 import AppLink from '../common/AppLink';
 import Icon from '../common/Icon';
 import { useSiteState } from '../../context/siteState';
 
-/** The homepage FAQs. */
+/** FAQs on the home page; the FAQs page has them all. */
+const HOME_FAQS = 6;
+
+/** The first six published customer FAQs, with See All FAQs. */
 export default function FaqSection() {
   const { openFaqIndex, setOpenFaqIndex } = useSiteState();
+  const { loading, faqs } = useSiteFaqs();
 
   return (
     <section className="py-16 bg-white" id="faqs">
@@ -38,11 +42,15 @@ export default function FaqSection() {
 
           {/* Right Column: Accordion List */}
           <div className="lg:col-span-7 space-y-3">
-            {HOMEPAGE_FAQS.map((faq, idx) => {
+            {loading &&
+              Array.from({ length: 4 }, (_, idx) => (
+                <div key={idx} className="h-14 rounded-2xl border border-gray-200 bg-gray-50 animate-pulse" />
+              ))}
+            {faqs.slice(0, HOME_FAQS).map((faq, idx) => {
               const isOpen = openFaqIndex === idx;
               return (
                 <div
-                  key={idx}
+                  key={faq.faqId}
                   className="border border-gray-200 rounded-2xl overflow-hidden transition-all bg-white"
                 >
                   <button
@@ -54,7 +62,7 @@ export default function FaqSection() {
                       <span className="text-gray-400">
                         <Icon name="info" size={17} />
                       </span>
-                      {faq.q}
+                      {faq.question}
                     </span>
                     <span className="text-gray-500 flex-shrink-0">
                       <Icon name={isOpen ? 'minus' : 'plus'} size={16} />
@@ -63,7 +71,7 @@ export default function FaqSection() {
 
                   {isOpen && (
                     <div className="px-5 pb-5 pt-1 text-xs text-gray-600 leading-relaxed border-t border-gray-100">
-                      {faq.a}
+                      {faq.answer}
                     </div>
                   )}
                 </div>
@@ -76,7 +84,7 @@ export default function FaqSection() {
                 className="border border-[#168F5B] text-[#168F5B] hover:bg-green-50 text-xs font-bold px-5 py-2.5 rounded-full inline-flex items-center gap-1.5 transition shadow-sm hover:translate-y-[-1px]"
                 to="/faqs"
               >
-                See All FAQs <Icon name="arrow-right" size={13} />
+                See All FAQs{faqs.length > HOME_FAQS ? ` (${faqs.length})` : ''} <Icon name="arrow-right" size={13} />
               </AppLink>
             </div>
           </div>

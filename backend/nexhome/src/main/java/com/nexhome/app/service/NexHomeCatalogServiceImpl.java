@@ -65,6 +65,8 @@ import com.nexhome.app.model.NexHomeLookupCodes.RequirementFor;
 import com.nexhome.app.model.NexHomeLookupCodes.Types;
 import com.nexhome.app.model.NexHomeService;
 import com.nexhome.app.model.NexHomeServiceCategory;
+import com.nexhome.app.model.NexHomeFile;
+import com.nexhome.app.model.NexHomeLookupCodes.FilePurpose;
 import com.nexhome.app.model.NexHomeServiceImage;
 import com.nexhome.app.model.NexHomeServiceMedia;
 import com.nexhome.app.model.NexHomeServiceRequirement;
@@ -122,6 +124,7 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 	private final NexHomeServiceRequirementMapper requirementMapper;
 	private final NexHomeAdminProfileRepository adminProfileRepository;
 	private final NexHomeUserRepository userRepository;
+	private final NexHomeFiles files;
 
 	// ------------------------------------------------------------------------------------------------------------
 	// Categories
@@ -154,6 +157,11 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 
 		NexHomeServiceCategory category = categoryRepository.save(
 				categoryMapper.toServiceCategoryEntity(request, slug, permissionService.currentUserId()));
+		if (request.iconFileId() != null) {
+			NexHomeFile icon = files.attach(request.iconFileId(), FilePurpose.CATEGORY_IMAGE,
+					NexHomeFiles.SERVICE_CATEGORY, category.getId(), permissionService.currentUserId());
+			category.setIconUrl(NexHomeFiles.publicPath(icon));
+		}
 
 		log.info("Service category {} ({}) created", category.getPublicId(), slug);
 		return categoryMapper.toServiceCategoryDto(category);
@@ -168,10 +176,23 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 		if (slug != null) {
 			requireFreeCategorySlug(slug, category.getId());
 		}
+		Long actingUserId = permissionService.currentUserId();
+		NexHomeFile icon = request.iconFileId() == null ? null
+				: files.attach(request.iconFileId(), FilePurpose.CATEGORY_IMAGE, NexHomeFiles.SERVICE_CATEGORY,
+						category.getId(), actingUserId);
+		String previousIcon = category.getIconUrl();
 
-		categoryMapper.updateServiceCategoryEntity(category, request, permissionService.currentUserId());
+		categoryMapper.updateServiceCategoryEntity(category, request, actingUserId);
 		if (slug != null) {
 			category.setSlug(slug);
+		}
+		// A new image replaces the stored one; another address (or none) leaves the stored one unused
+		if (icon != null) {
+			category.setIconUrl(NexHomeFiles.publicPath(icon));
+			files.releaseAttached(NexHomeFiles.SERVICE_CATEGORY, category.getId(), icon.getId(), actingUserId);
+		}
+		else if (!java.util.Objects.equals(previousIcon, category.getIconUrl())) {
+			files.releaseAttached(NexHomeFiles.SERVICE_CATEGORY, category.getId(), null, actingUserId);
 		}
 
 		log.info("Service category {} updated", category.getPublicId());
@@ -187,6 +208,7 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 			throw new DuplicateResourceException(
 					"Category is used by services, FAQs or partner profiles; deactivate it instead.");
 		}
+		files.releaseAttached(NexHomeFiles.SERVICE_CATEGORY, category.getId(), null, permissionService.currentUserId());
 		categoryRepository.delete(category);
 		log.info("Service category {} deleted", category.getPublicId());
 	}
@@ -451,16 +473,18 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 		}
 
 		Long actingUserId = permissionService.currentUserId();
+		NexHomeFile file = files.store(FilePurpose.SERVICE_IMAGE, fileName, data, actingUserId);
 		NexHomeServiceImage image = new NexHomeServiceImage();
 		image.setService(service);
 		image.setFileName(imageFileName(fileName));
 		image.setContentType(contentType);
 		image.setFileSize(data.length);
-		image.setImageData(data);
+		image.setFile(file);
 		image.setDisplayOrder((int) count);
 		image.setCreatedBy(actingUserId);
 		image.setUpdatedBy(actingUserId);
 		image = imageRepository.save(image);
+		files.link(file, NexHomeFiles.SERVICE_IMAGE, image.getId(), actingUserId);
 
 		log.info("Image {} added to service {}", image.getId(), service.getPublicId());
 		return new NexHomeServiceImageResponse(image.getId(), serviceId, image.getFileName(), contentType,
@@ -472,7 +496,9 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 	public NexHomeServiceImageFile getImage(Long serviceImageId) {
 		NexHomeServiceImage image = imageRepository.findById(serviceImageId)
 				.orElseThrow(() -> new ResourceNotFoundException("Service image does not exist."));
-		return new NexHomeServiceImageFile(image.getContentType(), image.getImageData());
+		// Images not moved to storage yet still have their bytes in the row
+		return new NexHomeServiceImageFile(image.getContentType(),
+				image.getFile() == null ? image.getImageData() : files.read(image.getFile()));
 	}
 
 	@Override
@@ -480,7 +506,9 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 	public void deleteImage(Long serviceImageId) {
 		NexHomeServiceImage image = imageRepository.findById(serviceImageId)
 				.orElseThrow(() -> new ResourceNotFoundException("Service image does not exist."));
+		NexHomeFile file = image.getFile();
 		imageRepository.delete(image);
+		files.release(file, permissionService.currentUserId());
 		log.info("Image {} deleted", serviceImageId);
 	}
 
@@ -838,38 +866,13 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 
 	/** The image type from the file's first bytes (never the client's content type), or null for anything else. */
 	static String imageContentType(byte[] data) {
-		if (startsWith(data, 0, 0xFF, 0xD8, 0xFF)) {
-			return "image/jpeg";
-		}
-		if (startsWith(data, 0, 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A)) {
-			return "image/png";
-		}
-		if (startsWith(data, 0, 'R', 'I', 'F', 'F') && startsWith(data, 8, 'W', 'E', 'B', 'P')) {
-			return "image/webp";
-		}
-		return null;
-	}
-
-	private static boolean startsWith(byte[] data, int offset, int... expected) {
-		if (data.length < offset + expected.length) {
-			return false;
-		}
-		for (int index = 0; index < expected.length; index++) {
-			if ((data[offset + index] & 0xFF) != expected[index]) {
-				return false;
-			}
-		}
-		return true;
+		String type = NexHomeFiles.detectType(data);
+		return type != null && type.startsWith("image/") ? type : null;
 	}
 
 	/** The uploaded file's name without any path, at most 255 characters; "image" when there is none. */
 	static String imageFileName(String fileName) {
-		String name = fileName == null ? "" : fileName.replace('\\', '/');
-		name = name.substring(name.lastIndexOf('/') + 1).replaceAll("\\p{Cntrl}", "").trim();
-		if (name.isEmpty()) {
-			return "image";
-		}
-		return name.length() <= 255 ? name : name.substring(name.length() - 255);
+		return NexHomeFiles.fileName(fileName, "image");
 	}
 
 	/**

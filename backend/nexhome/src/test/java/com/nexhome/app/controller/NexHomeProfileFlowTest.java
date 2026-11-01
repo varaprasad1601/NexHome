@@ -508,14 +508,14 @@ class NexHomeProfileFlowTest {
 
 		long documentId = json(perform(post("/api/partners/documents/add"), partnerToken, """
 				{"partnerProfileId": %d, "documentType": "GOVERNMENT_ID", "idType": "PAN", "documentNumber": "abcde1234f",
-				 "fileStorageKey": "partners/%d/pan.pdf", "expiryDate": "%s"}"""
-				.formatted(profileId, profileId, LocalDate.now().plusYears(5)))
+				 "expiryDate": "%s"}"""
+				.formatted(profileId, LocalDate.now().plusYears(5)))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.documentNumber").value("XXXXXX234F"))
 				.andExpect(jsonPath("$.verificationStatus").value("PENDING")))
 				.get("partnerDocumentId").asLong();
 		perform(post("/api/partners/documents/add"), partnerToken, """
-				{"partnerProfileId": %d, "documentType": "CERTIFICATION", "fileStorageKey": "k",
+				{"partnerProfileId": %d, "documentType": "CERTIFICATION", "documentName": "ITI",
 				 "expiryDate": "2020-01-01"}""".formatted(profileId))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("Expiry date cannot be in the past"));
@@ -535,7 +535,7 @@ class NexHomeProfileFlowTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.verifiedBy").value(adminUser.getId()));
 		perform(put("/api/partners/documents/update"), partnerToken,
-				"{\"partnerDocumentId\": %d, \"fileStorageKey\": \"new\"}".formatted(documentId))
+				"{\"partnerDocumentId\": %d, \"documentNumber\": \"ABCDE9999F\"}".formatted(documentId))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("A verified document cannot be changed; add a new document instead."));
 		perform(delete("/api/partners/documents/delete/" + documentId), partnerToken, null)

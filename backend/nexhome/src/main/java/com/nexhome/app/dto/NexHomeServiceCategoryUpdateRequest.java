@@ -28,10 +28,15 @@ public record NexHomeServiceCategoryUpdateRequest(
 		@Size(max = 300, message = "Description must be at most 300 characters")
 		String description,
 
-		@Pattern(regexp = "^$|^https?://\\S+$", message = "Icon URL must be an http or https URL")
+		// An http(s) address, or an uploaded image's own address (/api/files/public/...)
+		@Pattern(regexp = "^$|^https?://\\S+$|^/api/files/public/[0-9a-f-]{36}$",
+				message = "Icon URL must be an http or https URL")
 		String iconUrl,
 
 		Integer displayOrder,
 
-		Boolean isActive) {
+		Boolean isActive,
+
+		// An uploaded image (purpose CATEGORY_IMAGE: JPEG, PNG or WebP up to 2 MB) that becomes the icon
+		Long iconFileId) {
 }

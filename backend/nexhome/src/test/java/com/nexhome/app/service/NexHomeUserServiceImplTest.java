@@ -118,7 +118,8 @@ class NexHomeUserServiceImplTest {
 				refreshTokenRepository, lookupService, permissionService, mock(NexHomeAuditRecorder.class),
 				new NexHomeUserMapper(),
 				adminProfileRepository, new NexHomeAdminProfileMapper(), customerProfileRepository, new NexHomeCustomerProfileMapper(),
-				partnerProfileRepository, mock(NexHomePartnerTimeOffRepository.class), partnerProfileMapper);
+				partnerProfileRepository, mock(NexHomePartnerTimeOffRepository.class), partnerProfileMapper,
+				mock(NexHomeFiles.class));
 	}
 
 	@Test

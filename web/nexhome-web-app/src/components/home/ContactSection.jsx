@@ -1,10 +1,12 @@
-import { SERVICES, PHONE_NUMBER, DISPLAY_PHONE, EMAIL_ADDRESS, LOCATION_TEXT, BUSINESS_HOURS } from '../../data/siteData';
+import { PHONE_NUMBER, DISPLAY_PHONE, EMAIL_ADDRESS, LOCATION_TEXT, BUSINESS_HOURS } from '../../data/siteData';
+import { useSiteCatalog } from '../../hooks/useSiteCatalog';
 import Icon from '../common/Icon';
 import MapCard from '../common/MapCard';
 import { useSiteState } from '../../context/siteState';
 
 /** Connect with NexHome: contact details, enquiry form and map. */
 export default function ContactSection() {
+  const { categories } = useSiteCatalog();
   const { customerForm, setCustomerForm, customerError, customerSuccess, handleCustomerSubmit } = useSiteState();
 
   return (
@@ -149,7 +151,7 @@ export default function ContactSection() {
                   required
                 >
                   <option value="">Service Category</option>
-                  {SERVICES.map((s) => (
+                  {categories.map((s) => (
                     <option key={s.slug} value={s.name}>
                       {s.name}
                     </option>

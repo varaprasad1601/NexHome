@@ -1,5 +1,6 @@
 import { Check, UserRound, X } from 'lucide-react';
 
+import { fileUrl } from '../../../api/files';
 import PhotoUpload from './PhotoUpload';
 
 /** The progress ring around the photo: drawn on a 116-unit square, 6 units wide, starting at the top. */
@@ -19,11 +20,11 @@ function completionTone(percent) {
  * A profile summary's photo (or initials) with the profile completion on it (staff and customer profiles): the border
  * is a ring filled to the share of `checks` done, and a "67% complete" tag sits across its bottom. Hovering or
  * focusing the tag lists every detail as added or missing; with `canEdit`, hovering the photo offers a new one
- * (PhotoUpload).
+ * (PhotoUpload, saved with `onPhotoSave(file)`).
  *
  * @param checks [{ label, done }] in the order the list shows them
  */
-export default function CompletionAvatar({ checks, photoUrl, name, initials, canEdit }) {
+export default function CompletionAvatar({ checks, photoUrl, name, initials, canEdit, onPhotoSave }) {
   const done = checks.filter((check) => check.done).length;
   const percent = Math.round((done / checks.length) * 100);
   const tone = completionTone(percent);
@@ -57,7 +58,7 @@ export default function CompletionAvatar({ checks, photoUrl, name, initials, can
       </svg>
       {photoUrl ? (
         <img
-          src={photoUrl}
+          src={fileUrl(photoUrl)}
           alt={name || 'Profile photo'}
           className="absolute inset-[0.625rem] h-[6rem] w-[6rem] rounded-full object-cover"
         />
@@ -67,7 +68,7 @@ export default function CompletionAvatar({ checks, photoUrl, name, initials, can
         </span>
       )}
 
-      {canEdit && <PhotoUpload hasPhoto={Boolean(photoUrl)} name={name} inset="0.625rem" />}
+      {canEdit && <PhotoUpload hasPhoto={Boolean(photoUrl)} name={name} inset="0.625rem" onSave={onPhotoSave} />}
 
       {/* The tag across the bottom of the ring, with the details on hover or focus */}
       <div className="group absolute -bottom-1.5 left-1/2 z-10 -translate-x-1/2">

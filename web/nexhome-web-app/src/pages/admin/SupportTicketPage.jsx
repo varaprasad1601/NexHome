@@ -1,7 +1,8 @@
-import { CalendarDays, LifeBuoy, Lock, Paperclip, Phone, Send, UserRound } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { CalendarDays, FileText, LifeBuoy, Lock, Paperclip, Phone, Send, UserRound, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
+import { FILE_RULES, fileProblem, formatFileSize, openFile, uploadFile } from '../../api/files';
 import AdminPageHeader from '../../components/admin/AdminPageHeader';
 import Select from '../../components/admin/common/Select';
 import Toast from '../../components/admin/common/Toast';
@@ -23,8 +24,33 @@ function Field({ label, children }) {
   );
 }
 
-/** One message: the requester's on the left, staff replies on the right, internal notes amber with a lock. */
-function Message({ message }) {
+/** Files per reply (as the backend allows). */
+const MAX_FILES = 5;
+
+/** An attached file as a small chip that opens it (a new tab with a short-lived link); old ones without a stored file are named only. */
+function AttachmentChip({ attachment, onOpen }) {
+  const name = attachment.fileName ?? 'Attachment';
+  return attachment.fileId ? (
+    <button
+      type="button"
+      onClick={() => onOpen(attachment.fileId)}
+      title={`Open ${name}`}
+      className="flex max-w-full items-center gap-1.5 rounded-lg border border-[var(--line)] bg-white px-2.5 py-1 text-xs font-bold text-[var(--blue)] hover:bg-[#EDF6FD]"
+    >
+      <FileText size={13} className="flex-shrink-0" />
+      <span className="truncate">{name}</span>
+      {attachment.fileSize != null && <span className="font-normal text-[var(--muted)]">{formatFileSize(attachment.fileSize)}</span>}
+    </button>
+  ) : (
+    <span className="flex items-center gap-1.5 rounded-lg border border-[var(--line)] px-2.5 py-1 text-xs text-[var(--muted)]">
+      <FileText size={13} />
+      {attachment.fileType} (not stored)
+    </span>
+  );
+}
+
+/** One message: the requester's on the left, staff replies on the right, internal notes amber with a lock; its files below. */
+function Message({ message, attachments = [], onOpen }) {
   const right = message.fromStaff;
   const tone = message.isInternalNote
     ? 'border-[#F3D98B] bg-[#FFF9E6]'
@@ -48,6 +74,13 @@ function Message({ message }) {
           </span>
         </div>
         <p className="mb-0 whitespace-pre-wrap text-sm text-[var(--ink)]">{message.message}</p>
+        {attachments.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {attachments.map((attachment) => (
+              <AttachmentChip key={attachment.attachmentId} attachment={attachment} onOpen={onOpen} />
+            ))}
+          </div>
+        )}
       </div>
     </li>
   );
@@ -71,12 +104,15 @@ export default function SupportTicketPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [assignees, setAssignees] = useState([]);
   const [reply, setReply] = useState('');
+  // Files picked for the reply: uploaded and attached to it when it is sent
+  const [files, setFiles] = useState([]);
+  const fileInputRef = useRef(null);
   const [internal, setInternal] = useState(false);
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(() => (location.state?.toast ? { ...location.state.toast, id: 'opened' } : null));
   const closeToast = useCallback(() => setToast(null), []);
-  const showToast = (message, tone = 'success') => setToast({ message, tone, id: Date.now() });
+  const showToast = useCallback((message, tone = 'success') => setToast({ message, tone, id: Date.now() }), []);
 
   useEffect(() => {
     if (location.state?.toast) navigate(location.pathname, { replace: true, state: null });
@@ -144,19 +180,42 @@ export default function SupportTicketPage() {
       setSaving(false);
     }
   };
+  const pickFiles = (e) => {
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    const problem = picked.map((file) => fileProblem(file, 'SUPPORT_ATTACHMENT')).find(Boolean);
+    if (problem) {
+      showToast(problem, 'error');
+      return;
+    }
+    const next = [...files, ...picked];
+    if (next.length > MAX_FILES) showToast(`At most ${MAX_FILES} files can be attached to one reply.`, 'error');
+    setFiles(next.slice(0, MAX_FILES));
+  };
+  const openAttachment = (fileId) => openFile(authRequest, fileId).catch((err) => showToast(err.message, 'error'));
   const send = async () => {
     if (!reply.trim()) return;
     setSending(true);
     try {
-      await authRequest('/api/support/tickets/messages/add', {
+      const message = await authRequest('/api/support/tickets/messages/add', {
         method: 'POST',
         body: { supportTicketId: ticket.supportTicketId, message: reply.trim(), isInternalNote: internal }
       });
+      // Each file is uploaded, then attached to the new message
+      for (const file of files) {
+        const uploaded = await uploadFile(authRequest, file, 'SUPPORT_ATTACHMENT');
+        await authRequest('/api/support/tickets/attachments/add', {
+          method: 'POST',
+          body: { supportTicketId: ticket.supportTicketId, messageId: message.messageId, fileId: uploaded.fileId }
+        });
+      }
       setReply('');
+      setFiles([]);
       showToast(internal ? 'Internal note added.' : 'Reply sent to the requester.');
       setReloadKey((key) => key + 1);
     } catch (err) {
       showToast(err.message, 'error');
+      setReloadKey((key) => key + 1);
     } finally {
       setSending(false);
     }
@@ -213,7 +272,12 @@ export default function SupportTicketPage() {
             ) : (
               <ul className="m-0 list-none space-y-3 p-0">
                 {detail.messages.map((message) => (
-                  <Message key={message.messageId} message={message} />
+                  <Message
+                    key={message.messageId}
+                    message={message}
+                    attachments={detail.attachments.filter((attachment) => attachment.messageId === message.messageId)}
+                    onOpen={openAttachment}
+                  />
                 ))}
               </ul>
             )}
@@ -235,10 +299,52 @@ export default function SupportTicketPage() {
                       maxLength={5000}
                       placeholder={internal ? 'A note for staff only; the requester will not see it.' : 'Write a reply to the requester...'}
                     />
+                    {files.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {files.map((file, index) => (
+                          <span
+                            key={`${file.name}-${index}`}
+                            className="flex max-w-[16rem] items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--light)] px-2.5 py-1 text-xs"
+                          >
+                            <FileText size={13} className="flex-shrink-0 text-[var(--blue)]" />
+                            <span className="truncate font-bold text-[var(--ink)]" title={file.name}>
+                              {file.name}
+                            </span>
+                            <span className="text-[var(--muted)]">{formatFileSize(file.size)}</span>
+                            <button
+                              type="button"
+                              onClick={() => setFiles((current) => current.filter((_, at) => at !== index))}
+                              aria-label={`Remove ${file.name}`}
+                              className="rounded p-0.5 text-[var(--muted)] hover:text-[var(--ink)]"
+                            >
+                              <X size={12} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                       <span className="flex items-center gap-3 text-sm">
                         <Toggle checked={internal} onChange={setInternal} label="Internal note" />
                         <span className="font-bold text-[var(--ink)]">Internal note</span>
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={files.length >= MAX_FILES}
+                          title={`PDF, JPG, PNG or WebP up to ${FILE_RULES.SUPPORT_ATTACHMENT.maxMb} MB; at most ${MAX_FILES}`}
+                          className="ml-2 flex items-center gap-1.5 rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-xs font-bold text-[var(--ink)] hover:bg-[var(--light)] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Paperclip size={13} />
+                          Attach files
+                        </button>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          accept={FILE_RULES.SUPPORT_ATTACHMENT.accept}
+                          className="hidden"
+                          onChange={pickFiles}
+                        />
                       </span>
                       <button
                         type="button"
@@ -360,10 +466,21 @@ export default function SupportTicketPage() {
                   <li key={attachment.attachmentId} className="flex items-start gap-2 text-sm">
                     <Paperclip size={14} className="mt-0.5 flex-shrink-0 text-[var(--muted)]" />
                     <span className="min-w-0">
-                      <span className="block truncate font-bold text-[var(--ink)]" title={attachment.storageKey}>
-                        {attachment.storageKey.split('/').pop()}
+                      {attachment.fileId ? (
+                        <button
+                          type="button"
+                          onClick={() => openAttachment(attachment.fileId)}
+                          title={`Open ${attachment.fileName}`}
+                          className="block max-w-full truncate text-left font-bold text-[var(--blue)] hover:text-[var(--navy)]"
+                        >
+                          {attachment.fileName}
+                        </button>
+                      ) : (
+                        <span className="block font-bold text-[var(--muted)]">Not stored</span>
+                      )}
+                      <span className="text-xs text-[var(--muted)]">
+                        {[attachment.fileType, formatFileSize(attachment.fileSize)].filter(Boolean).join(' · ')}
                       </span>
-                      <span className="text-xs text-[var(--muted)]">{attachment.fileType}</span>
                     </span>
                   </li>
                 ))}

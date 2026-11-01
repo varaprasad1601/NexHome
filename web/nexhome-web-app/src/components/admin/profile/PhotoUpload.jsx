@@ -16,15 +16,17 @@ function formatSize(bytes) {
  * readers and the dialog title). Clicking picks a JPEG, PNG or
  * WebP image of up to 2 MB and previews it round, as it would show.
  *
- * Saving is not possible yet: the backend has no file storage (a photo is only a profilePhotoUrl), so the preview's
- * Save stays disabled with a note. Hook `onSave(file)` up once storage exists.
+ * Save photo calls `onSave(file)` (a promise: upload, then set it as the account's photo, `savePhoto` in api/files);
+ * the dialog closes when it resolves and shows its error otherwise.
  *
  * @param inset the overlay's inset within the parent, to sit exactly on the photo (e.g. inside a progress ring)
  */
-export default function PhotoUpload({ hasPhoto, name, inset = '0' }) {
+export default function PhotoUpload({ hasPhoto, name, inset = '0', onSave }) {
   const inputRef = useRef(null);
   const [picked, setPicked] = useState(null); // { file, url }
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const close = useCallback(() => {
     setPicked((current) => {
@@ -32,7 +34,21 @@ export default function PhotoUpload({ hasPhoto, name, inset = '0' }) {
       return null;
     });
     setError('');
+    setSaveError('');
   }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setSaveError('');
+    try {
+      await onSave(picked.file);
+      close();
+    } catch (err) {
+      setSaveError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // The preview's object URL is released when the page goes away too
   useEffect(() => () => picked && URL.revokeObjectURL(picked.url), [picked]);
@@ -87,10 +103,12 @@ export default function PhotoUpload({ hasPhoto, name, inset = '0' }) {
                 {picked.file.name}
               </div>
               <div className="text-xs text-[var(--muted)]">{formatSize(picked.file.size)} · shown round, as on the profile</div>
-              <div className="mt-5 flex w-full items-start gap-2.5 rounded-xl border border-[#C7E3FC] bg-[#EDF6FD] px-4 py-3 text-left text-[0.8125rem] text-[var(--navy)]">
-                <Info size={16} className="mt-0.5 flex-shrink-0 text-[var(--blue)]" />
-                Saving photos comes once file storage is set up. The preview shows how it will look.
-              </div>
+              {saveError && (
+                <div role="alert" className="mt-5 flex w-full items-start gap-2.5 rounded-xl border border-[#F5C2C2] bg-[#FDECEC] px-4 py-3 text-left text-[0.8125rem] font-bold text-[#C53030]">
+                  <Info size={16} className="mt-0.5 flex-shrink-0" />
+                  {saveError}
+                </div>
+              )}
             </div>
           )}
           <div className="mt-6 flex justify-end gap-3">
@@ -101,15 +119,17 @@ export default function PhotoUpload({ hasPhoto, name, inset = '0' }) {
             >
               {error ? 'Choose another' : 'Cancel'}
             </button>
-            <button
-              type="button"
-              disabled
-              title="Available once file storage is set up"
-              className="flex items-center gap-2 rounded-xl bg-[var(--blue)] px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <ImageUp size={16} />
-              Save photo
-            </button>
+            {!error && (
+              <button
+                type="button"
+                disabled={!onSave || saving}
+                onClick={save}
+                className="flex items-center gap-2 rounded-xl bg-[var(--blue)] px-5 py-2.5 text-sm font-bold text-white hover:bg-[var(--navy)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ImageUp size={16} />
+                {saving ? 'Saving…' : 'Save photo'}
+              </button>
+            )}
           </div>
         </Modal>
       )}

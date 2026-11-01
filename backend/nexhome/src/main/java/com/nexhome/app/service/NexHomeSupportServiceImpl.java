@@ -35,6 +35,8 @@ import com.nexhome.app.model.NexHomeLookupCodes.NotificationType;
 import com.nexhome.app.model.NexHomeLookupCodes.SupportPriority;
 import com.nexhome.app.model.NexHomeLookupCodes.SupportTicketStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.Types;
+import com.nexhome.app.model.NexHomeFile;
+import com.nexhome.app.model.NexHomeLookupCodes.FilePurpose;
 import com.nexhome.app.model.NexHomePayment;
 import com.nexhome.app.model.NexHomeRole;
 import com.nexhome.app.model.NexHomeSupportTicket;
@@ -62,6 +64,8 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 	private static final Set<String> PRESSING = Set.of(SupportPriority.HIGH, SupportPriority.URGENT);
 	/** Statuses in which a ticket is done with. */
 	private static final Set<String> FINISHED = Set.of(SupportTicketStatus.RESOLVED, SupportTicketStatus.CLOSED);
+	/** Files per message (or on the ticket itself). */
+	private static final int MAX_ATTACHMENTS = 5;
 	/** A staff member's own ticket from the console (requester role). */
 	private static final String STAFF = "STAFF";
 	private static final Set<String> STAFF_ROLES = Set.of(NexHomeRole.SUPER_USER, NexHomeRole.ADMIN,
@@ -80,6 +84,7 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 	private final NexHomeSupportMapper supportMapper;
 	private final NexHomeNotifier notifier;
 	private final NexHomeAuditRecorder auditRecorder;
+	private final NexHomeFiles files;
 
 	@Override
 	@Transactional
@@ -303,14 +308,23 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 					.filter(found -> found.getTicket().getId().equals(ticket.getId()))
 					.orElseThrow(() -> new InvalidRequestException("The message is not on this ticket."));
 		}
+		long attached = message == null ? attachmentRepository.countByTicketIdAndSupportMessageIsNull(ticket.getId())
+				: attachmentRepository.countByTicketIdAndSupportMessageId(ticket.getId(), message.getId());
+		if (attached >= MAX_ATTACHMENTS) {
+			throw new InvalidRequestException("At most " + MAX_ATTACHMENTS + " files can be attached to one message.");
+		}
+		NexHomeFile file = files.usable(request.fileId(), FilePurpose.SUPPORT_ATTACHMENT, actingUserId);
+
 		NexHomeSupportTicketAttachment attachment = new NexHomeSupportTicketAttachment();
 		attachment.setTicket(ticket);
 		attachment.setSupportMessage(message);
-		attachment.setStorageKey(request.storageKey().trim());
-		attachment.setFileType(request.fileType().trim());
+		attachment.setStorageKey(file.getStorageKey());
+		attachment.setFileType(file.getContentType());
+		attachment.setFile(file);
 		attachment.setCreatedBy(actingUserId);
 		attachment.setUpdatedBy(actingUserId);
 		attachmentRepository.save(attachment);
+		files.link(file, NexHomeFiles.SUPPORT_ATTACHMENT, attachment.getId(), actingUserId);
 		return supportMapper.toAttachmentDto(attachment);
 	}
 
@@ -336,6 +350,9 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 						.map(message -> supportMapper.toMessageDto(message, requesterId, people, requester))
 						.toList(),
 				attachmentRepository.findByTicketIdOrderByIdAsc(supportTicketId).stream()
+						// The requester never sees the files of internal notes
+						.filter(attachment -> staff || attachment.getSupportMessage() == null
+								|| !attachment.getSupportMessage().isInternalNote())
 						.map(supportMapper::toAttachmentDto).toList());
 	}
 

@@ -1,9 +1,10 @@
-import { SERVICES } from '../../data/siteData';
+import { useSiteCatalog } from '../../hooks/useSiteCatalog';
 import Icon from '../common/Icon';
 import { useSiteState } from '../../context/siteState';
 
 /** Join as a service professional, with the compact registration card. */
 export default function JoinSection() {
+  const { categories } = useSiteCatalog();
   const {
     workerForm,
     setWorkerForm,
@@ -150,7 +151,7 @@ export default function JoinSection() {
                       required
                     >
                       <option value="">Service Category</option>
-                      {SERVICES.map((s) => (
+                      {categories.map((s) => (
                         <option key={s.slug} value={s.name}>
                           {s.name}
                         </option>

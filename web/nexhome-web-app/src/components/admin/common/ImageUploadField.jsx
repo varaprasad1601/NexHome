@@ -8,8 +8,7 @@ const MAX_BYTES = 2 * 1024 * 1024;
  * An image upload field: a dashed box with the picked image's preview (or the current image while none is picked),
  * Choose image / Change and Remove. It takes PNG, JPG or WebP up to 2 MB and hands the File to `onChange`.
  *
- * Nothing is uploaded yet: there is no cloud storage, so forms keep the File out of their requests (the record keeps
- * its current image). Connect it to the upload endpoint once storage exists.
+ * The form uploads the File when it saves (e.g. a category image: categoryRequestBody in data/catalogForms.js).
  */
 export default function ImageUploadField({ id, value, onChange, currentUrl, error, disabled = false }) {
   const inputRef = useRef(null);

@@ -1,4 +1,5 @@
-import { SERVICES, FORMATTED_PHONE, EMAIL_ADDRESS, LOCATION_TEXT, BUSINESS_HOURS } from '../data/siteData';
+import { FORMATTED_PHONE, EMAIL_ADDRESS, LOCATION_TEXT, BUSINESS_HOURS } from '../data/siteData';
+import { useSiteCatalog } from '../hooks/useSiteCatalog';
 import Icon from '../components/common/Icon';
 import MapCard from '../components/common/MapCard';
 import PageHeader from '../components/common/PageHeader';
@@ -6,6 +7,7 @@ import { useSiteState } from '../context/siteState';
 
 /** Contact page: contact details, map and the service enquiry form. */
 export default function ContactPage() {
+  const { categories } = useSiteCatalog();
   const { customerForm, setCustomerForm, customerError, customerSuccess, handleCustomerSubmit } = useSiteState();
 
   return (
@@ -128,7 +130,7 @@ export default function ContactPage() {
                       required
                     >
                       <option value="">Choose a service</option>
-                      {SERVICES.map((s) => (
+                      {categories.map((s) => (
                         <option key={s.slug} value={s.name}>
                           {s.name}
                         </option>

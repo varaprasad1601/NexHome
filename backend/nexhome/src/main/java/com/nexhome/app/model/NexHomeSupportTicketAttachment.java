@@ -48,6 +48,11 @@ public class NexHomeSupportTicketAttachment {
 	@Column(name = "file_type", nullable = false, length = 100, updatable = false)
 	private String fileType;
 
+	/** The uploaded file (V47); null for attachments recorded by key before file storage existed. */
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "file_id", referencedColumnName = "id", updatable = false)
+	private NexHomeFile file;
+
 	@CreationTimestamp
 	@Column(name = "creation_date", nullable = false, updatable = false)
 	private Instant creationDate;

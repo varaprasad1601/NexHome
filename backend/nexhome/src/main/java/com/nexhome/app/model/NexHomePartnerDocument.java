@@ -56,9 +56,14 @@ public class NexHomePartnerDocument {
 	@Column(name = "document_name", length = 150)
 	private String documentName;
 
-	/** Null until file storage exists. */
+	/** The stored file's key (V47: kept with {@code file}); null for documents added without a file. */
 	@Column(name = "file_storage_key", columnDefinition = "text")
 	private String fileStorageKey;
+
+	/** The uploaded scan or photo (V47); replaced by a new upload. */
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "file_id", referencedColumnName = "id")
+	private NexHomeFile file;
 
 	/** VERIFICATION_STATUS lookup code. */
 	@Column(name = "verification_status", nullable = false, length = 60)

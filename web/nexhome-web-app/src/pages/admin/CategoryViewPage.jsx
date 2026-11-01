@@ -10,7 +10,8 @@ import { StatTile } from '../../components/admin/profile/ProfileParts';
 import { profileTabClass } from '../../components/admin/profile/profileStyles';
 import { primaryButtonClass } from '../../components/admin/system/systemStyles';
 import { useAdminAuth } from '../../context/adminAuth';
-import { categoryBody, categoryFields, categoryForm, formatCommission, formatPrice } from '../../data/catalogForms';
+import { fileUrl } from '../../api/files';
+import { categoryFields, categoryForm, categoryRequestBody, formatCommission, formatPrice } from '../../data/catalogForms';
 import { onboardingBadgeClass } from '../../data/partnerOptions';
 import { accountStatusLabel, statusBadgeClass } from '../../data/staffOptions';
 import useLookupLabels from '../../hooks/useLookupLabels';
@@ -135,7 +136,7 @@ export default function CategoryViewPage() {
   const save = async (values) => {
     const saved = await authRequest('/api/catalog/categories/update', {
       method: 'PUT',
-      body: { serviceCategoryId: category.serviceCategoryId, ...categoryBody(values) }
+      body: { serviceCategoryId: category.serviceCategoryId, ...(await categoryRequestBody(authRequest, values)) }
     });
     showToast(`${saved.name} was updated.`);
     setEditing(false);
@@ -174,7 +175,7 @@ export default function CategoryViewPage() {
         <div className="flex flex-wrap items-start gap-6 px-6 pb-6 pt-7 sm:px-8">
           <span className="relative flex h-40 w-60 flex-shrink-0 overflow-hidden rounded-2xl border border-[var(--line)]">
             {category.iconUrl ? (
-              <img src={category.iconUrl} alt="" className="h-full w-full object-cover" />
+              <img src={fileUrl(category.iconUrl)} alt="" className="h-full w-full object-cover" />
             ) : (
               <ImagePlaceholder />
             )}
