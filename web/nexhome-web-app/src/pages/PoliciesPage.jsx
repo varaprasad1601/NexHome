@@ -1,10 +1,11 @@
-import { FORMATTED_PHONE, EMAIL_ADDRESS, LOCATION_TEXT, BUSINESS_HOURS } from '../data/siteData';
+import { useSiteSettings } from '../hooks/useSiteSettings';
 import AppLink from '../components/common/AppLink';
 import Icon from '../components/common/Icon';
 import PageHeader from '../components/common/PageHeader';
 
 /** Policies & Terms page (policies are still being finalized). */
 export default function PoliciesPage() {
+  const site = useSiteSettings();
   return (
     <div className="bg-[#F8FAFC]">
       <PageHeader
@@ -42,19 +43,19 @@ export default function PoliciesPage() {
             <div className="text-xs text-gray-600 space-y-3">
               <div>
                 <span className="font-bold text-gray-800 block mb-0.5">Phone:</span>
-                <span>{FORMATTED_PHONE}</span>
+                <span>{site.phone}</span>
               </div>
               <div>
                 <span className="font-bold text-gray-800 block mb-0.5">Email:</span>
-                <span className="break-all">{EMAIL_ADDRESS}</span>
+                <span className="break-all">{site.email}</span>
               </div>
               <div>
                 <span className="font-bold text-gray-800 block mb-0.5">Area:</span>
-                <span>{LOCATION_TEXT}</span>
+                <span>{site.area}</span>
               </div>
               <div>
                 <span className="font-bold text-gray-800 block mb-0.5">Hours:</span>
-                <span>{BUSINESS_HOURS} (IST)</span>
+                <span>{site.hours} (IST)</span>
               </div>
             </div>
           </aside>

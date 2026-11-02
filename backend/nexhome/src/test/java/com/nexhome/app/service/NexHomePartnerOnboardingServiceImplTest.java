@@ -51,6 +51,7 @@ import com.nexhome.app.mapper.NexHomePartnerBankAccountMapper;
 import com.nexhome.app.mapper.NexHomePartnerDocumentMapper;
 import com.nexhome.app.mapper.NexHomePartnerProfileMapper;
 import com.nexhome.app.mapper.NexHomePartnerServiceMapper;
+import com.nexhome.app.model.NexHomeFile;
 import com.nexhome.app.model.NexHomePartnerBankAccount;
 import com.nexhome.app.model.NexHomePartnerDocument;
 import com.nexhome.app.model.NexHomePartnerProfile;
@@ -96,6 +97,7 @@ class NexHomePartnerOnboardingServiceImplTest {
 	private NexHomePartnerProfileMapper partnerProfileMapper;
 	private NexHomePartnerDocumentMapper partnerDocumentMapper;
 	private NexHomePartnerBankAccountMapper partnerBankAccountMapper;
+	private NexHomeFiles files;
 	private NexHomePartnerOnboardingServiceImpl partnerService;
 	private NexHomeUser owner;
 
@@ -152,13 +154,21 @@ class NexHomePartnerOnboardingServiceImplTest {
 		when(permissionService.isSelfOrCan(any(), any(), any())).thenReturn(true);
 		when(permissionService.can(any(), any())).thenReturn(true);
 
+		// Any upload id the tests attach is a stored file
+		files = mock(NexHomeFiles.class);
+		when(files.attach(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+			NexHomeFile file = new NexHomeFile();
+			file.setId(invocation.getArgument(0));
+			file.setStorageKey("partner-documents/2026/11/scan.pdf");
+			return file;
+		});
 		partnerService = new NexHomePartnerOnboardingServiceImpl(partnerProfileRepository, partnerDocumentRepository,
 				partnerBankAccountRepository, userRepository, userRoleRepository, lookupService, permissionService,
 				partnerProfileMapper, partnerDocumentMapper, partnerBankAccountMapper,
 				mock(NexHomeServiceCategoryRepository.class), mock(NexHomeServiceRepository.class),
 				mock(NexHomePartnerServiceRepository.class), new NexHomePartnerServiceMapper(),
 				mock(NexHomeAuditUsers.class), mock(NexHomeNotifier.class), mock(NexHomeAuditRecorder.class),
-				mock(NexHomeFiles.class));
+				files);
 	}
 
 	// ------------------------------------------------------------------------------------------------------------
@@ -801,14 +811,13 @@ class NexHomePartnerOnboardingServiceImplTest {
 				.hasMessage("Certificate name is required for a skill certificate.");
 		verify(partnerDocumentRepository, never()).save(any());
 
-		// A file is optional
 		var id = partnerService.addPartnerDocument(new NexHomePartnerDocumentCreateRequest(PROFILE_ID,
-				"GOVERNMENT_ID", "ABCDE1234F", null, null, " PAN ", null));
+				"GOVERNMENT_ID", "ABCDE1234F", 90L, null, " PAN ", null));
 		assertThat(id.idType()).isEqualTo("PAN");
-		assertThat(id.fileId()).isNull();
+		assertThat(id.fileId()).isEqualTo(90L);
 		assertThat(id.verificationStatus()).isEqualTo("PENDING");
 		var certificate = partnerService.addPartnerDocument(new NexHomePartnerDocumentCreateRequest(PROFILE_ID,
-				"CERTIFICATION", "ITI-2020-118", null, null, null, " ITI Electrician "));
+				"CERTIFICATION", "ITI-2020-118", 91L, null, null, " ITI Electrician "));
 		assertThat(certificate.documentName()).isEqualTo("ITI Electrician");
 		assertThat(certificate.idType()).isNull();
 	}

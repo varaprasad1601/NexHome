@@ -24,12 +24,13 @@ public interface NexHomeFaqRepository extends JpaRepository<NexHomeFaq, Long>, J
 	boolean existsByServiceId(Long serviceId);
 
 	/**
-	 * FAQs matching every filter given: audiences (any of), category, service, published flag and {@code search}
-	 * (lower-cased; part of the question). {@code activeScopeOnly} leaves out FAQs of an inactive category or service.
+	 * FAQs matching every filter given: audiences (any of), category, service, {@code general} (true: app FAQs, with
+	 * neither a category nor a service; false: the others), published flag and {@code search} (lower-cased; part of
+	 * the question). {@code activeScopeOnly} leaves out FAQs of an inactive category or service.
 	 * Null filters are left out of the SQL; see {@link NexHomeUserRepository#findByActiveRole}.
 	 */
-	default Page<NexHomeFaq> search(Collection<String> audiences, Long categoryId, Long serviceId, Boolean published,
-			String search, boolean activeScopeOnly, Pageable pageable) {
+	default Page<NexHomeFaq> search(Collection<String> audiences, Long categoryId, Long serviceId, Boolean general,
+			Boolean published, String search, boolean activeScopeOnly, Pageable pageable) {
 		Specification<NexHomeFaq> spec = Specification.unrestricted();
 		if (activeScopeOnly) {
 			spec = spec.and((faq, query, cb) -> {
@@ -48,6 +49,12 @@ public interface NexHomeFaqRepository extends JpaRepository<NexHomeFaq, Long>, J
 		}
 		if (serviceId != null) {
 			spec = spec.and((faq, query, cb) -> cb.equal(faq.get("service").get("id"), serviceId));
+		}
+		if (general != null) {
+			spec = spec.and((faq, query, cb) -> {
+				var neither = cb.and(cb.isNull(faq.get("category")), cb.isNull(faq.get("service")));
+				return general ? neither : cb.not(neither);
+			});
 		}
 		if (published != null) {
 			spec = spec.and((faq, query, cb) -> cb.equal(faq.get("published"), published));

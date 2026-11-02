@@ -100,7 +100,7 @@ public class NexHomeReviewServiceImpl implements NexHomeReviewService {
 				NexHomeNotifier.REVIEW, review.getId());
 		notifier.notify(booking.getPartner().getUser().getId(), received, actingUserId);
 		if (request.partnerRating() <= LOW_RATING) {
-			notifier.notifyStaff(REVIEW_MANAGE, new NexHomeNotifier.Message(NotificationType.REVIEW,
+			notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_LOW_RATING, REVIEW_MANAGE, new NexHomeNotifier.Message(NotificationType.REVIEW,
 					"Low rating on " + booking.getPublicId(),
 					"Partner " + booking.getPartner().getPublicId() + " was rated " + request.partnerRating()
 							+ " out of 5.",

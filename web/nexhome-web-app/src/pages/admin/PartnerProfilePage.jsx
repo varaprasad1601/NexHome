@@ -31,6 +31,7 @@ import {
   Wallet,
   Wrench
 } from 'lucide-react';
+import FileViewerModal from '../../components/admin/common/FileViewerModal';
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
@@ -45,7 +46,7 @@ import ActivityLog from '../../components/admin/profile/ActivityLog';
 import FilteredBookings from '../../components/admin/booking/FilteredBookings';
 import PartnerEarnings from '../../components/admin/payment/PartnerEarnings';
 import PartnerSchedule from '../../components/admin/partner/PartnerSchedule';
-import { openFile, savePhoto, uploadFile } from '../../api/files';
+import { savePhoto, uploadFile } from '../../api/files';
 import CompletionAvatar from '../../components/admin/profile/CompletionAvatar';
 import StatusMenu from '../../components/admin/profile/StatusMenu';
 import { InfoRow, InfoSection, PendingTab, StatTile } from '../../components/admin/profile/ProfileParts';
@@ -402,6 +403,7 @@ export default function PartnerProfilePage() {
   const [catalogue, setCatalogue] = useState([]);
   const [toast, setToast] = useState(null);
   const [jobStats, setJobStats] = useState(null);
+  const [viewingFile, setViewingFile] = useState(null);
 
   // The Reviews tab's count (one row asked for, the total read), for REVIEW_MANAGE readers
   const canReadReviews = can('REVIEW_MANAGE', 'READ');
@@ -417,6 +419,7 @@ export default function PartnerProfilePage() {
     };
   }, [authRequest, partnerProfileId, canReadReviews]);
   const closeToast = useCallback(() => setToast(null), []);
+  const closeViewer = useCallback(() => setViewingFile(null), [setViewingFile]);
   const showToast = useCallback((message, tone = 'success') => setToast({ message, tone, id: Date.now() }), []);
 
   useEffect(() => {
@@ -574,7 +577,6 @@ export default function PartnerProfilePage() {
     showToast(message);
     setReloadKey((key) => key + 1);
   };
-  const viewFile = (fileId) => openFile(authRequest, fileId).catch((err) => showToast(err.message, 'error'));
   const updateProfile = (body) =>
     authRequest('/api/partners/profiles/update', {
       method: 'PUT',
@@ -748,7 +750,8 @@ export default function PartnerProfilePage() {
               {!complete && <span className="text-xs text-[var(--muted)]">Profile {completionPercent}% complete</span>}
             </span>
           )}
-          {can('PARTNER_ONBOARDING_MANAGE', 'READ') && profile.onboardingStatus === 'UNDER_REVIEW' && (
+          {can('PARTNER_ONBOARDING_MANAGE', 'READ') &&
+            ['UNDER_REVIEW', 'UPDATE_REQUESTED'].includes(profile.onboardingStatus) && (
             <Link
               to={`/admin/users/partners/${profile.partnerProfileId}/onboard`}
               className="flex items-center gap-2 self-start rounded-xl bg-[var(--green)] px-5 py-2.5 text-sm font-bold text-white no-underline shadow-[0_6px_16px_rgba(22,143,91,0.25)] hover:bg-[var(--green-2)]"
@@ -1051,7 +1054,7 @@ export default function PartnerProfilePage() {
                             key={document.partnerDocumentId}
                             icon={section.icon}
                             title={documentTitle(document)}
-                            onView={document.fileId ? () => viewFile(document.fileId) : undefined}
+                            onView={document.fileId ? () => setViewingFile({ fileId: document.fileId, fileName: document.fileName, document }) : undefined}
                             onEdit={canEdit ? open('document', document) : undefined}
                             details={[
                               document.documentNumber,
@@ -1261,6 +1264,30 @@ export default function PartnerProfilePage() {
             saved('Service removed.');
           }}
           onClose={() => setRemoving(null)}
+        />
+      )}
+      {viewingFile && (
+        <FileViewerModal
+          file={viewingFile}
+          onClose={closeViewer}
+          verification={{
+            status: viewingFile.document.verificationStatus,
+            rejectionReason: viewingFile.document.rejectionReason,
+            // PARTNER_VERIFY write, never on one's own partner profile
+            canVerify: can('PARTNER_VERIFY', 'WRITE') && profile.userId !== session?.user?.userId,
+            onDecide: async (status, reason) => {
+              await authRequest('/api/partners/documents/verify', {
+                method: 'PUT',
+                body: {
+                  partnerDocumentId: viewingFile.document.partnerDocumentId,
+                  verificationStatus: status,
+                  rejectionReason: reason
+                }
+              });
+              setReloadKey((current) => current + 1);
+              showToast(`${documentTitle(viewingFile.document)} ${status === 'VERIFIED' ? 'verified' : 'rejected'}.`);
+            }
+          }}
         />
       )}
       <Toast toast={toast} onClose={closeToast} />

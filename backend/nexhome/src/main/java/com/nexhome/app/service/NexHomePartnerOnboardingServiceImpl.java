@@ -96,6 +96,9 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	private static final Map<String, Set<String>> REVIEW_TRANSITIONS = Map.of(
 			PartnerOnboardingStatus.UNDER_REVIEW, Set.of(PartnerOnboardingStatus.APPROVED,
 					PartnerOnboardingStatus.REJECTED, PartnerOnboardingStatus.CHANGES_REQUESTED),
+			// An approved partner's changed document or bank account, verified and decided like a review (V52)
+			PartnerOnboardingStatus.UPDATE_REQUESTED, Set.of(PartnerOnboardingStatus.APPROVED,
+					PartnerOnboardingStatus.REJECTED, PartnerOnboardingStatus.CHANGES_REQUESTED),
 			// An approved partner whose details need another look, or a rejected one given another chance
 			PartnerOnboardingStatus.APPROVED, Set.of(PartnerOnboardingStatus.CHANGES_REQUESTED),
 			PartnerOnboardingStatus.REJECTED, Set.of(PartnerOnboardingStatus.CHANGES_REQUESTED));
@@ -217,7 +220,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		profile.setRejectionReason(null);
 		profile.setUpdatedBy(actingUserId);
 
-		notifier.notifyStaff("PARTNER_ONBOARDING_MANAGE", new NexHomeNotifier.Message(NotificationType.ONBOARDING,
+		notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_PARTNER_SUBMITTED, "PARTNER_ONBOARDING_MANAGE", new NexHomeNotifier.Message(NotificationType.ONBOARDING,
 				"Partner " + profile.getPublicId() + (resubmitted ? " resubmitted for review" : " submitted for review"),
 				nameOf(profile) + (resubmitted ? " made the requested changes and is waiting to be reviewed again."
 						: " is waiting to be verified and approved."), NexHomeNotifier.PARTNER_PROFILE,
@@ -231,12 +234,57 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	 * who verify partners hear of it (not the one who made the change). Drafts are verified at review instead.
 	 */
 	private void needsVerifying(NexHomePartnerProfile partner, String what, Long actingUserId) {
-		if (PartnerOnboardingStatus.UNDER_REVIEW.equals(partner.getOnboardingStatus())
-				|| PartnerOnboardingStatus.APPROVED.equals(partner.getOnboardingStatus())) {
-			notifier.notifyStaff("PARTNER_VERIFY", new NexHomeNotifier.Message(NotificationType.ONBOARDING,
+		String status = partner.getOnboardingStatus();
+		if (status != null && Set.of(PartnerOnboardingStatus.UNDER_REVIEW, PartnerOnboardingStatus.APPROVED,
+				PartnerOnboardingStatus.UPDATE_REQUESTED).contains(status)) {
+			notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_PARTNER_TO_VERIFY, "PARTNER_VERIFY", new NexHomeNotifier.Message(NotificationType.ONBOARDING,
 					"To verify: partner " + partner.getPublicId(), nameOf(partner) + " " + what + "; verify it.",
 					NexHomeNotifier.PARTNER_PROFILE, partner.getId()), actingUserId);
 		}
+	}
+
+	/**
+	 * A document or bank account added or changed after approval (V52): when the partner made the change, or anyone
+	 * changed a government ID, the approved partner moves to UPDATE_REQUESTED with approval PENDING, loses the
+	 * approval and goes OFFLINE (no jobs) until staff verify the change and approve again. Under review, a changed
+	 * government ID only sets the approval PENDING. Staff changes to other records of an approved partner (they need
+	 * PARTNER_APPROVED_EDIT) keep the approval. The partner hears of it unless they made the change; audited.
+	 *
+	 * @param what the change, e.g. "changed a document"
+	 */
+	private void requestUpdate(NexHomePartnerProfile profile, String what, boolean governmentId, Long actingUserId) {
+		String current = profile.getOnboardingStatus();
+		String previousApproval = profile.getApprovalStatus();
+		boolean byPartner = profile.getUser().getId().equals(actingUserId);
+		if (PartnerOnboardingStatus.UNDER_REVIEW.equals(current) && governmentId) {
+			profile.setApprovalStatus(VerificationStatus.PENDING);
+			profile.setUpdatedBy(actingUserId);
+			return;
+		}
+		if (!PartnerOnboardingStatus.APPROVED.equals(current) || !(byPartner || governmentId)) {
+			return;
+		}
+		profile.setOnboardingStatus(PartnerOnboardingStatus.UPDATE_REQUESTED);
+		profile.setApprovalStatus(VerificationStatus.PENDING);
+		profile.setApprovedBy(null);
+		profile.setApprovedAt(null);
+		profile.setAvailabilityStatus(PartnerAvailabilityStatus.OFFLINE);
+		profile.setUpdatedBy(actingUserId);
+
+		notifier.notify(profile.getUser().getId(), new NexHomeNotifier.Message(NotificationType.ONBOARDING,
+				"Partner profile update to verify", "Your documents or bank details changed, so your profile is being "
+						+ "verified again. You can take jobs once it is approved.", NexHomeNotifier.PARTNER_PROFILE,
+				profile.getId()), actingUserId);
+		Map<String, Object> before = new LinkedHashMap<>();
+		before.put("onboardingStatus", current);
+		before.put("approvalStatus", previousApproval);
+		Map<String, Object> after = new LinkedHashMap<>();
+		after.put("onboardingStatus", PartnerOnboardingStatus.UPDATE_REQUESTED);
+		after.put("approvalStatus", VerificationStatus.PENDING);
+		after.put("reason", what);
+		auditRecorder.record("ONBOARDING_UPDATE_REQUESTED", "PARTNER_PROFILE", profile.getPublicId(), before, after,
+				actingUserId);
+		log.info("Partner profile {} moved from {} to UPDATE_REQUESTED: {}", profile.getPublicId(), current, what);
 	}
 
 	/** "First Last", else the partner id. */
@@ -506,10 +554,9 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 				actingUserId);
 		document.setIdType(idType);
 		document = partnerDocumentRepository.save(document);
-		if (request.fileId() != null) {
-			attachFile(document, request.fileId(), actingUserId);
-		}
+		attachFile(document, request.fileId(), actingUserId);
 
+		requestUpdate(partner, "added a document", false, actingUserId);
 		needsVerifying(partner, "added a document", actingUserId);
 		log.info("Document {} ({}) added to partner profile {}", document.getId(), documentType,
 				partner.getPublicId());
@@ -540,6 +587,8 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 			document.setIdType(idType);
 		}
 
+		requestUpdate(document.getPartner(), "changed a document",
+				DocumentType.GOVERNMENT_ID.equals(document.getDocumentType()), permissionService.currentUserId());
 		needsVerifying(document.getPartner(), "changed a document", permissionService.currentUserId());
 		log.info("Document {} updated and sent back for verification", document.getId());
 		return partnerDocumentMapper.toPartnerDocumentDto(document);
@@ -645,6 +694,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		account.setPrimary(makePrimary);
 		NexHomePartnerBankAccount saved = partnerBankAccountRepository.save(account);
 
+		requestUpdate(partner, "added a bank account", false, actingUserId);
 		needsVerifying(partner, "added a bank account", actingUserId);
 		log.info("Bank account {} added to partner profile {}", saved.getId(), partner.getPublicId());
 		return partnerBankAccountMapper.toPartnerBankAccountDto(saved);
@@ -667,7 +717,9 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 			account.setPrimary(false);
 		}
 
+		// A changed holder name sends the account back to PENDING: a change to verify
 		if (VerificationStatus.PENDING.equals(account.getVerificationStatus())) {
+			requestUpdate(account.getPartner(), "changed a bank account", false, actingUserId);
 			needsVerifying(account.getPartner(), "changed a bank account", actingUserId);
 		}
 		log.info("Bank account {} updated", account.getId());

@@ -132,7 +132,7 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 			com.nexhome.app.model.NexHomePartnerProfile profile = partnerProfileRepository.save(
 					partnerProfileMapper.toPartnerProfileEntity(user, user.getId()));
 			// The staff who manage partners hear of a new partner (onboarding not started yet)
-			notifier.notifyStaff("PARTNER_MANAGE", new NexHomeNotifier.Message(
+			notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_PARTNER_SIGNUP, "PARTNER_MANAGE", new NexHomeNotifier.Message(
 					com.nexhome.app.model.NexHomeLookupCodes.NotificationType.ACCOUNT, "New partner signed up",
 					countryCode + " " + mobileNumber + " signed up as a partner; onboarding has not started.",
 					NexHomeNotifier.PARTNER_PROFILE, profile.getId()), user.getId());

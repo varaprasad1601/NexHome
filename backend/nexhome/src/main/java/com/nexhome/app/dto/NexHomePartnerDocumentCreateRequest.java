@@ -11,7 +11,7 @@ import jakarta.validation.constraints.Size;
 /**
  * Adds an identity or certification document to a partner profile, PENDING verification. Its scan or photo is
  * uploaded first ({@code POST /api/files/upload}, purpose PARTNER_DOCUMENT: PDF, JPEG or PNG up to 10 MB) and given
- * here as {@code fileId} (optional). The document number is stored encrypted and only ever returned masked.
+ * here as {@code fileId} (required). The document number is stored encrypted and only ever returned masked.
  */
 public record NexHomePartnerDocumentCreateRequest(
 		@NotNull(message = "Partner profile ID is required")
@@ -25,7 +25,8 @@ public record NexHomePartnerDocumentCreateRequest(
 				message = "Document number must be 4 to 30 letters, digits, spaces, slashes or hyphens")
 		String documentNumber,
 
-		// The caller's upload (purpose PARTNER_DOCUMENT); optional
+		// The caller's upload (purpose PARTNER_DOCUMENT)
+		@NotNull(message = "Document file is required: upload a scan or photo of the document")
 		Long fileId,
 
 		@FutureOrPresent(message = "Expiry date cannot be in the past")

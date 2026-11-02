@@ -3,6 +3,7 @@ import {
   CircleX,
   ClipboardCheck,
   MessageSquareWarning,
+  FileClock,
   Search,
   ShieldCheck,
   UserRound
@@ -30,6 +31,14 @@ const QUEUES = [
     icon: ClipboardCheck,
     tone: 'bg-[#EDF6FD] text-[var(--blue)]',
     ring: 'ring-[var(--blue)]'
+  },
+  {
+    status: 'UPDATE_REQUESTED',
+    label: 'Update Requested',
+    text: 'Approved partners who changed documents or bank details',
+    icon: FileClock,
+    tone: 'bg-[#F1ECFB] text-[#6B46C1]',
+    ring: 'ring-[#6B46C1]'
   },
   {
     status: 'CHANGES_REQUESTED',
@@ -73,8 +82,8 @@ const initials = (profile) =>
 
 /**
  * User Management > Partners > Onboard Requests (/admin/users/partners/onboarding, from the partner list's button):
- * the onboarding queues as clickable tiles with counts (Under Review first, then Changes Requested, Approved,
- * Rejected), a search, and the paged list of the chosen queue from GET /api/partners/profiles?onboardingStatus=
+ * the onboarding queues as clickable tiles with counts (Under Review first, then Update Requested (V52: approved
+ * partners who changed a document or bank account), Changes Requested, Approved, Rejected), a search, and the paged list of the chosen queue from GET /api/partners/profiles?onboardingStatus=
  * (PARTNER_ONBOARDING_MANAGE read): partner, main service, city, the three verification checks, and Review / Open,
  * which opens the partner's onboarding screen. A decision made there comes back here with its toast.
  */
@@ -152,7 +161,7 @@ export default function OnboardRequestsPage() {
         description="Review submitted partner profiles: verify their details, then approve, ask for changes or reject."
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {QUEUES.map((item) => {
           const Icon = item.icon;
           const active = item.status === status;
@@ -224,12 +233,18 @@ export default function OnboardRequestsPage() {
               <queue.icon size={24} />
             </span>
             <div className="font-bold text-[var(--ink)]">
-              {status === 'UNDER_REVIEW' ? 'No requests waiting' : `No ${queue.label.toLowerCase()} partners`}
+              {status === 'UNDER_REVIEW'
+                ? 'No requests waiting'
+                : status === 'UPDATE_REQUESTED'
+                  ? 'No updates waiting'
+                  : `No ${queue.label.toLowerCase()} partners`}
             </div>
             <div className="text-sm text-[var(--muted)]">
               {status === 'UNDER_REVIEW'
                 ? 'Profiles show here once they are submitted for review.'
-                : 'Nothing matches your search.'}
+                : status === 'UPDATE_REQUESTED'
+                  ? 'Approved partners show here when they change a document or bank account.'
+                  : 'Nothing matches your search.'}
             </div>
           </div>
         ) : (
@@ -317,13 +332,13 @@ export default function OnboardRequestsPage() {
                           <Link
                             to={`/admin/users/partners/${profile.partnerProfileId}/onboard`}
                             className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-[0.8125rem] font-bold no-underline ${
-                              status === 'UNDER_REVIEW'
+                              status === 'UNDER_REVIEW' || status === 'UPDATE_REQUESTED'
                                 ? 'bg-[var(--blue)] text-white hover:bg-[var(--navy)]'
                                 : 'border border-[var(--line)] text-[var(--blue)] hover:bg-[#EDF6FD]'
                             }`}
                           >
                             <ShieldCheck size={14} />
-                            {status === 'UNDER_REVIEW' ? 'Review' : 'Open'}
+                            {status === 'UNDER_REVIEW' || status === 'UPDATE_REQUESTED' ? 'Review' : 'Open'}
                           </Link>
                         </td>
                       </tr>

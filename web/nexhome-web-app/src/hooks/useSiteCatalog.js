@@ -7,7 +7,7 @@ import { ALL_FAQS, SERVICES } from '../data/siteData';
 /**
  * The public site's service catalogue and FAQs from the backend (public endpoints, no sign-in): the active service
  * categories (GET /api/catalog/categories) with their active services (GET /api/catalog/services, every page), and
- * the published customer FAQs (GET /api/faqs?audience=CUSTOMER, which also returns those for everyone). Each is
+ * the published website FAQs (GET /api/faqs?audience=WEB&general=true: app FAQs shown to Web, not those of a category or service). Each is
  * loaded once per visit and shared by every page. When the server cannot be reached, the site's built-in content
  * (data/siteData.js) is shown instead, so the site never goes blank.
  */
@@ -85,7 +85,7 @@ export function useSiteFaqs() {
   useEffect(() => {
     if (faqs) return undefined;
     let cancelled = false;
-    faqsRequest ??= apiRequest('/api/faqs?audience=CUSTOMER')
+    faqsRequest ??= apiRequest('/api/faqs?audience=WEB&general=true')
       .then((list) => list.map((faq) => ({ faqId: faq.faqId, question: faq.question, answer: faq.answer })))
       .catch(() => STATIC_FAQS);
     faqsRequest.then((loaded) => {

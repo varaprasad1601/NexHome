@@ -131,7 +131,8 @@ public final class NexHomeLookupCodes {
 	/**
 	 * Values of {@link Types#PARTNER_ONBOARDING_STATUS} (V18). A partner account's profile starts NOT_STARTED, becomes a
 	 * DRAFT ("Profile Draft") once saved, is submitted for review (UNDER_REVIEW), and a reviewer approves it, rejects it
-	 * or returns it for more information or documents (CHANGES_REQUESTED), after which the partner submits again.
+	 * or returns it for more information or documents (CHANGES_REQUESTED), after which the partner submits again. An
+	 * approved partner who changes a document or bank account waits in UPDATE_REQUESTED (V52) until it is approved again.
 	 */
 	public static final class PartnerOnboardingStatus {
 
@@ -141,6 +142,7 @@ public final class NexHomeLookupCodes {
 		public static final String CHANGES_REQUESTED = "CHANGES_REQUESTED";
 		public static final String APPROVED = "APPROVED";
 		public static final String REJECTED = "REJECTED";
+		public static final String UPDATE_REQUESTED = "UPDATE_REQUESTED";
 
 		private PartnerOnboardingStatus() {
 		}
@@ -489,12 +491,16 @@ public final class NexHomeLookupCodes {
 		}
 	}
 
-	/** Values of {@link Types#FAQ_AUDIENCE} and {@link Types#POLICY_AUDIENCE}; BOTH applies to everyone. */
+	/**
+	 * Values of {@link Types#FAQ_AUDIENCE} and {@link Types#POLICY_AUDIENCE}; BOTH applies to customers and partners.
+	 * WEB (FAQs only, V48) is the public website.
+	 */
 	public static final class Audience {
 
 		public static final String CUSTOMER = "CUSTOMER";
 		public static final String PARTNER = "PARTNER";
 		public static final String BOTH = "BOTH";
+		public static final String WEB = "WEB";
 
 		private Audience() {
 		}

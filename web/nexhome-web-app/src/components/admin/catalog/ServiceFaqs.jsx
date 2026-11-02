@@ -1,10 +1,12 @@
-import { ChevronDown, CircleHelp, Pencil, Plus, Trash2, UserRound, Wrench } from 'lucide-react';
+import { ChevronDown, CircleHelp, Pencil, Plus, Search, Trash2, UserRound, Wrench } from 'lucide-react';
 import { useState } from 'react';
 
 import useClientPaging from '../../../hooks/useClientPaging';
 import FormModal from '../common/FormModal';
 import Pagination from '../common/Pagination';
+import Select from '../common/Select';
 import ConfirmDialog from '../system/ConfirmDialog';
+import { primaryButtonClass, searchInputClass } from '../system/systemStyles';
 
 const SIDES = [
   { audience: 'CUSTOMER', title: 'Customer FAQs', text: 'Shown to customers with the service.', icon: UserRound },
@@ -12,9 +14,9 @@ const SIDES = [
 ];
 
 const AUDIENCE_OPTIONS = [
-  { value: 'CUSTOMER', label: 'Customers' },
-  { value: 'PARTNER', label: 'Partners' },
-  { value: 'BOTH', label: 'Customers and partners' }
+  { value: 'CUSTOMER', label: 'Customer' },
+  { value: 'PARTNER', label: 'Partner' },
+  { value: 'BOTH', label: 'Customer & Partner' }
 ];
 
 const FAQ_FIELDS = [
@@ -26,7 +28,7 @@ const FAQ_FIELDS = [
 ];
 
 /** One column: the side's FAQs as questions that open to their answers, paged, with Add / Edit for writers. */
-function FaqColumn({ side, faqs, canEdit, canDelete, onAdd, onEdit, onRemove }) {
+function FaqColumn({ side, faqs, canEdit, canDelete, onAdd, onEdit, onRemove, emptyText = 'No FAQs yet.' }) {
   const [open, setOpen] = useState(null);
   const { pageRows, pageData, setPage } = useClientPaging(faqs);
   const Icon = side.icon;
@@ -48,7 +50,7 @@ function FaqColumn({ side, faqs, canEdit, canDelete, onAdd, onEdit, onRemove }) 
             <div className="text-xs text-[var(--muted)]">{side.text}</div>
           </div>
         </div>
-        {canEdit && (
+        {canEdit && onAdd && (
           <button
             type="button"
             onClick={onAdd}
@@ -63,7 +65,7 @@ function FaqColumn({ side, faqs, canEdit, canDelete, onAdd, onEdit, onRemove }) 
       {faqs.length === 0 ? (
         <p className="flex items-center gap-2 rounded-xl bg-[var(--light)] px-4 py-6 text-sm text-[var(--muted)]">
           <CircleHelp size={16} />
-          No FAQs yet.
+          {emptyText}
         </p>
       ) : (
         <>
@@ -142,16 +144,29 @@ function FaqColumn({ side, faqs, canEdit, canDelete, onAdd, onEdit, onRemove }) 
 
 /**
  * The service page's FAQs tab: Customer FAQs and Partner FAQs side by side (an FAQ for BOTH shows in each, tagged
- * Both; every FAQ shows its status, Published or Not published (unpublished ones only reach FAQ_MANAGE readers)). With FAQ_MANAGE write each column has
- * Add FAQ and each FAQ an Edit, through POST /api/faqs/create and PUT /api/faqs/update (the service is fixed); with
+ * Both; every FAQ shows its status, Published or Not published (unpublished ones only reach FAQ_MANAGE readers)).
+ * Above them, as on the Policies & FAQs page, one line of filters (search in the questions and answers, Shown To,
+ * and Status for FAQ_MANAGE readers) and, with FAQ_MANAGE write, Add FAQ after them; each FAQ has an Edit, through POST /api/faqs/create and PUT /api/faqs/update (the service is fixed); with
  * delete each FAQ also has Remove (DELETE /api/faqs/delete/{id}, after a confirmation).
  *
  * @param faqs the service's FAQs, in display order
  * @param onSaved called after a save, to reload them
  */
-export default function ServiceFaqs({ serviceId, faqs, canEdit, canDelete, authRequest, onSaved }) {
+export default function ServiceFaqs({ serviceId, faqs, canEdit, canDelete, canSeeDrafts, authRequest, onSaved }) {
   const [editing, setEditing] = useState(null); // null, { audience } for a new FAQ, or the FAQ
   const [removing, setRemoving] = useState(null);
+  const [search, setSearch] = useState('');
+  const [audience, setAudience] = useState('');
+  const [status, setStatus] = useState('');
+
+  const text = search.trim().toLowerCase();
+  const filtering = Boolean(text || audience || status);
+  const shown = faqs.filter(
+    (faq) =>
+      (!text || `${faq.question} ${faq.answer}`.toLowerCase().includes(text)) &&
+      (!audience || faq.audience === audience) &&
+      (!status || faq.isPublished === (status === 'published'))
+  );
 
   const save = async (values) => {
     const body = {
@@ -170,14 +185,60 @@ export default function ServiceFaqs({ serviceId, faqs, canEdit, canDelete, authR
 
   return (
     <>
+      {/* One line of filters, then Add FAQ */}
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <label className="relative w-40 flex-shrink-0">
+          <span className="sr-only">Search FAQs</span>
+          <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
+          <input
+            type="search"
+            className={searchInputClass}
+            placeholder="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
+        <div className="w-48 flex-shrink-0">
+          <Select
+            ariaLabel="Shown to"
+            value={audience}
+            onChange={setAudience}
+            options={[{ value: '', label: 'All Audiences' }, ...AUDIENCE_OPTIONS]}
+          />
+        </div>
+        {canSeeDrafts && (
+          <div className="w-48 flex-shrink-0">
+            <Select
+              ariaLabel="Status"
+              value={status}
+              onChange={setStatus}
+              options={[
+                { value: '', label: 'All Statuses' },
+                { value: 'published', label: 'Published' },
+                { value: 'draft', label: 'Not published' }
+              ]}
+            />
+          </div>
+        )}
+        {canEdit && (
+          <button
+            type="button"
+            className={`${primaryButtonClass} flex-shrink-0 whitespace-nowrap`}
+            onClick={() => setEditing({ audience: audience || 'CUSTOMER' })}
+          >
+            <Plus size={16} strokeWidth={2.6} />
+            Add FAQ
+          </button>
+        )}
+      </div>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {SIDES.map((side) => (
           <FaqColumn
             key={side.audience}
             side={side}
-            faqs={faqs.filter((faq) => faq.audience === side.audience || faq.audience === 'BOTH')}
+            faqs={shown.filter((faq) => faq.audience === side.audience || faq.audience === 'BOTH')}
+            emptyText={filtering ? 'No FAQs match the filters.' : 'No FAQs yet.'}
             canEdit={canEdit}
-            onAdd={() => setEditing({ audience: side.audience })}
             canDelete={canDelete}
             onEdit={setEditing}
             onRemove={setRemoving}

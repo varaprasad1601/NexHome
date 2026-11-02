@@ -1,11 +1,13 @@
 package com.nexhome.app.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.nio.charset.StandardCharsets;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -23,6 +25,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -93,6 +96,64 @@ class NexHomeStaffNotificationFlowTest {
 	private long serviceId;
 
 	@Test
+	void generalSettingsDecideStaffAlertsAndAreChecked() throws Exception {
+		setUp();
+		perform(get("/api/settings"), staff, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.settingKey == 'MAX_CART_ITEMS')].min").value(1.0))
+				.andExpect(jsonPath("$[?(@.settingKey == 'ALERT_PARTNER_SIGNUP')].options[0]").value("OFF"));
+		perform(get("/api/settings/public"), null, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.WHATSAPP_NUMBER").isNotEmpty())
+				.andExpect(jsonPath("$.MAX_CART_ITEMS").doesNotExist());
+		perform(get("/api/settings"), accessToken(newUser("CUSTOMER").getId()), null)
+				.andExpect(status().isForbidden());
+		// Only super users change them (V51): an admin reads but cannot save
+		String admin = accessToken(newUser("ADMIN").getId());
+		perform(get("/api/settings"), admin, null).andExpect(status().isOk());
+		perform(put("/api/settings/update"), admin,
+				"{\"settings\": [{\"settingKey\": \"MAX_CART_ITEMS\", \"value\": \"10\"}]}")
+				.andExpect(status().isForbidden());
+
+		// HIGH: the partner managers hear of a sign-up as High
+		perform(put("/api/settings/update"), staff,
+				"{\"settings\": [{\"settingKey\": \"ALERT_PARTNER_SIGNUP\", \"value\": \"high\"}]}")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.settingKey == 'ALERT_PARTNER_SIGNUP')].value").value("HIGH"));
+		perform(post("/api/auth/register"), null,
+				"{\"countryCode\": \"+91\", \"mobileNumber\": \"%s\", \"roleCode\": \"PARTNER\"}".formatted(randomMobile()))
+				.andExpect(status().isCreated());
+		latest("ACCOUNT").andExpect(jsonPath("$.content[0].priority").value("HIGH"));
+		long signUps = json(latest("ACCOUNT")).get("totalElements").asLong();
+
+		// OFF: nobody hears of it
+		perform(put("/api/settings/update"), staff,
+				"{\"settings\": [{\"settingKey\": \"ALERT_PARTNER_SIGNUP\", \"value\": \"OFF\"}]}")
+				.andExpect(status().isOk());
+		perform(post("/api/auth/register"), null,
+				"{\"countryCode\": \"+91\", \"mobileNumber\": \"%s\", \"roleCode\": \"PARTNER\"}".formatted(randomMobile()))
+				.andExpect(status().isCreated());
+		latest("ACCOUNT").andExpect(jsonPath("$.totalElements").value(signUps));
+
+		// Values are checked, all or none
+		perform(put("/api/settings/update"), staff, """
+				{"settings": [{"settingKey": "OFFER_EXPIRY_MINUTES", "value": "45"},
+				              {"settingKey": "MAX_CART_ITEMS", "value": "0"}]}""")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Cart Limit (services) must be between 1 and 50."));
+		perform(get("/api/settings"), staff, null)
+				.andExpect(jsonPath("$[?(@.settingKey == 'OFFER_EXPIRY_MINUTES')].value").value("30"));
+		perform(put("/api/settings/update"), staff,
+				"{\"settings\": [{\"settingKey\": \"NO_SUCH_SETTING\", \"value\": \"1\"}]}")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Unknown setting NO_SUCH_SETTING."));
+		perform(put("/api/settings/update"), staff,
+				"{\"settings\": [{\"settingKey\": \"WHATSAPP_NUMBER\", \"value\": \"+91 92571\"}]}")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("WhatsApp Number must be 10 to 15 digits with the country code."));
+	}
+
+	@Test
 	void partnersSigningUpResubmittingAndAddingDocumentsTellStaff() throws Exception {
 		setUp();
 		// A partner signs up: the partner managers hear of it
@@ -120,8 +181,9 @@ class NexHomeStaffNotificationFlowTest {
 
 		// Under review, a new document needs verifying
 		perform(post("/api/partners/documents/add"), staff, """
-				{"partnerProfileId": %d, "documentType": "GOVERNMENT_ID", "idType": "PAN", "documentNumber": "ABCDE1234F"}"""
-				.formatted(partnerId))
+				{"partnerProfileId": %d, "documentType": "GOVERNMENT_ID", "idType": "PAN", "documentNumber": "ABCDE1234F",
+				 "fileId": %d}"""
+				.formatted(partnerId, documentFile(staff)))
 				.andExpect(status().isCreated());
 		latest("ONBOARDING")
 				.andExpect(jsonPath("$.content[0].title").value(Matchers.startsWith("To verify: partner")))
@@ -305,6 +367,16 @@ class NexHomeStaffNotificationFlowTest {
 				.setParameter("id", partnerId).executeUpdate();
 		entityManager.clear();
 		return partnerId;
+	}
+
+	/** Uploads a small PDF as the caller's PARTNER_DOCUMENT file and returns its id (documents need one). */
+	private long documentFile(String accessToken) throws Exception {
+		byte[] pdf = "%PDF-1.4\n1 0 obj << >> endobj\n%%EOF".getBytes(StandardCharsets.US_ASCII);
+		return json(mockMvc.perform(multipart("/api/files/upload")
+				.file(new MockMultipartFile("file", "id.pdf", "application/pdf", pdf))
+				.param("purpose", "PARTNER_DOCUMENT")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+				.andExpect(status().isCreated())).get("fileId").asLong();
 	}
 
 	private ResultActions perform(MockHttpServletRequestBuilder request, String accessToken, String body)

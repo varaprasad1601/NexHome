@@ -133,7 +133,7 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 		NexHomeNotifier.Message opened = new NexHomeNotifier.Message(NotificationType.SUPPORT,
 				"New support ticket " + ticket.getPublicId(), ticket.getSubject(), NexHomeNotifier.SUPPORT_TICKET,
 				ticket.getId());
-		notifier.notifyStaff(SUPPORT_MANAGE, PRESSING.contains(priority) ? opened.high() : opened, actingUserId);
+		notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_TICKET_OPENED, SUPPORT_MANAGE, PRESSING.contains(priority) ? opened.high() : opened, actingUserId);
 		notifier.notify(requesterId, new NexHomeNotifier.Message(NotificationType.SUPPORT,
 				"Support ticket " + ticket.getPublicId() + " opened",
 				"We opened a support ticket for you: " + ticket.getSubject(), NexHomeNotifier.SUPPORT_TICKET,
@@ -212,9 +212,10 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 		auditRecorder.record("TICKET_UPDATED", "SUPPORT_TICKET", ticket.getPublicId(), before, after, actingUserId);
 
 		if (raised) {
-			notifier.notifyStaff(SUPPORT_MANAGE, new NexHomeNotifier.Message(NotificationType.SUPPORT,
-					"Ticket " + ticket.getPublicId() + " raised to " + readable(ticket.getPriority()),
-					ticket.getSubject(), NexHomeNotifier.SUPPORT_TICKET, ticket.getId()).high(), actingUserId);
+			notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_TICKET_RAISED, SUPPORT_MANAGE, new NexHomeNotifier.Message(
+					NotificationType.SUPPORT, "Ticket " + ticket.getPublicId() + " raised to "
+							+ readable(ticket.getPriority()), ticket.getSubject(), NexHomeNotifier.SUPPORT_TICKET,
+					ticket.getId()), actingUserId);
 		}
 		if (assigned) {
 			notifier.notify(assignee.getId(), new NexHomeNotifier.Message(NotificationType.SUPPORT,
@@ -268,11 +269,12 @@ public class NexHomeSupportServiceImpl implements NexHomeSupportService {
 					(reopened ? "Ticket " + ticket.getPublicId() + " reopened by the requester"
 							: "New reply on ticket " + ticket.getPublicId()), excerpt(message.getMessage()),
 					NexHomeNotifier.SUPPORT_TICKET, ticket.getId());
-			if (ticket.getAssignedTo() != null) {
-				notifier.notify(ticket.getAssignedTo().getId(), reply, actingUserId);
+			if (ticket.getAssignedTo() == null) {
+				notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_TICKET_REPLY, SUPPORT_MANAGE, reply, actingUserId);
 			}
-			else {
-				notifier.notifyStaff(SUPPORT_MANAGE, reply, actingUserId);
+			else if (notifier.asSet(NexHomeSettingsService.Keys.ALERT_TICKET_REPLY, reply) != null) {
+				notifier.notify(ticket.getAssignedTo().getId(),
+						notifier.asSet(NexHomeSettingsService.Keys.ALERT_TICKET_REPLY, reply), actingUserId);
 			}
 		}
 		else if (!internal) {

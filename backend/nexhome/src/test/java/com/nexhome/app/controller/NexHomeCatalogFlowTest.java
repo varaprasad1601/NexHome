@@ -384,6 +384,22 @@ class NexHomeCatalogFlowTest {
 		perform(get("/api/faqs/all?categoryId=" + categoryId), admin, null)
 				.andExpect(jsonPath("$.totalElements").value(3));
 
+		// App FAQs (neither category nor service) are listed apart with general=true
+		String appQuestion = "How do I reset my app " + suffix + "?";
+		perform(post("/api/faqs/create"), admin, """
+				{"question": "%s", "answer": "From settings.", "audience": "BOTH", "isPublished": true}"""
+				.formatted(appQuestion))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.categoryId").doesNotExist());
+		perform(get("/api/faqs/all?general=true&search=" + suffix), admin, null)
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].question").value(appQuestion));
+		perform(get("/api/faqs/all?general=false&search=" + suffix), admin, null)
+				.andExpect(jsonPath("$.totalElements").value(3));
+		perform(get("/api/faqs?general=true&audience=CUSTOMER"), null, null)
+				.andExpect(jsonPath("$[?(@.question == '%s')]".formatted(appQuestion)).exists())
+				.andExpect(jsonPath("$[?(@.question == '%s')]".formatted(question)).doesNotExist());
+
 		// FAQs of a deactivated category are no longer public
 		perform(put("/api/catalog/categories/update"), admin,
 				"{\"serviceCategoryId\": %d, \"isActive\": false}".formatted(categoryId))

@@ -58,7 +58,7 @@ class NexHomeFaqServiceImplTest {
 		serviceRepository = mock(NexHomeServiceRepository.class);
 		lookupService = mock(NexHomeLookupService.class);
 		permissionService = mock(NexHomePermissionService.class);
-		when(faqRepository.search(any(), any(), any(), any(), any(), anyBoolean(), any())).thenReturn(new PageImpl<>(List.of()));
+		when(faqRepository.search(any(), any(), any(), any(), any(), any(), anyBoolean(), any())).thenReturn(new PageImpl<>(List.of()));
 		when(faqRepository.save(any())).thenAnswer(invocation -> {
 			NexHomeFaq faq = invocation.getArgument(0);
 			faq.setId(80L);
@@ -73,46 +73,47 @@ class NexHomeFaqServiceImplTest {
 
 	@Test
 	void publishedFaqsForAnAudienceAlsoIncludeBoth() {
-		faqService.getPublishedFaqs(" CUSTOMER ", 5L, null);
-		faqService.getPublishedFaqs("PARTNER", null, 30L);
-		faqService.getPublishedFaqs("BOTH", null, null);
+		faqService.getPublishedFaqs(" CUSTOMER ", 5L, null, null);
+		faqService.getPublishedFaqs("PARTNER", null, 30L, null);
+		faqService.getPublishedFaqs("BOTH", null, null, true);
 
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<Collection<String>> audiences = ArgumentCaptor.forClass(Collection.class);
 		ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
-		verify(faqRepository, org.mockito.Mockito.times(3)).search(audiences.capture(), any(), any(), eq(true),
-				isNull(), eq(true), pageable.capture());
+		verify(faqRepository, org.mockito.Mockito.times(3)).search(audiences.capture(), any(), any(), any(),
+				eq(true), isNull(), eq(true), pageable.capture());
 		assertThat(audiences.getAllValues().get(0)).containsExactly("CUSTOMER", "BOTH");
 		assertThat(audiences.getAllValues().get(1)).containsExactly("PARTNER", "BOTH");
 		assertThat(audiences.getAllValues().get(2)).containsExactly("BOTH");
 		assertThat(pageable.getValue().isPaged()).isFalse();
 		assertThat(pageable.getValue().getSort())
 				.isEqualTo(Sort.by(Sort.Order.asc("displayOrder"), Sort.Order.asc("id")));
-		verify(faqRepository).search(any(), eq(5L), isNull(), eq(true), isNull(), eq(true), any());
-		verify(faqRepository).search(any(), isNull(), eq(30L), eq(true), isNull(), eq(true), any());
+		verify(faqRepository).search(any(), eq(5L), isNull(), isNull(), eq(true), isNull(), eq(true), any());
+		verify(faqRepository).search(any(), isNull(), eq(30L), isNull(), eq(true), isNull(), eq(true), any());
+		verify(faqRepository).search(any(), isNull(), isNull(), eq(true), eq(true), isNull(), eq(true), any());
 	}
 
 	@Test
 	void publishedFaqsWithoutAnAudienceAreNotFilteredByIt() {
-		faqService.getPublishedFaqs("  ", null, null);
-		faqService.getPublishedFaqs(null, null, null);
+		faqService.getPublishedFaqs("  ", null, null, null);
+		faqService.getPublishedFaqs(null, null, null, null);
 
-		verify(faqRepository, org.mockito.Mockito.times(2)).search(isNull(), isNull(), isNull(), eq(true), isNull(),
-				eq(true), any());
+		verify(faqRepository, org.mockito.Mockito.times(2)).search(isNull(), isNull(), isNull(), isNull(), eq(true),
+				isNull(), eq(true), any());
 		verify(lookupService, never()).validateCode(any(), any(), any());
 	}
 
 	@Test
 	void adminListMatchesTheAudienceExactly() {
-		faqService.getFaqs(null, null, "CUSTOMER", null, null, false, "  Refund ");
+		faqService.getFaqs(null, null, "CUSTOMER", null, null, true, false, "  Refund ");
 
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<Collection<String>> audiences = ArgumentCaptor.forClass(Collection.class);
-		verify(faqRepository).search(audiences.capture(), isNull(), isNull(), eq(false), eq("refund"), eq(false),
-				any());
+		verify(faqRepository).search(audiences.capture(), isNull(), isNull(), eq(true), eq(false), eq("refund"),
+				eq(false), any());
 		assertThat(audiences.getValue()).containsExactly("CUSTOMER");
 
-		assertThatThrownBy(() -> faqService.getFaqs(-1, null, null, null, null, null, null))
+		assertThatThrownBy(() -> faqService.getFaqs(-1, null, null, null, null, null, null, null))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage("Page must be 0 or more.");
 	}

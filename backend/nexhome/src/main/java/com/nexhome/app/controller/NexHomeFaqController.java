@@ -36,25 +36,29 @@ public class NexHomeFaqController {
 
 	/**
 	 * Published FAQs in display order. Query parameters (all optional): {@code audience} (CUSTOMER or PARTNER also
-	 * return BOTH), {@code categoryId}, {@code serviceId}.
+	 * return BOTH), {@code categoryId}, {@code serviceId}, {@code general} (true: only app FAQs, with neither a
+	 * category nor a service; false: only category and service FAQs).
 	 */
 	@GetMapping
 	public List<NexHomeFaqResponse> getPublishedFaqs(@RequestParam(required = false) String audience,
-			@RequestParam(required = false) Long categoryId, @RequestParam(required = false) Long serviceId) {
-		return faqService.getPublishedFaqs(audience, categoryId, serviceId);
+			@RequestParam(required = false) Long categoryId, @RequestParam(required = false) Long serviceId,
+			@RequestParam(required = false) Boolean general) {
+		return faqService.getPublishedFaqs(audience, categoryId, serviceId, general);
 	}
 
 	/**
 	 * Every FAQ, newest first. Query parameters (all optional): {@code page}, {@code size}, {@code audience} (exact),
-	 * {@code categoryId}, {@code serviceId}, {@code isPublished}, {@code search} (part of the question).
+	 * {@code categoryId}, {@code serviceId}, {@code general} (as above), {@code isPublished}, {@code search} (part of
+	 * the question).
 	 */
 	@GetMapping("/all")
 	@PreAuthorize("@permissions.can('FAQ_MANAGE', 'READ')")
 	public NexHomePageResponse<NexHomeFaqResponse> getFaqs(@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size, @RequestParam(required = false) String audience,
 			@RequestParam(required = false) Long categoryId, @RequestParam(required = false) Long serviceId,
-			@RequestParam(required = false) Boolean isPublished, @RequestParam(required = false) String search) {
-		return faqService.getFaqs(page, size, audience, categoryId, serviceId, isPublished, search);
+			@RequestParam(required = false) Boolean general, @RequestParam(required = false) Boolean isPublished,
+			@RequestParam(required = false) String search) {
+		return faqService.getFaqs(page, size, audience, categoryId, serviceId, general, isPublished, search);
 	}
 
 	@PostMapping("/create")

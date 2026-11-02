@@ -50,7 +50,6 @@ import lombok.extern.slf4j.Slf4j;
 class NexHomeBookingCreator {
 
 	/** SCHEDULED bookings may be made this far ahead. */
-	static final Duration LONGEST_AHEAD = Duration.ofDays(60);
 	/** The first history row's reason for a booking made without a free partner. */
 	static final String SLOT_REQUESTED = "Slot requested: no partner was free when booked";
 	/** A booking without an expected duration is held for this long. */
@@ -65,6 +64,7 @@ class NexHomeBookingCreator {
 	private final NexHomeCatalogService catalogService;
 	private final NexHomeLookupService lookupService;
 	private final NexHomeBookingMapper bookingMapper;
+	private final NexHomeSettingsService settingsService;
 
 	/** The request's parts, already looked up by id where the caller had to. */
 	record Order(NexHomeCustomerProfile customer, Long serviceId, Long variantId, Long addressId, String bookingType,
@@ -160,7 +160,7 @@ class NexHomeBookingCreator {
 	}
 
 	/** INSTANT: no start (as soon as possible), if the service takes instant bookings; SCHEDULED: a future time. */
-	private static Instant startOf(String bookingType, Instant requested, NexHomeService service) {
+	private Instant startOf(String bookingType, Instant requested, NexHomeService service) {
 		Instant now = Instant.now();
 		if (BookingType.INSTANT.equals(bookingType)) {
 			if (!service.isInstantBookingAllowed()) {
@@ -177,32 +177,19 @@ class NexHomeBookingCreator {
 		if (!requested.isAfter(now)) {
 			throw new InvalidRequestException("Scheduled start must be in the future.");
 		}
-		if (requested.isAfter(now.plus(LONGEST_AHEAD))) {
-			throw new InvalidRequestException("Bookings can be made at most 60 days ahead.");
+		int daysAhead = settingsService.intValue(NexHomeSettingsService.Keys.MAX_DAYS_AHEAD);
+		if (requested.isAfter(now.plus(Duration.ofDays(daysAhead)))) {
+			throw new InvalidRequestException("Bookings can be made at most " + daysAhead + " days ahead.");
 		}
 		return requested;
 	}
 
 	/** The quote as the booking's pricing snapshot. */
-	/** The TRANSACTION_FEE lookup's ONLINE rate (metadata.percentage), 0 when missing, inactive or unreadable. */
+	/** The online payment fee's rate (general setting TRANSACTION_FEE_PERCENTAGE, V49; 0 turns it off). */
 	BigDecimal onlineFeePercentage() {
-		return lookupService.getActiveLookupValues(Types.TRANSACTION_FEE).stream()
-				.filter(value -> "ONLINE".equals(value.valueCode()))
-				.map(value -> value.metadata() == null ? null : value.metadata().get("percentage"))
-				.filter(Objects::nonNull)
-				.findFirst()
-				.map(rate -> {
-					try {
-						BigDecimal percentage = new BigDecimal(rate.toString());
-						return percentage.signum() > 0 && percentage.compareTo(BigDecimal.valueOf(100)) <= 0
-								? percentage
-								: BigDecimal.ZERO;
-					} catch (NumberFormatException e) {
-						log.warn("TRANSACTION_FEE ONLINE has an unreadable percentage: {}", rate);
-						return BigDecimal.ZERO;
-					}
-				})
-				.orElse(BigDecimal.ZERO);
+		BigDecimal percentage = settingsService.decimalValue(NexHomeSettingsService.Keys.TRANSACTION_FEE_PERCENTAGE);
+		return percentage.signum() > 0 && percentage.compareTo(BigDecimal.valueOf(100)) <= 0 ? percentage
+				: BigDecimal.ZERO;
 	}
 
 	/** The fee on an amount at a percentage, to the paisa (HALF_UP). */

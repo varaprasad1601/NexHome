@@ -1,6 +1,6 @@
-import { PHONE_NUMBER } from '../data/siteData';
+import { siteSettings } from '../hooks/useSiteSettings';
 
 /** A wa.me link that opens a chat with NexHome with the message filled in. */
 export function buildWhatsAppUrl(message) {
-  return `https://wa.me/${PHONE_NUMBER}?text=${encodeURIComponent(message)}`;
+  return `https://wa.me/${siteSettings().whatsapp}?text=${encodeURIComponent(message)}`;
 }

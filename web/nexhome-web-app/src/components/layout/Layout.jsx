@@ -1,6 +1,7 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { useSiteState } from '../../context/siteState';
+import { useSiteSettings } from '../../hooks/useSiteSettings';
 import useNavigationScroll, { scrollToTop } from '../../hooks/useNavigationScroll';
 import { getActiveNavKey, isLaunchLocation } from '../../utils/navigation';
 import CinematicLaunch from '../launch/CinematicLaunch';
@@ -10,6 +11,8 @@ import Header from './Header';
 
 /** The page frame around every route: skip link, header, the routed page, footer and site-wide overlays. */
 export default function Layout() {
+  // The business details from General Settings; WhatsApp links below read the number
+  useSiteSettings();
   const location = useLocation();
   const navigate = useNavigate();
   const { resetWorkerRegistration } = useSiteState();

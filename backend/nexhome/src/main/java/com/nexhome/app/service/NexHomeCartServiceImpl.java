@@ -43,7 +43,6 @@ import lombok.extern.slf4j.Slf4j;
 public class NexHomeCartServiceImpl implements NexHomeCartService {
 
 	/** A cart holds at most this many items. */
-	static final int MAX_ITEMS = 20;
 
 	private final NexHomeCartRepository cartRepository;
 	private final NexHomeCartItemRepository cartItemRepository;
@@ -55,6 +54,7 @@ public class NexHomeCartServiceImpl implements NexHomeCartService {
 	private final NexHomePermissionService permissionService;
 	private final NexHomeBookingMapper bookingMapper;
 	private final NexHomeNotifier notifier;
+	private final NexHomeSettingsService settingsService;
 
 	@Override
 	@Transactional(readOnly = true)
@@ -98,8 +98,9 @@ public class NexHomeCartServiceImpl implements NexHomeCartService {
 					created.setUpdatedBy(actingUserId);
 					return cartRepository.save(created);
 				});
-		if (cartItemRepository.findByCartIdOrderByIdAsc(cart.getId()).size() >= MAX_ITEMS) {
-			throw new InvalidRequestException("A cart can hold at most " + MAX_ITEMS + " services.");
+		int maxItems = settingsService.intValue(NexHomeSettingsService.Keys.MAX_CART_ITEMS);
+		if (cartItemRepository.findByCartIdOrderByIdAsc(cart.getId()).size() >= maxItems) {
+			throw new InvalidRequestException("A cart can hold at most " + maxItems + " services.");
 		}
 		NexHomeCartItem item = new NexHomeCartItem();
 		item.setCart(cart);
@@ -155,7 +156,7 @@ public class NexHomeCartServiceImpl implements NexHomeCartService {
 		cart.setStatus(CartStatus.CHECKED_OUT);
 		cart.setUpdatedBy(actingUserId);
 
-		notifier.notifyStaff("BOOKING_MANAGE", new NexHomeNotifier.Message(NotificationType.BOOKING,
+		notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_NEW_BOOKING, "BOOKING_MANAGE", new NexHomeNotifier.Message(NotificationType.BOOKING,
 				bookings.size() == 1 ? "New booking " + bookings.get(0).publicId()
 						: bookings.size() + " new bookings from " + customer.getPublicId(),
 				bookings.stream().map(NexHomeBookingResponse::serviceName).distinct()

@@ -10,6 +10,7 @@ const ONBOARDING_BADGES = {
   DRAFT: 'bg-[var(--light)] text-[var(--muted)]',
   CHANGES_REQUESTED: 'bg-[#FFF7DE] text-[#8A6508]',
   UNDER_REVIEW: 'bg-[#EDF6FD] text-[var(--blue)]',
+  UPDATE_REQUESTED: 'bg-[#F1ECFB] text-[#6B46C1]',
   APPROVED: 'bg-[#E9F6EF] text-[var(--green-2)]',
   REJECTED: 'bg-[#FDECEC] text-[#C53030]'
 };

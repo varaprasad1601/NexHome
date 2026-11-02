@@ -1,4 +1,4 @@
-import { Bell, BellOff, BellRing, Check, Settings, Volume2, VolumeX, X } from 'lucide-react';
+import { Bell, BellOff, BellRing, Check, Volume2, VolumeX, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -534,15 +534,6 @@ export default function NotificationsMenu() {
                 Test
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => go('/admin/settings')}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line)] text-[var(--muted)] hover:bg-[#EDF6FD] hover:text-[var(--blue)]"
-              aria-label="Notification settings"
-              title="Notification settings"
-            >
-              <Settings size={15} />
-            </button>
           </div>
         </div>
       )}

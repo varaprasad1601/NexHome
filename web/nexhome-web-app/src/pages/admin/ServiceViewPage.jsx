@@ -532,6 +532,7 @@ export default function ServiceViewPage() {
               serviceId={service.serviceId}
               faqs={faqs}
               canEdit={can('FAQ_MANAGE', 'WRITE')}
+              canSeeDrafts={canReadFaqs}
               canDelete={can('FAQ_MANAGE', 'DELETE')}
               authRequest={authRequest}
               onSaved={(message) => {

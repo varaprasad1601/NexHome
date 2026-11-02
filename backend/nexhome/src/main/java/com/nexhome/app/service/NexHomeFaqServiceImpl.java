@@ -42,14 +42,16 @@ public class NexHomeFaqServiceImpl implements NexHomeFaqService {
 
 	@Override
 	@Transactional(readOnly = true)
-	public List<NexHomeFaqResponse> getPublishedFaqs(String audience, Long categoryId, Long serviceId) {
+	public List<NexHomeFaqResponse> getPublishedFaqs(String audience, Long categoryId, Long serviceId,
+			Boolean general) {
 		List<String> audiences = null;
 		if (audience != null && !audience.isBlank()) {
 			String code = lookupService.validateCode(Types.FAQ_AUDIENCE, audience, "Audience");
-			audiences = Audience.BOTH.equals(code) ? List.of(Audience.BOTH) : List.of(code, Audience.BOTH);
+			// The apps' audiences also get the FAQs for both apps; BOTH and WEB (the website, V48) only their own
+			audiences = Audience.BOTH.equals(code) || Audience.WEB.equals(code) ? List.of(code) : List.of(code, Audience.BOTH);
 		}
 		Pageable all = Pageable.unpaged(Sort.by(Sort.Order.asc("displayOrder"), Sort.Order.asc("id")));
-		return faqRepository.search(audiences, categoryId, serviceId, true, null, true, all).stream()
+		return faqRepository.search(audiences, categoryId, serviceId, general, true, null, true, all).stream()
 				.map(faqMapper::toFaqDto)
 				.toList();
 	}
@@ -57,11 +59,11 @@ public class NexHomeFaqServiceImpl implements NexHomeFaqService {
 	@Override
 	@Transactional(readOnly = true)
 	public NexHomePageResponse<NexHomeFaqResponse> getFaqs(Integer page, Integer size, String audience,
-			Long categoryId, Long serviceId, Boolean isPublished, String search) {
+			Long categoryId, Long serviceId, Boolean general, Boolean isPublished, String search) {
 		PageRequest pageRequest = NexHomePaging.newestFirst(page, size);
 		List<String> audiences = audience == null || audience.isBlank() ? null
 				: List.of(lookupService.validateCode(Types.FAQ_AUDIENCE, audience, "Audience"));
-		Page<NexHomeFaq> faqs = faqRepository.search(audiences, categoryId, serviceId, isPublished,
+		Page<NexHomeFaq> faqs = faqRepository.search(audiences, categoryId, serviceId, general, isPublished,
 				NexHomePaging.searchText(search), false, pageRequest);
 		return NexHomePaging.toPageResponse(pageRequest, faqs, faqs.stream().map(faqMapper::toFaqDto).toList());
 	}

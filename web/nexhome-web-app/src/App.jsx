@@ -29,6 +29,8 @@ import FunctionsPage from './pages/admin/FunctionsPage';
 import LookupsPage from './pages/admin/LookupsPage';
 import AuditLogsPage from './pages/admin/AuditLogsPage';
 import NotificationsPage from './pages/admin/NotificationsPage';
+import GeneralSettingsPage from './pages/admin/GeneralSettingsPage';
+import PoliciesFaqsPage from './pages/admin/PoliciesFaqsPage';
 import ReviewsPage from './pages/admin/ReviewsPage';
 import SendNotificationsPage from './pages/admin/SendNotificationsPage';
 import SupportTicketPage from './pages/admin/SupportTicketPage';
@@ -120,6 +122,8 @@ export default function App() {
               <Route path="support/:ticketId" element={<SupportTicketPage />} />
               <Route path="marketing/notifications" element={<SendNotificationsPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
+              <Route path="settings" element={<GeneralSettingsPage />} />
+              <Route path="settings/policies" element={<PoliciesFaqsPage />} />
               <Route path="profile" element={<AdminProfilePage self />} />
               {/* Sidebar links whose screens are not built yet */}
               <Route path="*" element={<AdminComingSoonPage />} />

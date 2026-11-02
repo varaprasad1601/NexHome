@@ -388,13 +388,13 @@ public class NexHomePaymentServiceImpl implements NexHomePaymentService {
 		auditRecorder.record("CASH_" + target, "BOOKING", booking.getPublicId(), Map.of("cashStatus",
 				cash.getStatus()), Map.of("cashStatus", target), actingUserId);
 		if (CashCollectionStatus.DISPUTED.equals(target)) {
-			notifier.notifyStaff(PAYMENT_MANAGE, new NexHomeNotifier.Message(
+			notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_CASH_DISPUTED, PAYMENT_MANAGE, new NexHomeNotifier.Message(
 					com.nexhome.app.model.NexHomeLookupCodes.NotificationType.PAYMENT,
 					"Cash disputed: " + booking.getPublicId(),
 					"The cash of " + cash.getAmount().toPlainString() + " is disputed"
 							+ (NexHomeText.trimToNull(request.notes()) == null ? "."
 									: ": " + NexHomeText.trimToNull(request.notes())),
-					NexHomeNotifier.BOOKING, booking.getId()).high(), actingUserId);
+					NexHomeNotifier.BOOKING, booking.getId()), actingUserId);
 		}
 		cash.setStatus(target);
 		if (request.notes() != null) {

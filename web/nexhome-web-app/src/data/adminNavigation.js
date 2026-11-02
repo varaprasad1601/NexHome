@@ -16,7 +16,7 @@ import {
  *
  * A link with `fn` needs READ on that function (or on any of them, for a list) to be shown and opened; WRITE and
  * DELETE decide the screen's actions. `superUserOnly` links are for super users. Links without either are for every
- * staff member: the features behind them (offers, banners, reports, general settings) have no functions yet. A group without a visible link is hidden.
+ * staff member: the features behind them (offers, banners, reports) have no functions yet. A group without a visible link is hidden.
  */
 export const ADMIN_NAV = [
   { label: 'Dashboard', to: '/admin/dashboard', icon: LayoutDashboard },
@@ -99,7 +99,7 @@ export const ADMIN_NAV = [
     label: 'Settings',
     icon: Settings,
     items: [
-      { label: 'General', to: '/admin/settings' },
+      { label: 'General', to: '/admin/settings', fn: 'SETTINGS_MANAGE' },
       { label: 'Policies & FAQs', to: '/admin/settings/policies', fn: ['POLICY_MANAGE', 'FAQ_MANAGE'] }
     ]
   }

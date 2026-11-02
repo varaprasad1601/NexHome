@@ -1,8 +1,9 @@
 import { CalendarDays, FileText, LifeBuoy, Lock, Paperclip, Phone, Send, UserRound, X } from 'lucide-react';
+import FileViewerModal from '../../components/admin/common/FileViewerModal';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
-import { FILE_RULES, fileProblem, formatFileSize, openFile, uploadFile } from '../../api/files';
+import { FILE_RULES, fileProblem, formatFileSize, uploadFile } from '../../api/files';
 import AdminPageHeader from '../../components/admin/AdminPageHeader';
 import Select from '../../components/admin/common/Select';
 import Toast from '../../components/admin/common/Toast';
@@ -27,13 +28,13 @@ function Field({ label, children }) {
 /** Files per reply (as the backend allows). */
 const MAX_FILES = 5;
 
-/** An attached file as a small chip that opens it (a new tab with a short-lived link); old ones without a stored file are named only. */
+/** An attached file as a small chip that shows it (in the file viewer); old ones without a stored file are named only. */
 function AttachmentChip({ attachment, onOpen }) {
   const name = attachment.fileName ?? 'Attachment';
   return attachment.fileId ? (
     <button
       type="button"
-      onClick={() => onOpen(attachment.fileId)}
+      onClick={() => onOpen(attachment)}
       title={`Open ${name}`}
       className="flex max-w-full items-center gap-1.5 rounded-lg border border-[var(--line)] bg-white px-2.5 py-1 text-xs font-bold text-[var(--blue)] hover:bg-[#EDF6FD]"
     >
@@ -112,6 +113,8 @@ export default function SupportTicketPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(() => (location.state?.toast ? { ...location.state.toast, id: 'opened' } : null));
   const closeToast = useCallback(() => setToast(null), []);
+  const [viewingFile, setViewingFile] = useState(null);
+  const closeViewer = useCallback(() => setViewingFile(null), []);
   const showToast = useCallback((message, tone = 'success') => setToast({ message, tone, id: Date.now() }), []);
 
   useEffect(() => {
@@ -192,7 +195,7 @@ export default function SupportTicketPage() {
     if (next.length > MAX_FILES) showToast(`At most ${MAX_FILES} files can be attached to one reply.`, 'error');
     setFiles(next.slice(0, MAX_FILES));
   };
-  const openAttachment = (fileId) => openFile(authRequest, fileId).catch((err) => showToast(err.message, 'error'));
+  const openAttachment = (attachment) => setViewingFile({ fileId: attachment.fileId, fileName: attachment.fileName });
   const send = async () => {
     if (!reply.trim()) return;
     setSending(true);
@@ -469,7 +472,7 @@ export default function SupportTicketPage() {
                       {attachment.fileId ? (
                         <button
                           type="button"
-                          onClick={() => openAttachment(attachment.fileId)}
+                          onClick={() => openAttachment(attachment)}
                           title={`Open ${attachment.fileName}`}
                           className="block max-w-full truncate text-left font-bold text-[var(--blue)] hover:text-[var(--navy)]"
                         >
@@ -489,6 +492,7 @@ export default function SupportTicketPage() {
           </section>
         </div>
       </div>
+      {viewingFile && <FileViewerModal file={viewingFile} onClose={closeViewer} />}
       <Toast toast={toast} onClose={closeToast} />
     </div>
   );

@@ -1,4 +1,4 @@
-import { FORMATTED_PHONE, EMAIL_ADDRESS, LOCATION_TEXT, BUSINESS_HOURS } from '../data/siteData';
+import { useSiteSettings } from '../hooks/useSiteSettings';
 import { useSiteCatalog } from '../hooks/useSiteCatalog';
 import Icon from '../components/common/Icon';
 import MapCard from '../components/common/MapCard';
@@ -7,6 +7,7 @@ import { useSiteState } from '../context/siteState';
 
 /** Contact page: contact details, map and the service enquiry form. */
 export default function ContactPage() {
+  const site = useSiteSettings();
   const { categories } = useSiteCatalog();
   const { customerForm, setCustomerForm, customerError, customerSuccess, handleCustomerSubmit } = useSiteState();
 
@@ -27,7 +28,7 @@ export default function ContactPage() {
           <div className="lg:col-span-6 space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <a
-                href={`tel:${FORMATTED_PHONE.replace(/\s+/g, '')}`}
+                href={site.telHref}
                 className="p-5 rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center gap-3.5 hover:shadow-md transition"
               >
                 <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0B438B] flex items-center justify-center flex-shrink-0">
@@ -35,11 +36,11 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">CALL US</div>
-                  <div className="text-xs font-bold text-gray-800">{FORMATTED_PHONE}</div>
+                  <div className="text-xs font-bold text-gray-800">{site.phone}</div>
                 </div>
               </a>
               <a
-                href={`mailto:${EMAIL_ADDRESS}`}
+                href={`mailto:${site.email}`}
                 className="p-5 rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center gap-3.5 hover:shadow-md transition"
               >
                 <div className="w-10 h-10 rounded-xl bg-green-50 text-[#168F5B] flex items-center justify-center flex-shrink-0">
@@ -47,7 +48,7 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">EMAIL US</div>
-                  <div className="text-xs font-bold text-gray-800 break-all">{EMAIL_ADDRESS}</div>
+                  <div className="text-xs font-bold text-gray-800 break-all">{site.email}</div>
                 </div>
               </a>
               <div className="p-5 rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center gap-3.5">
@@ -56,7 +57,7 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">SERVICE LOCATION</div>
-                  <div className="text-xs font-bold text-gray-800">{LOCATION_TEXT}</div>
+                  <div className="text-xs font-bold text-gray-800">{site.area}</div>
                 </div>
               </div>
               <div className="p-5 rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center gap-3.5">
@@ -65,7 +66,7 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">BUSINESS HOURS</div>
-                  <div className="text-xs font-bold text-gray-800">{BUSINESS_HOURS}</div>
+                  <div className="text-xs font-bold text-gray-800">{site.hours}</div>
                 </div>
               </div>
             </div>

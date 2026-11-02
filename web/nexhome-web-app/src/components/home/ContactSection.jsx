@@ -1,4 +1,4 @@
-import { PHONE_NUMBER, DISPLAY_PHONE, EMAIL_ADDRESS, LOCATION_TEXT, BUSINESS_HOURS } from '../../data/siteData';
+import { useSiteSettings } from '../../hooks/useSiteSettings';
 import { useSiteCatalog } from '../../hooks/useSiteCatalog';
 import Icon from '../common/Icon';
 import MapCard from '../common/MapCard';
@@ -6,6 +6,7 @@ import { useSiteState } from '../../context/siteState';
 
 /** Connect with NexHome: contact details, enquiry form and map. */
 export default function ContactSection() {
+  const site = useSiteSettings();
   const { categories } = useSiteCatalog();
   const { customerForm, setCustomerForm, customerError, customerSuccess, handleCustomerSubmit } = useSiteState();
 
@@ -37,10 +38,10 @@ export default function ContactSection() {
                   Email
                 </div>
                 <a
-                  href={`mailto:${EMAIL_ADDRESS}`}
+                  href={`mailto:${site.email}`}
                   className="text-xs font-bold text-[#0B438B] hover:underline break-all sm:break-normal"
                 >
-                  {EMAIL_ADDRESS}
+                  {site.email}
                 </a>
               </div>
             </div>
@@ -55,10 +56,10 @@ export default function ContactSection() {
                   Phone / WhatsApp
                 </div>
                 <a
-                  href={`tel:+${PHONE_NUMBER}`}
+                  href={site.telHref}
                   className="text-xs font-bold text-[#0B438B] hover:underline"
                 >
-                  {DISPLAY_PHONE}
+                  {site.phone}
                 </a>
               </div>
             </div>
@@ -72,7 +73,7 @@ export default function ContactSection() {
                 <div className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">
                   Service Area
                 </div>
-                <div className="text-xs font-bold text-[#0B438B]">{LOCATION_TEXT}</div>
+                <div className="text-xs font-bold text-[#0B438B]">{site.area}</div>
               </div>
             </div>
 
@@ -85,7 +86,7 @@ export default function ContactSection() {
                 <div className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">
                   Availability
                 </div>
-                <div className="text-xs font-bold text-[#0B438B]">{BUSINESS_HOURS}</div>
+                <div className="text-xs font-bold text-[#0B438B]">{site.hours}</div>
               </div>
             </div>
           </div>

@@ -29,6 +29,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 /** The review decisions staff may take from a status, as the backend's REVIEW_TRANSITIONS (V18). */
 export const REVIEW_TRANSITIONS = {
   UNDER_REVIEW: ['APPROVED', 'REJECTED', 'CHANGES_REQUESTED'],
+  UPDATE_REQUESTED: ['APPROVED', 'REJECTED', 'CHANGES_REQUESTED'],
   APPROVED: ['CHANGES_REQUESTED'],
   REJECTED: ['CHANGES_REQUESTED']
 };
@@ -477,8 +478,12 @@ export function documentDialog(item, values, kind = item?.documentType) {
         type: 'file',
         purpose: 'PARTNER_DOCUMENT',
         currentName: item?.fileName ?? null,
+        // Required when adding; when editing, an empty field keeps the current file
+        required: !item,
         wide: true,
-        hint: 'A scan or photo of the document: PDF, JPG or PNG up to 10 MB.'
+        hint: item
+          ? 'A new scan or photo replaces the current file; leave empty to keep it.'
+          : 'A scan or photo of the document: PDF, JPG or PNG up to 10 MB.'
       }
     ],
     initial: {

@@ -17,10 +17,10 @@ import {
   UserRound,
   Wrench
 } from 'lucide-react';
+import FileViewerModal from '../../components/admin/common/FileViewerModal';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
-import { openFile } from '../../api/files';
 import AdminPageHeader from '../../components/admin/AdminPageHeader';
 import FormModal from '../../components/admin/common/FormModal';
 import Toast from '../../components/admin/common/Toast';
@@ -232,6 +232,8 @@ export default function PartnerOnboardPage() {
   const [rejecting, setRejecting] = useState(null);
   const [toast, setToast] = useState(null);
   const closeToast = useCallback(() => setToast(null), []);
+  const [viewingFile, setViewingFile] = useState(null);
+  const closeViewer = useCallback(() => setViewingFile(null), []);
   const showToast = useCallback((message, tone = 'success') => setToast({ message, tone, id: Date.now() }), []);
 
   useEffect(() => {
@@ -290,7 +292,9 @@ export default function PartnerOnboardPage() {
   const ownProfile = profile.userId === session?.user?.userId;
   const approved = profile.onboardingStatus === 'APPROVED';
   // Verifying and deciding are admin actions (PARTNER_VERIFY, PARTNER_APPROVE; V25), never on your own profile
-  const canDecide = canApproveFn && !ownProfile && profile.onboardingStatus === 'UNDER_REVIEW';
+  // Waiting for a decision: submitted, or an approved partner's changed documents or bank details (V52)
+  const awaitingDecision = ['UNDER_REVIEW', 'UPDATE_REQUESTED'].includes(profile.onboardingStatus);
+  const canDecide = canApproveFn && !ownProfile && awaitingDecision;
   const canVerify = canVerifyFn && !ownProfile;
   const verifiedCount = CHECKS.filter((check) => profile[check.key]).length;
   const allVerified = verifiedCount === CHECKS.length;
@@ -633,7 +637,7 @@ export default function PartnerOnboardPage() {
                   {document.fileId && (
                     <button
                       type="button"
-                      onClick={() => openFile(authRequest, document.fileId).catch((err) => showToast(err.message, 'error'))}
+                      onClick={() => setViewingFile({ fileId: document.fileId, fileName: document.fileName, document })}
                       title={document.fileName}
                       className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line)] px-2.5 text-xs font-bold text-[var(--blue)] hover:bg-[#EDF6FD]"
                     >
@@ -641,14 +645,7 @@ export default function PartnerOnboardPage() {
                       View file
                     </button>
                   )}
-                  {canVerify && (
-                    <RecordActions
-                      status={document.verificationStatus}
-                      approved={approved}
-                      busy={busy}
-                      onDecide={onRecordDecision('document', document)}
-                    />
-                  )}
+                  {/* Documents are verified or rejected in the file viewer (View file) */}
                 </div>
               ))
             )}
@@ -693,7 +690,9 @@ export default function PartnerOnboardPage() {
           <aside className={cardClass}>
             <h2 className="mb-1 text-[1.0625rem] font-black text-[var(--navy)]">Decision</h2>
             <p className="mb-4 text-sm text-[var(--muted)]">
-              {profile.onboardingStatus === 'UNDER_REVIEW'
+              {profile.onboardingStatus === 'UPDATE_REQUESTED'
+                ? 'This approved partner changed a document or bank account. Verify the change, then approve the partner again or send the profile back.'
+                : profile.onboardingStatus === 'UNDER_REVIEW'
                 ? 'Verify the profile details, every document and the primary bank account, then approve the partner or send the profile back.'
                 : 'This profile is not waiting for a decision.'}
             </p>
@@ -757,7 +756,7 @@ export default function PartnerOnboardPage() {
                 </div>
                 {profile.rejectionReason && <div className="mt-1 text-[var(--muted)]">{profile.rejectionReason}</div>}
                 {ownProfile && <div className="mt-1 text-[var(--muted)]">You cannot review your own profile.</div>}
-                {!ownProfile && !canApproveFn && profile.onboardingStatus === 'UNDER_REVIEW' && (
+                {!ownProfile && !canApproveFn && awaitingDecision && (
                   <div className="mt-1 text-[var(--muted)]">Only admins can approve partners.</div>
                 )}
               </div>
@@ -803,6 +802,22 @@ export default function PartnerOnboardPage() {
           submitLabel={REASON_DIALOGS[reasonFor].submit}
           onSubmit={(formValues) => decide(reasonFor, formValues.reason.trim())}
           onClose={() => setReasonFor(null)}
+        />
+      )}
+      {viewingFile && (
+        <FileViewerModal
+          file={viewingFile}
+          onClose={closeViewer}
+          verification={{
+            status: viewingFile.document.verificationStatus,
+            rejectionReason: viewingFile.document.rejectionReason,
+            canVerify,
+            onDecide: async (status, reason) => {
+              await decideRecord('document', viewingFile.document, status, reason);
+              setReloadKey((current) => current + 1);
+              showToast(`${documentTitle(viewingFile.document)} ${DECISION_TOASTS[status]}.`);
+            }
+          }}
         />
       )}
       <Toast toast={toast} onClose={closeToast} />

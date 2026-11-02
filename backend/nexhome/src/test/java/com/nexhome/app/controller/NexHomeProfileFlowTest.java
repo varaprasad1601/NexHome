@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -21,6 +23,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -420,8 +423,9 @@ class NexHomeProfileFlowTest {
 						.value("Verify the account, documents and bank account before approving the partner."));
 		// The documents and bank account checks come from those records (V24)
 		long documentId = json(perform(post("/api/partners/documents/add"), admin, """
-				{"partnerProfileId": %d, "documentType": "GOVERNMENT_ID", "idType": "PAN", "documentNumber": "ABCDE1234F"}"""
-				.formatted(profileId))
+				{"partnerProfileId": %d, "documentType": "GOVERNMENT_ID", "idType": "PAN", "documentNumber": "ABCDE1234F",
+				 "fileId": %d}"""
+				.formatted(profileId, documentFile(admin)))
 				.andExpect(status().isCreated())).get("partnerDocumentId").asLong();
 		long bankAccountId = json(perform(post("/api/partners/bank-accounts/add"), admin, """
 				{"partnerProfileId": %d, "accountHolderName": "Suresh Babu", "accountNumber": "123456784321",
@@ -456,6 +460,16 @@ class NexHomeProfileFlowTest {
 				"{\"partnerProfileId\": %d, \"availabilityStatus\": \"ONLINE\"}".formatted(profileId))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.availabilityStatus").value("ONLINE"));
+		// A changed government ID puts the approved partner in UPDATE_REQUESTED (V52), approval PENDING, offline
+		perform(put("/api/partners/documents/update"), admin,
+				"{\"partnerDocumentId\": %d, \"documentNumber\": \"ABCDE9999F\"}".formatted(documentId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.verificationStatus").value("PENDING"));
+		perform(get("/api/partners/profiles/" + profileId), admin, null)
+				.andExpect(jsonPath("$.onboardingStatus").value("UPDATE_REQUESTED"))
+				.andExpect(jsonPath("$.approvalStatus").value("PENDING"))
+				.andExpect(jsonPath("$.availabilityStatus").value("OFFLINE"))
+				.andExpect(jsonPath("$.approvedBy").doesNotExist());
 		perform(put("/api/partners/profiles/review"), admin, """
 				{"partnerProfileId": %d, "onboardingStatus": "CHANGES_REQUESTED", "rejectionReason": "Upload a new ID"}"""
 				.formatted(profileId))
@@ -508,17 +522,23 @@ class NexHomeProfileFlowTest {
 
 		long documentId = json(perform(post("/api/partners/documents/add"), partnerToken, """
 				{"partnerProfileId": %d, "documentType": "GOVERNMENT_ID", "idType": "PAN", "documentNumber": "abcde1234f",
-				 "expiryDate": "%s"}"""
-				.formatted(profileId, LocalDate.now().plusYears(5)))
+				 "expiryDate": "%s", "fileId": %d}"""
+				.formatted(profileId, LocalDate.now().plusYears(5), documentFile(partnerToken)))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.documentNumber").value("XXXXXX234F"))
 				.andExpect(jsonPath("$.verificationStatus").value("PENDING")))
 				.get("partnerDocumentId").asLong();
 		perform(post("/api/partners/documents/add"), partnerToken, """
 				{"partnerProfileId": %d, "documentType": "CERTIFICATION", "documentName": "ITI",
-				 "expiryDate": "2020-01-01"}""".formatted(profileId))
+				 "expiryDate": "2020-01-01", "fileId": 1}""".formatted(profileId))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("Expiry date cannot be in the past"));
+		// A document needs its file
+		perform(post("/api/partners/documents/add"), partnerToken, """
+				{"partnerProfileId": %d, "documentType": "CERTIFICATION", "documentName": "ITI"}""".formatted(profileId))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message")
+						.value("Document file is required: upload a scan or photo of the document"));
 		perform(get("/api/partners/profiles/documents/" + profileId), otherPartner, null)
 				.andExpect(status().isForbidden());
 
@@ -615,6 +635,16 @@ class NexHomeProfileFlowTest {
 				 "maxTravelKm": 12.5, "serviceAreas": ["Madhapur", " madhapur ", "Kondapur"],
 				 "weeklyAvailability": {"monday": ["evening", "MORNING", "EVENING"], "saturday": ["MORNING"]},
 				 "weekendAvailability": "%s"}""".formatted(profileId, categoryId, weekend);
+	}
+
+	/** Uploads a small PDF as the caller's PARTNER_DOCUMENT file and returns its id (documents need one). */
+	private long documentFile(String accessToken) throws Exception {
+		byte[] pdf = "%PDF-1.4\n1 0 obj << >> endobj\n%%EOF".getBytes(StandardCharsets.US_ASCII);
+		return json(mockMvc.perform(multipart("/api/files/upload")
+				.file(new MockMultipartFile("file", "id.pdf", "application/pdf", pdf))
+				.param("purpose", "PARTNER_DOCUMENT")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+				.andExpect(status().isCreated())).get("fileId").asLong();
 	}
 
 	private ResultActions perform(MockHttpServletRequestBuilder request, String accessToken, String body)

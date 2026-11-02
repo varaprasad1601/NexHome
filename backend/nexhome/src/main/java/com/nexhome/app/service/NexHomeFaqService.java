@@ -19,12 +19,13 @@ public interface NexHomeFaqService {
 	 * @param audience optional FAQ_AUDIENCE code; CUSTOMER or PARTNER also include BOTH
 	 * @param categoryId optional: only FAQs of this category
 	 * @param serviceId optional: only FAQs of this service
+	 * @param general optional: true only app FAQs (neither category nor service), false only the others
 	 */
-	List<NexHomeFaqResponse> getPublishedFaqs(String audience, Long categoryId, Long serviceId);
+	List<NexHomeFaqResponse> getPublishedFaqs(String audience, Long categoryId, Long serviceId, Boolean general);
 
 	/** One page of all FAQs, published or not, newest first; the audience filter is exact. */
 	NexHomePageResponse<NexHomeFaqResponse> getFaqs(Integer page, Integer size, String audience, Long categoryId,
-			Long serviceId, Boolean isPublished, String search);
+			Long serviceId, Boolean general, Boolean isPublished, String search);
 
 	NexHomeFaqResponse createFaq(NexHomeFaqCreateRequest request);
 

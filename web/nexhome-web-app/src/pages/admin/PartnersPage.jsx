@@ -114,9 +114,14 @@ export default function PartnersPage() {
   useEffect(() => {
     if (!canSeeOnboarding) return undefined;
     let cancelled = false;
-    authRequest('/api/partners/profiles?size=1&onboardingStatus=UNDER_REVIEW')
-      .then((data) => !cancelled && setWaiting(data.totalElements))
-      .catch(() => {});
+    // Waiting for staff: submitted profiles and approved partners' changed details (V52)
+    Promise.all(
+      ['UNDER_REVIEW', 'UPDATE_REQUESTED'].map((status) =>
+        authRequest(`/api/partners/profiles?size=1&onboardingStatus=${status}`)
+          .then((data) => data.totalElements)
+          .catch(() => 0)
+      )
+    ).then((totals) => !cancelled && setWaiting(totals[0] + totals[1]));
     return () => {
       cancelled = true;
     };

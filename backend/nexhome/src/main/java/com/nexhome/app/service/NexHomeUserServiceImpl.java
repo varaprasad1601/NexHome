@@ -234,7 +234,7 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 				userRepository.count(NexHomeUserRepository.partnerSpec(null,
 						List.of(PartnerOnboardingStatus.APPROVED), false, null, null)),
 				userRepository.count(NexHomeUserRepository.partnerSpec(null, List.of(
-						PartnerOnboardingStatus.UNDER_REVIEW), false, null,
+						PartnerOnboardingStatus.UNDER_REVIEW, PartnerOnboardingStatus.UPDATE_REQUESTED), false, null,
 						null)),
 				userRepository.count(NexHomeUserRepository.partnerSpec(null, List.of(PartnerOnboardingStatus.NOT_STARTED,
 						PartnerOnboardingStatus.DRAFT, PartnerOnboardingStatus.CHANGES_REQUESTED), true, null, null)),

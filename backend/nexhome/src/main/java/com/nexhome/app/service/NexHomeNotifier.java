@@ -43,6 +43,7 @@ class NexHomeNotifier {
 	private final NexHomeNotificationDeliveryLogRepository deliveryLogRepository;
 	private final NexHomeUserRepository userRepository;
 	private final NexHomeUserRoleRepository userRoleRepository;
+	private final NexHomeSettingsService settingsService;
 
 	static final String CUSTOMER_PROFILE = "CUSTOMER_PROFILE";
 	/** Notification priorities (V45). */
@@ -71,9 +72,27 @@ class NexHomeNotifier {
 		notifyAll(userId == null ? List.of() : List.of(userId), message, actingUserId);
 	}
 
-	/** Notifies the staff who may read {@code functionCode} (see {@code findStaffWhoCanRead}), but not the actor. */
-	void notifyStaff(String functionCode, Message message, Long actingUserId) {
-		notifyAll(userRoleRepository.findStaffWhoCanRead(functionCode), message, actingUserId);
+	/**
+	 * Notifies the staff who may read {@code functionCode} (see {@code findStaffWhoCanRead}), but not the actor, as
+	 * the alert's general setting says ({@link #asSet}): not at all when OFF.
+	 */
+	void notifyStaff(String alertKey, String functionCode, Message message, Long actingUserId) {
+		Message alert = asSet(alertKey, message);
+		if (alert != null) {
+			notifyAll(userRoleRepository.findStaffWhoCanRead(functionCode), alert, actingUserId);
+		}
+	}
+
+	/**
+	 * A staff alert as its setting (V49, Settings > General) wants it: null when OFF, always HIGH when HIGH, as the
+	 * event made it when NORMAL (e.g. an urgent ticket stays HIGH).
+	 */
+	Message asSet(String alertKey, Message message) {
+		return switch (settingsService.alertLevel(alertKey)) {
+			case NexHomeSettingsServiceImpl.OFF -> null;
+			case NexHomeSettingsServiceImpl.HIGH -> message.high();
+			default -> message;
+		};
 	}
 
 	/** Notifies each user once; returns the notifications stored. */

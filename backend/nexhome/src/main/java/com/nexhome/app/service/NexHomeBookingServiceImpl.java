@@ -89,10 +89,8 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 	static final String BOOKING_MANAGE = "BOOKING_MANAGE";
 	private static final ZoneId ZONE = ZoneId.of("Asia/Kolkata");
 	/** How long before a CONFIRMED booking's start staff are warned it still has no partner. */
-	static final Duration UNASSIGNED_ALERT_WINDOW = Duration.ofHours(2);
 	/** Months in the dashboard's booking trend, this one included. */
 	private static final int STATS_MONTHS = 10;
-	private static final int DEFAULT_OFFER_MINUTES = 30;
 	/** Assignments that hold the booking before the work starts: assigned by staff, or accepted by the partner. */
 	private static final Set<String> HOLDING = Set.of(AssignmentStatus.ASSIGNED, AssignmentStatus.ACCEPTED);
 	/** The history reason when staff take the partner off (the console shows it as "Unassigned"). */
@@ -147,6 +145,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 	private final NexHomeBookingReviewRepository reviewRepository;
 	private final NexHomeNotifier notifier;
 	private final NexHomeAuditRecorder auditRecorder;
+	private final NexHomeSettingsService settingsService;
 
 	// ------------------------------------------------------------------------------------------------------------
 	// Creating and reading
@@ -452,8 +451,8 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 				actingUserId);
 		if (isCustomer(booking)) {
 			// The staff who handle bookings hear the customer cancelled (the partner's time is free again)
-			notifier.notifyStaff(BOOKING_MANAGE, new NexHomeNotifier.Message(NotificationType.BOOKING,
-					"Booking " + booking.getPublicId() + " cancelled by the customer",
+			notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_BOOKING_CANCELLED, BOOKING_MANAGE, new NexHomeNotifier.Message(
+					NotificationType.BOOKING, "Booking " + booking.getPublicId() + " cancelled by the customer",
 					booking.getServiceNameSnapshot() + (reason == null ? "" : ": " + reason), NexHomeNotifier.BOOKING,
 					booking.getId()), actingUserId);
 		}
@@ -480,7 +479,8 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 				AssignmentStatus.OFFERED)) {
 			throw new DuplicateResourceException("The booking is already offered to this partner.");
 		}
-		int minutes = request.expiresInMinutes() != null ? request.expiresInMinutes() : DEFAULT_OFFER_MINUTES;
+		int minutes = request.expiresInMinutes() != null ? request.expiresInMinutes()
+				: settingsService.intValue(NexHomeSettingsService.Keys.OFFER_EXPIRY_MINUTES);
 		if (request.startsAt() != null || request.endsAt() != null) {
 			allotSlot(booking, request.startsAt(), request.endsAt(), actingUserId);
 		}
@@ -676,11 +676,11 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 			assignment.setAssignmentStatus(AssignmentStatus.EXPIRED);
 			// Nobody answered: the staff who handle bookings offer it to another partner
 			NexHomeBooking booking = assignment.getBooking();
-			notifier.notifyStaff(BOOKING_MANAGE, new NexHomeNotifier.Message(NotificationType.BOOKING,
-					"Offer expired: " + booking.getPublicId(),
+			notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_OFFER_EXPIRED, BOOKING_MANAGE, new NexHomeNotifier.Message(
+					NotificationType.BOOKING, "Offer expired: " + booking.getPublicId(),
 					"Partner " + assignment.getPartner().getPublicId() + " did not answer in time; offer "
 							+ booking.getServiceNameSnapshot() + " to another partner.",
-					NexHomeNotifier.BOOKING, booking.getId()).high(), null);
+					NexHomeNotifier.BOOKING, booking.getId()), null);
 		});
 		if (!expired.isEmpty()) {
 			// Their slot holds ran out at the same time and are marked EXPIRED by the availability job
@@ -693,15 +693,16 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 	@Transactional
 	public int alertUnassignedBookings() {
 		Instant now = Instant.now();
+		Duration window = Duration.ofHours(settingsService.intValue(NexHomeSettingsService.Keys.UNASSIGNED_ALERT_HOURS));
 		List<NexHomeBooking> soon = bookingRepository
 				.findByBookingStatusAndPartnerIsNullAndUnassignedAlertAtIsNullAndScheduledStartAtBetween(
-						BookingStatus.CONFIRMED, now, now.plus(UNASSIGNED_ALERT_WINDOW));
+						BookingStatus.CONFIRMED, now, now.plus(window));
 		soon.forEach(booking -> {
-			notifier.notifyStaff(BOOKING_MANAGE, new NexHomeNotifier.Message(NotificationType.BOOKING,
-					"No partner yet: " + booking.getPublicId(),
-					booking.getServiceNameSnapshot() + " starts within " + UNASSIGNED_ALERT_WINDOW.toHours()
-							+ " hours and has no partner; assign one.",
-					NexHomeNotifier.BOOKING, booking.getId()).high(), null);
+			notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_BOOKING_UNASSIGNED, BOOKING_MANAGE, new NexHomeNotifier.Message(
+					NotificationType.BOOKING, "No partner yet: " + booking.getPublicId(),
+					booking.getServiceNameSnapshot() + " starts within " + window.toHours()
+							+ (window.toHours() == 1 ? " hour" : " hours") + " and has no partner; assign one.",
+					NexHomeNotifier.BOOKING, booking.getId()), null);
 			booking.setUnassignedAlertAt(now);
 		});
 		if (!soon.isEmpty()) {
@@ -892,8 +893,8 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 	/** The staff who read bookings hear the partner declined, so they find another. */
 	private void partnerDeclined(NexHomeBookingAssignment assignment, String reason, Long actingUserId) {
 		NexHomeBooking booking = assignment.getBooking();
-		notifier.notifyStaff(BOOKING_MANAGE, new NexHomeNotifier.Message(NotificationType.BOOKING,
-				"Partner declined " + booking.getPublicId(),
+		notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_PARTNER_DECLINED, BOOKING_MANAGE, new NexHomeNotifier.Message(
+				NotificationType.BOOKING, "Partner declined " + booking.getPublicId(),
 				assignment.getPartner().getPublicId() + " declined: " + reason, NexHomeNotifier.BOOKING,
 				booking.getId()), actingUserId);
 	}
