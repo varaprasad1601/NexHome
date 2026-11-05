@@ -184,7 +184,22 @@ class NexHomePolicyServiceImplTest {
 		assertThat(response.publishedAt()).isNull();
 		assertThat(response.audience()).isEqualTo("CUSTOMER");
 		assertThat(response.title()).isEqualTo("Terms of use");
-		assertThat(response.content()).isEqualTo("1. Be nice.\n  2. Pay.");
+		// Plain text keeps its lines as paragraphs of formatted text
+		assertThat(response.content()).isEqualTo("<p>1. Be nice.</p><p>2. Pay.</p>");
+	}
+
+	@Test
+	void formattedContentKeepsOnlyTheAllowedTags() {
+		NexHomePolicyDocumentResponse response = policyService.createPolicy(new NexHomePolicyDocumentCreateRequest(
+				"TERMS", "Terms of use", "CUSTOMER", "1.1",
+				"<p><b>Booking</b> rules</p><ul><li>Be on time</li></ul><script>alert(1)</script><p onclick=\"x()\">End</p>",
+				EFFECTIVE));
+
+		assertThat(response.content()).isEqualTo("<p><b>Booking</b> rules</p><ul><li>Be on time</li></ul><p>End</p>");
+		assertThatThrownBy(() -> policyService.createPolicy(new NexHomePolicyDocumentCreateRequest("TERMS", "Terms of use",
+				"CUSTOMER", "1.2", "<p> </p>", EFFECTIVE)))
+				.isInstanceOf(com.nexhome.app.exception.InvalidRequestException.class)
+				.hasMessage("Policy text cannot be blank.");
 	}
 
 	@Test

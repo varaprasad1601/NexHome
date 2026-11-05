@@ -10,6 +10,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -318,8 +319,24 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		PageRequest pageRequest = NexHomePaging.newestFirst(page, size);
 		Page<NexHomeBooking> bookings = bookingRepository.findAll(NexHomeBookingRepository.bookingSpec(null, null,
 				customer.getId(), null, null, null, null, null), pageRequest);
-		return NexHomePaging.toPageResponse(pageRequest, bookings,
-				bookings.stream().map(bookingMapper::toBookingDto).toList());
+		// Who cancelled the page's cancelled bookings: one query
+		List<Long> cancelledIds = bookings.stream()
+				.filter(b -> BookingStatus.CANCELLED.equals(b.getBookingStatus()))
+				.map(NexHomeBooking::getId)
+				.toList();
+		Map<Long, Object[]> cancellations = new HashMap<>();
+		if (!cancelledIds.isEmpty()) {
+			for (Object[] row : historyRepository.cancellationsOf(cancelledIds)) {
+				cancellations.put((Long) row[0], row);
+			}
+		}
+		return NexHomePaging.toPageResponse(pageRequest, bookings, bookings.stream().map(booking -> {
+			Object[] row = cancellations.get(booking.getId());
+			if (row == null) {
+				return bookingMapper.toBookingDto(booking);
+			}
+			return withCancellation(booking, (Long) row[1], (Instant) row[2]);
+		}).toList());
 	}
 
 	@Override
@@ -869,6 +886,29 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 	// Helpers
 	// ------------------------------------------------------------------------------------------------------------
 
+	/** The name shown for staff who cancel a customer's or partner's booking. */
+	static final String SUPPORT_NAME = "NexHome Support";
+
+	/**
+	 * The booking with who cancelled it, seen from the customer: CUSTOMER (the customer, by their name), PARTNER (the
+	 * booking's partner, by name) or STAFF ("NexHome Support"), and when.
+	 */
+	private NexHomeBookingResponse withCancellation(NexHomeBooking booking, Long by, Instant at) {
+		NexHomeCustomerProfile customer = booking.getCustomer();
+		NexHomePartnerProfile partner = booking.getPartner();
+		if (by != null && by.equals(customer.getUser().getId())) {
+			return bookingMapper.toBookingDto(booking, at, "CUSTOMER", fullName(customer.getFirstName(), customer.getLastName()));
+		}
+		if (by != null && partner != null && by.equals(partner.getUser().getId())) {
+			return bookingMapper.toBookingDto(booking, at, "PARTNER", fullName(partner.getFirstName(), partner.getLastName()));
+		}
+		return bookingMapper.toBookingDto(booking, at, "STAFF", SUPPORT_NAME);
+	}
+
+	private static String fullName(String first, String last) {
+		return NexHomeText.trimToNull(String.join(" ", java.util.Objects.toString(first, ""), java.util.Objects.toString(last, "")));
+	}
+
 	/** A booking notification to one user (none for a null user, the actor or the system account). */
 	private void tell(Long userId, String title, String message, NexHomeBooking booking, Long actingUserId) {
 		notifier.notify(userId, new NexHomeNotifier.Message(NotificationType.BOOKING, title, message,
@@ -936,8 +976,13 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 					.withAssignedBy(assignedBy.get(i).byName(), assignedBy.get(i).byRole()));
 		}
 		NexHomeServiceCategory category = booking.getService().getCategory();
+		// Who cancelled it and when: the last CANCELLED row of the history
+		NexHomeBookingStatusHistory cancelledRow = BookingStatus.CANCELLED.equals(booking.getBookingStatus())
+				? history.stream().filter(h -> BookingStatus.CANCELLED.equals(h.getNewStatus())).reduce((a, b) -> b).orElse(null)
+				: null;
 		return new NexHomeBookingDetailResponse(
-				bookingMapper.toBookingDto(booking),
+				cancelledRow == null ? bookingMapper.toBookingDto(booking)
+						: withCancellation(booking, cancelledRow.getChangedBy(), cancelledRow.getCreationDate()),
 				category.getId(),
 				category.getName(),
 				bookingItemRepository.findByBookingIdOrderByIdAsc(bookingId).stream()

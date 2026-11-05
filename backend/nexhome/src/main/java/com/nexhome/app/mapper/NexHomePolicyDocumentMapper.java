@@ -21,7 +21,7 @@ public class NexHomePolicyDocumentMapper {
 		policy.setAudience(trimToNull(request.audience()));
 		policy.setVersion(trimToNull(request.version()));
 		// The text is kept exactly as written, apart from surrounding blank lines
-		policy.setContent(request.content().strip());
+		policy.setContent(contentOf(request.content()));
 		policy.setEffectiveFrom(request.effectiveFrom());
 		policy.setPublished(false);
 		policy.setCreatedBy(actingUserId);
@@ -39,7 +39,7 @@ public class NexHomePolicyDocumentMapper {
 			policy.setAudience(trimToNull(request.audience()));
 		}
 		if (request.content() != null) {
-			policy.setContent(request.content().strip());
+			policy.setContent(contentOf(request.content()));
 		}
 		if (request.effectiveFrom() != null) {
 			policy.setEffectiveFrom(request.effectiveFrom());
@@ -59,5 +59,27 @@ public class NexHomePolicyDocumentMapper {
 				policy.getPublishedAt(),
 				policy.isPublished(),
 				policy.getCreationDate());
+	}
+
+	/**
+	 * The policy text as formatted HTML (p, b, i, u, lists; {@link NexHomeRichText}). Plain text (no tags) keeps its
+	 * lines as paragraphs. Text that is empty once cleaned is 400.
+	 */
+	static String contentOf(String content) {
+		String text = content == null ? "" : content.strip();
+		if (!text.isEmpty() && !text.contains("<")) {
+			StringBuilder paragraphs = new StringBuilder();
+			for (String line : text.split("\\R+")) {
+				if (!line.isBlank()) {
+					paragraphs.append("<p>").append(org.jsoup.nodes.Entities.escape(line.strip())).append("</p>");
+				}
+			}
+			text = paragraphs.toString();
+		}
+		String cleaned = NexHomeRichText.clean(text);
+		if (cleaned == null) {
+			throw new com.nexhome.app.exception.InvalidRequestException("Policy text cannot be blank.");
+		}
+		return cleaned;
 	}
 }

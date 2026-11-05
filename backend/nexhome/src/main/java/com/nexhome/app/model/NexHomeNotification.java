@@ -61,6 +61,10 @@ public class NexHomeNotification {
 	@Column(name = "priority", nullable = false, length = 20, updatable = false)
 	private String priority = "NORMAL";
 
+	/** The app it belongs to (V54): CUSTOMER, PARTNER, STAFF (the console) or ALL. */
+	@Column(name = "audience", nullable = false, length = 20, updatable = false)
+	private String audience = "ALL";
+
 	@CreationTimestamp
 	@Column(name = "creation_date", nullable = false, updatable = false)
 	private Instant creationDate;

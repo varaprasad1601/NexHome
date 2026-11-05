@@ -7,8 +7,10 @@ import ImageUploadField from './ImageUploadField';
 import { fieldClass } from '../system/systemStyles';
 import Modal from './Modal';
 import MultiSelect from './MultiSelect';
+import RichTextEditor from './RichTextEditor';
 import Select from './Select';
 import Toggle from './Toggle';
+import { richTextLength } from '../../../utils/richText';
 
 /**
  * A dialog form built from a list of fields, for the console's simpler records (catalogue categories, addresses, FAQs,
@@ -97,7 +99,8 @@ export default function FormModal({
     const found = {};
     visible.forEach((field) => {
       const value = values[field.key];
-      const empty = value === undefined || value === null || String(value).trim() === '';
+      const empty =
+        value === undefined || value === null || (field.type === 'richtext' ? richTextLength(value) === 0 : String(value).trim() === '');
       if (field.required && empty) found[field.key] = `${field.label} is required`;
       else if (!empty && (field.type === 'number' || field.type === 'money') && Number.isNaN(Number(value))) {
         found[field.key] = `${field.label} must be a number`;
@@ -133,6 +136,18 @@ export default function FormModal({
     const value = values[field.key] ?? '';
     const error = Boolean(errors[field.key]);
     switch (field.type) {
+      case 'richtext':
+        // Formatted text (bold, italic, underline, lists), stored as the HTML of utils/richText
+        return (
+          <>
+            <RichTextEditor id={id} value={value} onChange={(html) => set(field.key, html)} disabled={field.disabled} placeholder={field.placeholder} error={error} />
+            {field.maxLength && (
+              <div className="mt-1 text-right text-xs text-[var(--muted)]">
+                {richTextLength(value)}/{field.maxLength}
+              </div>
+            )}
+          </>
+        );
       case 'textarea':
         return (
           <>
@@ -289,7 +304,7 @@ export default function FormModal({
             {visible.map((field) => (
               <div
                 key={field.key}
-                className={field.wide || field.type === 'textarea' || field.type === 'image' ? 'sm:col-span-2' : ''}
+                className={field.wide || field.type === 'textarea' || field.type === 'richtext' || field.type === 'image' ? 'sm:col-span-2' : ''}
               >
                 <FormField
                   label={field.label}

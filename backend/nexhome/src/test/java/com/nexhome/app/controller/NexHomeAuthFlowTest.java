@@ -267,6 +267,21 @@ class NexHomeAuthFlowTest {
 	}
 
 	@Test
+	void staffAddACustomerAccountToTheirNumber() throws Exception {
+		String admin = accessToken(newUser("ADMIN").getId());
+
+		JsonNode joined = json(perform(post("/api/users/me/customer/join"), admin, null).andExpect(status().isCreated()));
+		org.assertj.core.api.Assertions.assertThat(joined.get("roles").toString()).contains("\"ADMIN\"", "\"CUSTOMER\"");
+		perform(get("/api/profiles/customers/me"), admin, null).andExpect(status().isOk());
+		perform(post("/api/users/me/customer/join"), admin, null).andExpect(status().isConflict());
+
+		perform(post("/api/users/me/customer/join"), accessToken(newUser("PARTNER").getId()), null)
+				.andExpect(status().isForbidden());
+		perform(post("/api/users/me/customer/join"), accessToken(newUser("CUSTOMER").getId()), null)
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
 	void blockingAnAccountEndsItsSessions() throws Exception {
 		String superUser = accessToken(newUser("SUPER_USER").getId());
 		NexHomeUser customer = newUser("CUSTOMER");

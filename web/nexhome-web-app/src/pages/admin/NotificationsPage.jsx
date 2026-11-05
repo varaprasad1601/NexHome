@@ -44,7 +44,7 @@ export default function NotificationsPage() {
     const params = new URLSearchParams({ page: String(page), size: String(PAGE_SIZE) });
     if (tab === 'unread') params.set('unread', 'true');
     if (type) params.set('notificationType', type);
-    authRequest(`/api/notifications/me?${params}`)
+    authRequest(`/api/notifications/me?${params}&app=STAFF`)
       .then((data) => !cancelled && setList({ data, loading: false, error: '' }))
       .catch((err) => !cancelled && setList({ data: EMPTY_PAGE, loading: false, error: err.message }));
     return () => {
@@ -72,7 +72,7 @@ export default function NotificationsPage() {
     );
   const remove = (notification) =>
     act(() => authRequest(`/api/notifications/me/delete/${notification.notificationId}`, { method: 'DELETE' }), 'Notification removed.');
-  const markAllRead = () => act(() => authRequest('/api/notifications/me/read-all', { method: 'PUT' }), 'All notifications marked as read.');
+  const markAllRead = () => act(() => authRequest('/api/notifications/me/read-all?app=STAFF', { method: 'PUT' }), 'All notifications marked as read.');
   const open = async (notification) => {
     if (!notification.isRead) await markRead(notification);
     const to = notificationLink(notification);

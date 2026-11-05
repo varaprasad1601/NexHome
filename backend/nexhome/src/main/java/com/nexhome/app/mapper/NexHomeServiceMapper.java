@@ -103,6 +103,12 @@ public class NexHomeServiceMapper {
 
 	/** @param showCommission false hides the platform commission (everyone but CATALOG_MANAGE readers) */
 	public NexHomeServiceResponse toServiceDto(NexHomeService service, boolean showCommission) {
+		return toServiceDto(service, showCommission, null, null, null);
+	}
+
+	/** With the list's extras: the cover image's address and the service's published rating. */
+	public NexHomeServiceResponse toServiceDto(NexHomeService service, boolean showCommission, String coverImageUrl,
+			BigDecimal averageRating, Long reviewCount) {
 		NexHomeServiceCategory category = service.getCategory();
 		return new NexHomeServiceResponse(
 				service.getId(),
@@ -126,6 +132,9 @@ public class NexHomeServiceMapper {
 				service.isInstantBookingAllowed(),
 				service.isScheduledBookingAllowed(),
 				service.isActive(),
-				service.getCreationDate());
+				service.getCreationDate(),
+				coverImageUrl,
+				averageRating,
+				reviewCount);
 	}
 }

@@ -474,6 +474,7 @@ public final class NexHomeLookupCodes {
 
 		public static final String IN_APP = "IN_APP";
 		public static final String SMS = "SMS";
+		public static final String PUSH = "PUSH";
 
 		private NotificationChannel() {
 		}

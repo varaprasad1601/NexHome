@@ -39,6 +39,11 @@ public interface NexHomeServiceImageRepository extends JpaRepository<NexHomeServ
 	boolean existsByServiceId(Long serviceId);
 
 	/** Images whose bytes are still in the database (added before file storage, V47). */
+	/** The images of these services, each service's cover first: [service id, image id]. */
+	@Query("select i.service.id, i.id from NexHomeServiceImage i where i.service.id in :serviceIds "
+			+ "order by i.service.id, i.displayOrder, i.id")
+	List<Object[]> imageIdsOf(@Param("serviceIds") java.util.Collection<Long> serviceIds);
+
 	@Query("select i.id from NexHomeServiceImage i where i.file is null order by i.id")
 	List<Long> findIdsWithoutFile();
 

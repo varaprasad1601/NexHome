@@ -20,6 +20,9 @@ import com.nexhome.app.dto.NexHomeNotificationSendResponse;
 import com.nexhome.app.dto.NexHomeNotificationStatsResponse;
 import com.nexhome.app.dto.NexHomeNotificationSummaryResponse;
 import com.nexhome.app.dto.NexHomePageResponse;
+import com.nexhome.app.dto.NexHomePushDeviceRegisterRequest;
+import com.nexhome.app.dto.NexHomePushDeviceResponse;
+import com.nexhome.app.dto.NexHomePushDeviceUnregisterRequest;
 import com.nexhome.app.exception.InvalidRequestException;
 import com.nexhome.app.exception.ResourceNotFoundException;
 import com.nexhome.app.mapper.NexHomeNotificationMapper;
@@ -29,9 +32,11 @@ import com.nexhome.app.model.NexHomeLookupCodes.NotificationType;
 import com.nexhome.app.model.NexHomeLookupCodes.Types;
 import com.nexhome.app.model.NexHomeNotification;
 import com.nexhome.app.model.NexHomeNotificationDeliveryLog;
+import com.nexhome.app.model.NexHomePushDevice;
 import com.nexhome.app.model.NexHomeRole;
 import com.nexhome.app.repository.NexHomeNotificationDeliveryLogRepository;
 import com.nexhome.app.repository.NexHomeNotificationRepository;
+import com.nexhome.app.repository.NexHomePushDeviceRepository;
 import com.nexhome.app.repository.NexHomeUserRepository;
 import com.nexhome.app.repository.NexHomeUserRoleRepository;
 
@@ -49,6 +54,23 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 			"PARTNERS", List.of(NexHomeRole.PARTNER),
 			"STAFF", List.of(NexHomeRole.SUPER_USER, NexHomeRole.ADMIN, NexHomeRole.SUB_ADMIN));
 	private static final String USER = "USER";
+	/** The app a note sent to a group belongs to (V54). */
+	private static final Map<String, String> SENT_TO = Map.of("CUSTOMERS", NexHomeNotifier.CUSTOMER,
+			"PARTNERS", NexHomeNotifier.PARTNER, "STAFF", NexHomeNotifier.STAFF);
+	private static final List<String> APPS = List.of(NexHomeNotifier.CUSTOMER, NexHomeNotifier.PARTNER,
+			NexHomeNotifier.STAFF);
+
+	/** {@code app} (CUSTOMER, PARTNER, STAFF) as the audiences it sees: its own and ALL; null without one. */
+	private static List<String> audiencesOf(String app) {
+		if (app == null || app.isBlank()) {
+			return null;
+		}
+		String code = app.trim().toUpperCase();
+		if (!APPS.contains(code)) {
+			throw new InvalidRequestException("App must be one of: CUSTOMER, PARTNER, STAFF.");
+		}
+		return List.of(code, NexHomeNotifier.ALL);
+	}
 
 	private final NexHomeNotificationRepository notificationRepository;
 	private final NexHomeNotificationDeliveryLogRepository deliveryLogRepository;
@@ -60,15 +82,17 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 	private final NexHomeNotificationMapper notificationMapper;
 	private final NexHomeNotifier notifier;
 	private final NexHomeAuditRecorder auditRecorder;
+	private final NexHomePushDeviceRepository pushDeviceRepository;
 
 	@Override
 	@Transactional(readOnly = true)
 	public NexHomePageResponse<NexHomeNotificationResponse> getMyNotifications(Integer page, Integer size,
-			Boolean unread, String notificationType) {
+			Boolean unread, String notificationType, String app) {
+		List<String> audiences = audiencesOf(app);
 		PageRequest pageRequest = NexHomePaging.newestFirst(page, size);
 		Page<NexHomeNotification> notifications = notificationRepository.findAll(
 				NexHomeNotificationRepository.notificationSpec(permissionService.currentUserId(),
-						typeOrNull(notificationType), unread, null), pageRequest);
+						typeOrNull(notificationType), unread, null, audiences), pageRequest);
 		return NexHomePaging.toPageResponse(pageRequest, notifications,
 				notifications.stream().map(notification -> notificationMapper.toNotificationDto(notification, null))
 						.toList());
@@ -76,17 +100,20 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 
 	@Override
 	@Transactional(readOnly = true)
-	public NexHomeNotificationSummaryResponse getMySummary() {
+	public NexHomeNotificationSummaryResponse getMySummary(String app) {
 		Long userId = permissionService.currentUserId();
+		List<String> audiences = audiencesOf(app);
 		Map<String, Long> unreadByType = new LinkedHashMap<>();
 		long unread = 0;
-		for (Object[] row : notificationRepository.countUnreadByType(userId)) {
+		for (Object[] row : audiences == null ? notificationRepository.countUnreadByType(userId)
+				: notificationRepository.countUnreadByTypeIn(userId, audiences)) {
 			long count = ((Number) row[1]).longValue();
 			unreadByType.put((String) row[0], count);
 			unread += count;
 		}
-		return new NexHomeNotificationSummaryResponse(notificationRepository.countByUserId(userId), unread,
-				unreadByType);
+		long total = audiences == null ? notificationRepository.countByUserId(userId)
+				: notificationRepository.countByUserIdAndAudienceIn(userId, audiences);
+		return new NexHomeNotificationSummaryResponse(total, unread, unreadByType);
 	}
 
 	@Override
@@ -98,8 +125,10 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 
 	@Override
 	@Transactional
-	public int markAllRead() {
-		return notificationRepository.markAllRead(permissionService.currentUserId(), Instant.now());
+	public int markAllRead(String app) {
+		List<String> audiences = audiencesOf(app);
+		return audiences == null ? notificationRepository.markAllRead(permissionService.currentUserId(), Instant.now())
+				: notificationRepository.markAllReadIn(permissionService.currentUserId(), audiences, Instant.now());
 	}
 
 	@Override
@@ -113,8 +142,10 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 
 	@Override
 	@Transactional
-	public int clearMine() {
-		return notificationRepository.deleteAllOfUser(permissionService.currentUserId());
+	public int clearMine(String app) {
+		List<String> audiences = audiencesOf(app);
+		return audiences == null ? notificationRepository.deleteAllOfUser(permissionService.currentUserId())
+				: notificationRepository.deleteAllOfUserIn(permissionService.currentUserId(), audiences);
 	}
 
 	@Override
@@ -142,7 +173,8 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 		}
 		// Staff sending to their own group get it too: only the sender is left out of a group
 		List<NexHomeNotification> sent = notifier.notifyAll(recipients, new NexHomeNotifier.Message(type,
-				request.title().trim(), request.message().trim(), null, null), actingUserId);
+				request.title().trim(), request.message().trim(), null, null).forApp(SENT_TO.getOrDefault(audience,
+						NexHomeNotifier.ALL)), actingUserId);
 		Map<String, Object> details = new LinkedHashMap<>();
 		details.put("audience", audience);
 		details.put("userId", request.userId());
@@ -209,5 +241,54 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 	private String typeOrNull(String notificationType) {
 		return NexHomeText.trimToNull(notificationType) == null ? null
 				: lookupService.validateCode(Types.NOTIFICATION_TYPE, notificationType, "Notification type");
+	}
+
+	// ------------------------------------------------------------------------------------------------------------
+	// Push devices (V53)
+	// ------------------------------------------------------------------------------------------------------------
+
+	@Override
+	@Transactional
+	public NexHomePushDeviceResponse registerDevice(NexHomePushDeviceRegisterRequest request) {
+		Long userId = permissionService.currentUserId();
+		String token = request.deviceToken().trim();
+		Instant now = Instant.now();
+		NexHomePushDevice device = pushDeviceRepository.findByDeviceToken(token).orElse(null);
+		if (device == null) {
+			device = new NexHomePushDevice();
+			device.setDeviceToken(token);
+			device.setCreatedBy(userId);
+		}
+		else if (!device.getUser().getId().equals(userId)) {
+			log.info("Push device {} moved from User ID {} to User ID {}", device.getId(), device.getUser().getId(),
+					userId);
+		}
+		device.setUser(userRepository.getReferenceById(userId));
+		device.setAppCode(request.app());
+		device.setPlatform(request.platform());
+		device.setActive(true);
+		device.setDeactivatedReason(null);
+		device.setLastSeenAt(now);
+		device.setUpdatedBy(userId);
+		if (device.getId() == null) {
+			device = pushDeviceRepository.save(device);
+			log.info("Push device {} ({} app) registered for User ID {}", device.getId(), request.app(), userId);
+		}
+		return new NexHomePushDeviceResponse(device.getId(), userId, device.getAppCode(), device.getPlatform(), true,
+				now);
+	}
+
+	@Override
+	@Transactional
+	public void unregisterDevice(NexHomePushDeviceUnregisterRequest request) {
+		Long userId = permissionService.currentUserId();
+		pushDeviceRepository.findByDeviceToken(request.deviceToken().trim())
+				.filter(device -> device.getUser().getId().equals(userId) && device.isActive())
+				.ifPresent(device -> {
+					device.setActive(false);
+					device.setDeactivatedReason(NexHomePushDevice.LOGGED_OUT);
+					device.setUpdatedBy(userId);
+					log.info("Push device {} unregistered by User ID {}", device.getId(), userId);
+				});
 	}
 }

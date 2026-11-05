@@ -105,6 +105,7 @@ class NexHomeStaffNotificationFlowTest {
 		perform(get("/api/settings/public"), null, null)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.WHATSAPP_NUMBER").isNotEmpty())
+				.andExpect(jsonPath("$.TRANSACTION_FEE_PERCENTAGE").isNotEmpty())
 				.andExpect(jsonPath("$.MAX_CART_ITEMS").doesNotExist());
 		perform(get("/api/settings"), accessToken(newUser("CUSTOMER").getId()), null)
 				.andExpect(status().isForbidden());
@@ -217,6 +218,22 @@ class NexHomeStaffNotificationFlowTest {
 				.andExpect(jsonPath("$.content[0].title").value(Matchers.endsWith("cancelled by the customer")))
 				.andExpect(jsonPath("$.content[0].referenceId").value(cancelledId));
 
+		// Staff cancel one: the customer hears of it in the customer app, and sees it was NexHome Support
+		long staffCancelledId = confirmedBooking(customerId, addressId, monday.atTime(14, 0).atZone(IST).toInstant());
+		perform(put("/api/bookings/cancel"), staff,
+				"{\"bookingId\": %d, \"reason\": \"No Partner Available at that time\"}".formatted(staffCancelledId))
+				.andExpect(status().isOk());
+		perform(get("/api/bookings/" + staffCancelledId), customer, null)
+				.andExpect(jsonPath("$.booking.cancelledByRole").value("STAFF"))
+				.andExpect(jsonPath("$.booking.cancelledByName").value("NexHome Support"));
+		perform(get("/api/bookings/me"), customer, null)
+				.andExpect(jsonPath("$.content[?(@.bookingId == %d)].cancelledByName".formatted(staffCancelledId)).value("NexHome Support"));
+		perform(get("/api/notifications/me?app=CUSTOMER"), customer, null)
+				.andExpect(jsonPath("$.content[?(@.referenceId == %d)].audience".formatted(staffCancelledId))
+						.value(Matchers.everyItem(Matchers.is("CUSTOMER"))))
+				.andExpect(jsonPath("$.content[0].referenceId").value(staffCancelledId))
+				.andExpect(jsonPath("$.content[0].message").value(Matchers.containsString("No Partner Available at that time")));
+
 		// An offer nobody answers: HIGH
 		long offeredId = confirmedBooking(customerId, addressId, monday.atTime(10, 0).atZone(IST).toInstant());
 		long assignmentId = json(perform(post("/api/bookings/assignments/offer"), staff,
@@ -295,6 +312,46 @@ class NexHomeStaffNotificationFlowTest {
 				.andExpect(status().isCreated());
 		latest("SUPPORT")
 				.andExpect(jsonPath("$.content[0].title").value(Matchers.endsWith("reopened by the requester")));
+	}
+
+	/**
+	 * V54: a staff member who is also a customer sees staff notes only in the console (app STAFF) and customer notes
+	 * only in the customer app (app CUSTOMER); a note to them alone is in both; without app, all of them.
+	 */
+	@Test
+	void eachAppShowsOnlyItsOwnNotifications() throws Exception {
+		String sender = accessToken(newUser("SUPER_USER").getId());
+		NexHomeUser both = newUser("ADMIN");
+		String bothToken = accessToken(both.getId());
+		perform(post("/api/users/me/customer/join"), bothToken, null).andExpect(status().isCreated());
+		String tag = UUID.randomUUID().toString().substring(0, 8);
+		perform(post("/api/notifications/send"), sender,
+				"{\"audience\": \"STAFF\", \"title\": \"Staff note " + tag + "\", \"message\": \"For staff.\"}")
+				.andExpect(status().isCreated());
+		perform(post("/api/notifications/send"), sender,
+				"{\"audience\": \"CUSTOMERS\", \"title\": \"Customer note " + tag + "\", \"message\": \"For customers.\"}")
+				.andExpect(status().isCreated());
+		perform(post("/api/notifications/send"), sender, "{\"audience\": \"USER\", \"userId\": " + both.getId()
+				+ ", \"title\": \"Personal note " + tag + "\", \"message\": \"For you.\"}")
+				.andExpect(status().isCreated());
+
+		perform(get("/api/notifications/me?size=50&app=CUSTOMER"), bothToken, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[?(@.title == 'Customer note " + tag + "')].audience").value("CUSTOMER"))
+				.andExpect(jsonPath("$.content[?(@.title == 'Personal note " + tag + "')].audience").value("ALL"))
+				.andExpect(jsonPath("$.content[?(@.title == 'Staff note " + tag + "')]").isEmpty());
+		perform(get("/api/notifications/me?size=50&app=STAFF"), bothToken, null)
+				.andExpect(jsonPath("$.content[?(@.title == 'Staff note " + tag + "')].audience").value("STAFF"))
+				.andExpect(jsonPath("$.content[?(@.title == 'Customer note " + tag + "')]").isEmpty());
+		perform(get("/api/notifications/me?size=50"), bothToken, null)
+				.andExpect(jsonPath("$.totalElements").value(3));
+		perform(get("/api/notifications/me/summary?app=CUSTOMER"), bothToken, null)
+				.andExpect(jsonPath("$.total").value(2));
+		// Marking all read in one app leaves the other's unread
+		perform(put("/api/notifications/me/read-all?app=CUSTOMER"), bothToken, null).andExpect(status().isOk());
+		perform(get("/api/notifications/me/summary?app=STAFF"), bothToken, null)
+				.andExpect(jsonPath("$.unread").value(1));
+		perform(get("/api/notifications/me?app=EVERYWHERE"), bothToken, null).andExpect(status().isBadRequest());
 	}
 
 	/** The watcher's newest notification of a type. */

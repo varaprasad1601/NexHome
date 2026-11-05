@@ -39,6 +39,9 @@ public interface NexHomeBookingAssignmentRepository extends JpaRepository<NexHom
 
 	boolean existsByBookingIdAndPartnerIdAndAssignmentStatus(Long bookingId, Long partnerId, String assignmentStatus);
 
+	/** Whether the booking was ever offered or assigned to the partner with this account. */
+	boolean existsByBookingIdAndPartnerUserId(Long bookingId, Long userId);
+
 	/** A partner's offers (and other assignments) by status, newest first, with the bookings. */
 	@EntityGraph(attributePaths = "booking")
 	Page<NexHomeBookingAssignment> findByPartnerIdAndAssignmentStatusOrderByOfferedAtDesc(Long partnerId,

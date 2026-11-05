@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "11749828193",
+    "project_id": "nexhome-4f7da",
+    "storage_bucket": "nexhome-4f7da.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:11749828193:android:f37e06dc175f1469d4ac20",
+        "android_client_info": {
+          "package_name": "com.nexhome.customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAsxGlqqr3l7A4f4_4hVwupB7IY0A18CWQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

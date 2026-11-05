@@ -53,5 +53,14 @@ public record NexHomeServiceResponse(
 
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
 				timezone = "Asia/Kolkata")
-		Instant creationDate) {
+		Instant creationDate,
+
+		/** The cover (first) image's public address; null without images. Filled in the service list only. */
+		String coverImageUrl,
+
+		/** The average service rating of the service's PUBLISHED reviews (1 decimal); null without any. List only. */
+		BigDecimal averageRating,
+
+		/** How many PUBLISHED reviews that average is of; null outside the list. */
+		Long reviewCount) {
 }

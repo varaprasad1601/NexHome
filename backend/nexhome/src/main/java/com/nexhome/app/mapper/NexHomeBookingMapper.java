@@ -2,6 +2,7 @@ package com.nexhome.app.mapper;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -41,6 +42,12 @@ public class NexHomeBookingMapper {
 	private final JsonMapper jsonMapper;
 
 	public NexHomeBookingResponse toBookingDto(NexHomeBooking booking) {
+		return toBookingDto(booking, null, null, null);
+	}
+
+	/** With who cancelled it and when (from the status history), for the customer's own list. */
+	public NexHomeBookingResponse toBookingDto(NexHomeBooking booking, Instant cancelledAt, String cancelledByRole,
+			String cancelledByName) {
 		NexHomeCustomerProfile customer = booking.getCustomer();
 		NexHomePartnerProfile partner = booking.getPartner();
 		return new NexHomeBookingResponse(
@@ -75,7 +82,17 @@ public class NexHomeBookingMapper {
 				booking.getTotalAmount(),
 				booking.getCurrency(),
 				booking.getCancellationReason(),
-				booking.getCreationDate());
+				booking.getCreationDate(),
+				partner == null ? null : mobileOf(partner),
+				cancelledAt,
+				cancelledByRole,
+				cancelledByName);
+	}
+
+	/** "+91 9876543210", as staff screens show numbers. */
+	private static String mobileOf(NexHomePartnerProfile partner) {
+		var user = partner.getUser();
+		return user == null ? null : user.getCountryCode() + " " + user.getMobileNumber();
 	}
 
 	public NexHomeBookingItemResponse toBookingItemDto(NexHomeBookingItem item) {

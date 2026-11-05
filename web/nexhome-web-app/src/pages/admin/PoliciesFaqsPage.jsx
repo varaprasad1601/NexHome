@@ -11,7 +11,6 @@ import { MoneyTabs, MoneyTile, When } from '../../components/admin/payment/money
 import ConfirmDialog from '../../components/admin/system/ConfirmDialog';
 import RowActions from '../../components/admin/system/RowActions';
 import {
-  CODE_PATTERN,
   cardClass,
   primaryButtonClass,
   searchInputClass
@@ -19,6 +18,7 @@ import {
 import { useAdminAuth } from '../../context/adminAuth';
 import useDebounced from '../../hooks/useDebounced';
 import { formatNumber } from '../../utils/format';
+import { cleanRichText, richTextLength, toRichText } from '../../utils/richText';
 import { TIME_OPTIONS, apiDateTimeParts, toInstant, todayInIndia } from '../../utils/schedule';
 
 /** POLICY_AUDIENCE values (FAQ_AUDIENCE has the same and WEB). */
@@ -47,20 +47,25 @@ function effectiveAt(policy) {
 }
 
 /**
- * The policy dialog's fields. The key and version are fixed once created; a new version keeps the key and asks for
- * another version.
+ * The policy dialog's fields. The key is one of the POLICY_KEY lookup (V55: login, registration and app terms for
+ * customers and partners); choosing it fills Applies To (the value's `metadata.audience`) and, on a new policy, the
+ * title. The key and version are fixed once created; a new version keeps the key and asks for another version.
  */
-function policyFields(mode) {
+function policyFields(mode, policyKeys) {
+  const keyOf = (code) => policyKeys.find((value) => value.valueCode === code);
   return [
     {
       key: 'policyKey',
       label: 'Policy Key',
-      type: 'code',
+      type: 'select',
       required: true,
-      maxLength: 80,
       disabled: mode !== 'create',
-      hint: 'The policy every version belongs to, e.g. TERMS_OF_SERVICE or PRIVACY_POLICY. Fixed once created.',
-      validate: (value) => (CODE_PATTERN.test(value) ? '' : 'Use capital letters, digits and underscores, starting with a letter')
+      // An older policy's key that is not in the list still shows
+      options: (values) => {
+        const options = policyKeys.map((value) => ({ value: value.valueCode, label: value.displayName }));
+        return values.policyKey && !keyOf(values.policyKey) ? [{ value: values.policyKey, label: values.policyKey }, ...options] : options;
+      },
+      hint: 'Which policy this is; the apps open each one by its key (Settings > Lookups: POLICY_KEY). Fixed once created.'
     },
     {
       key: 'version',
@@ -74,8 +79,23 @@ function policyFields(mode) {
       validate: (value) =>
         /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) ? '' : 'Use letters, digits, dots, hyphens and underscores'
     },
-    { key: 'title', label: 'Title', type: 'text', required: true, maxLength: 200, wide: true },
-    { key: 'audience', label: 'Applies To', type: 'select', required: true, options: AUDIENCES },
+    {
+      key: 'title',
+      label: 'Title',
+      type: 'text',
+      required: true,
+      maxLength: 200,
+      wide: true,
+      derive: mode === 'create' ? (values) => keyOf(values.policyKey)?.displayName ?? values.title : undefined
+    },
+    {
+      key: 'audience',
+      label: 'Applies To',
+      type: 'select',
+      required: true,
+      options: AUDIENCES,
+      derive: (values) => keyOf(values.policyKey)?.metadata?.audience ?? values.audience
+    },
     { key: 'effectiveDate', label: 'Effective From', type: 'date', required: true },
     {
       key: 'effectiveTime',
@@ -85,7 +105,15 @@ function policyFields(mode) {
       options: TIME_OPTIONS,
       hint: 'Indian time. Users are asked to accept it from then on, once it is published.'
     },
-    { key: 'content', label: 'Policy Text', type: 'textarea', required: true, rows: 12, maxLength: 50000 }
+    {
+      key: 'content',
+      label: 'Policy Text',
+      type: 'richtext',
+      required: true,
+      maxLength: 50000,
+      hint: 'Bold, italic, underline and lists; the apps show it formatted.',
+      validate: (value) => (richTextLength(value) > 50000 ? 'Policy text can have at most 50000 characters' : '')
+    }
   ];
 }
 
@@ -132,9 +160,11 @@ function PolicyView({ policy, onClose }) {
         <span>{audienceLabel(policy.audience)}</span>
         <span>Effective {policy.effectiveFrom}</span>
       </div>
-      <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap rounded-xl border border-[var(--line)] bg-[var(--light)] p-4 text-sm leading-relaxed">
-        {policy.content}
-      </div>
+      {/* The formatted text, cleaned to the allowed tags (older plain text as paragraphs) */}
+      <div
+        className="nh-rich-text max-h-[60vh] overflow-y-auto rounded-xl border border-[var(--line)] bg-[var(--light)] p-4 text-sm leading-relaxed"
+        dangerouslySetInnerHTML={{ __html: cleanRichText(toRichText(policy.content)) }}
+      />
     </Modal>
   );
 }
@@ -168,6 +198,17 @@ export default function PoliciesFaqsPage() {
   const [viewing, setViewing] = useState(null);
   const [confirm, setConfirm] = useState(null); // { title, message, label, run }
   const [faqDialog, setFaqDialog] = useState(null);
+  // The policy keys to choose from (POLICY_KEY lookup, V55)
+  const [policyKeys, setPolicyKeys] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    authRequest('/api/lookups/values/POLICY_KEY')
+      .then((values) => !cancelled && setPolicyKeys(values ?? []))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authRequest]);
 
   useEffect(() => {
     document.title = 'Policies & FAQs | NexHome Admin';
@@ -190,7 +231,7 @@ export default function PoliciesFaqsPage() {
 
   const savePolicy = async (values) => {
     const effectiveFrom = toInstant(values.effectiveDate, values.effectiveTime);
-    const common = { title: values.title.trim(), audience: values.audience, content: values.content.trim(), effectiveFrom };
+    const common = { title: values.title.trim(), audience: values.audience, content: cleanRichText(values.content), effectiveFrom };
     if (policyDialog.mode === 'edit') {
       await authRequest('/api/policies/update', {
         method: 'PUT',
@@ -216,7 +257,8 @@ export default function PoliciesFaqsPage() {
       audience: policy?.audience ?? 'CUSTOMER',
       effectiveDate: dialog.mode === 'edit' && parts ? parts.date : todayInIndia(),
       effectiveTime: dialog.mode === 'edit' && parts ? parts.time : '00:00',
-      content: policy?.content ?? ''
+      // Older plain-text policies become paragraphs
+      content: toRichText(policy?.content ?? '')
     };
   };
 
@@ -563,7 +605,7 @@ export default function PoliciesFaqsPage() {
                 ? `New Version of ${policyDialog.policy.policyKey}`
                 : 'Add Policy'
           }
-          fields={policyFields(policyDialog.mode)}
+          fields={policyFields(policyDialog.mode, policyKeys)}
           initial={policyInitial(policyDialog)}
           submitLabel={policyDialog.mode === 'edit' ? 'Save Changes' : 'Save as Draft'}
           onSubmit={savePolicy}

@@ -246,6 +246,12 @@ class NexHomePaymentFlowTest {
 				.andExpect(jsonPath("$.cashCollection.amount").value(400))
 				.andExpect(jsonPath("$.payout").doesNotExist())).get("cashCollection");
 		long cashId = cash.get("cashCollectionId").asLong();
+		// The assigned partner finds the cash collection (the partner app), but none of the payments
+		perform(get("/api/payments/bookings/" + bookingId), partner, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.cashCollection.cashCollectionId").value(cashId))
+				.andExpect(jsonPath("$.orders.length()").value(0))
+				.andExpect(jsonPath("$.payout").doesNotExist());
 		perform(put("/api/payments/cash-collections/update"), customer,
 				"{\"cashCollectionId\": %d, \"status\": \"COLLECTED\"}".formatted(cashId))
 				.andExpect(status().isForbidden());

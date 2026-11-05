@@ -23,6 +23,9 @@ import com.nexhome.app.dto.NexHomeNotificationSendResponse;
 import com.nexhome.app.dto.NexHomeNotificationStatsResponse;
 import com.nexhome.app.dto.NexHomeNotificationSummaryResponse;
 import com.nexhome.app.dto.NexHomePageResponse;
+import com.nexhome.app.dto.NexHomePushDeviceRegisterRequest;
+import com.nexhome.app.dto.NexHomePushDeviceResponse;
+import com.nexhome.app.dto.NexHomePushDeviceUnregisterRequest;
 import com.nexhome.app.service.NexHomeNotificationService;
 
 import jakarta.validation.Valid;
@@ -42,13 +45,14 @@ public class NexHomeNotificationController {
 	@GetMapping("/me")
 	public NexHomePageResponse<NexHomeNotificationResponse> getMyNotifications(
 			@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer size,
-			@RequestParam(required = false) Boolean unread, @RequestParam(required = false) String notificationType) {
-		return notificationService.getMyNotifications(page, size, unread, notificationType);
+			@RequestParam(required = false) Boolean unread, @RequestParam(required = false) String notificationType,
+			@RequestParam(required = false) String app) {
+		return notificationService.getMyNotifications(page, size, unread, notificationType, app);
 	}
 
 	@GetMapping("/me/summary")
-	public NexHomeNotificationSummaryResponse getMySummary() {
-		return notificationService.getMySummary();
+	public NexHomeNotificationSummaryResponse getMySummary(@RequestParam(required = false) String app) {
+		return notificationService.getMySummary(app);
 	}
 
 	/** Returns {@code {"updated": n}}. */
@@ -58,8 +62,8 @@ public class NexHomeNotificationController {
 	}
 
 	@PutMapping("/me/read-all")
-	public Map<String, Integer> markAllRead() {
-		return Map.of("updated", notificationService.markAllRead());
+	public Map<String, Integer> markAllRead(@RequestParam(required = false) String app) {
+		return Map.of("updated", notificationService.markAllRead(app));
 	}
 
 	@DeleteMapping("/me/delete/{notificationId}")
@@ -70,8 +74,22 @@ public class NexHomeNotificationController {
 
 	@DeleteMapping("/me/clear")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	public void clearMine() {
-		notificationService.clearMine();
+	public void clearMine(@RequestParam(required = false) String app) {
+		notificationService.clearMine(app);
+	}
+
+	/** The caller's phone for push notifications (customer and partner apps, V53). */
+	@PostMapping("/devices/register")
+	@ResponseStatus(HttpStatus.CREATED)
+	public NexHomePushDeviceResponse registerDevice(@Valid @RequestBody NexHomePushDeviceRegisterRequest request) {
+		return notificationService.registerDevice(request);
+	}
+
+	/** Stops pushes to one of the caller's phones (before logging out). */
+	@PutMapping("/devices/unregister")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void unregisterDevice(@Valid @RequestBody NexHomePushDeviceUnregisterRequest request) {
+		notificationService.unregisterDevice(request);
 	}
 
 	@PostMapping("/send")

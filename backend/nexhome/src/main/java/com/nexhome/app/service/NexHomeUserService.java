@@ -91,6 +91,12 @@ public interface NexHomeUserService {
 	/** Gives the user another role (a user may have several). Only a super user can grant SUPER_USER. */
 	NexHomeUserResponse assignRole(NexHomeUserRoleAssignRequest request);
 
+	/**
+	 * The signed-in staff member (SUPER_USER, ADMIN or SUB_ADMIN) adds a customer account to their own number: the
+	 * CUSTOMER role and its empty customer profile, so the customer app can be used with the same login.
+	 */
+	NexHomeUserResponse joinAsCustomer();
+
 	/** Activates or withdraws a role the user already has. Only a super user can change a SUPER_USER assignment. */
 	NexHomeUserResponse updateUserRole(NexHomeUserRoleUpdateRequest request);
 }

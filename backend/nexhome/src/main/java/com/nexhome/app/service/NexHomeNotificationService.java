@@ -8,6 +8,9 @@ import com.nexhome.app.dto.NexHomeNotificationSendResponse;
 import com.nexhome.app.dto.NexHomeNotificationStatsResponse;
 import com.nexhome.app.dto.NexHomeNotificationSummaryResponse;
 import com.nexhome.app.dto.NexHomePageResponse;
+import com.nexhome.app.dto.NexHomePushDeviceRegisterRequest;
+import com.nexhome.app.dto.NexHomePushDeviceResponse;
+import com.nexhome.app.dto.NexHomePushDeviceUnregisterRequest;
 
 /**
  * Module 9: in-app notifications. Every signed-in user reads and clears their own; staff with NOTIFICATION_MANAGE send
@@ -15,22 +18,27 @@ import com.nexhome.app.dto.NexHomePageResponse;
  */
 public interface NexHomeNotificationService {
 
-	/** The caller's notifications, newest first; {@code unread=true}: only unread. */
+	/**
+	 * The caller's notifications, newest first; {@code unread=true}: only unread. {@code app} (CUSTOMER, PARTNER,
+	 * STAFF; V54): only that app's and those for every app; missing: all of them.
+	 */
 	NexHomePageResponse<NexHomeNotificationResponse> getMyNotifications(Integer page, Integer size, Boolean unread,
-			String notificationType);
+			String notificationType, String app);
 
-	NexHomeNotificationSummaryResponse getMySummary();
+	/** Counts of the caller's notifications, by {@code app} as above. */
+	NexHomeNotificationSummaryResponse getMySummary(String app);
 
 	/** Marks the given notifications of the caller read (others' are ignored); returns how many changed. */
 	int markRead(NexHomeNotificationReadRequest request);
 
-	int markAllRead();
+	/** The caller's notifications of {@code app} (as above) read; returns how many changed. */
+	int markAllRead(String app);
 
 	/** One of the caller's notifications (404 for anyone else's). */
 	void deleteMine(Long notificationId);
 
-	/** Every notification of the caller; returns how many. */
-	int clearMine();
+	/** Every notification of the caller of {@code app} (as above); returns how many. */
+	int clearMine(String app);
 
 	/** NOTIFICATION_MANAGE write. */
 	NexHomeNotificationSendResponse send(NexHomeNotificationSendRequest request);
@@ -45,4 +53,13 @@ public interface NexHomeNotificationService {
 	/** NOTIFICATION_MANAGE read. */
 	NexHomePageResponse<NexHomeNotificationDeliveryLogResponse> getDeliveryLogs(Integer page, Integer size,
 			String channel, String deliveryStatus, Long userId);
+
+	/**
+	 * Registers the caller's phone for pushes (V53): a new token is added, a known one refreshed, reactivated and, if
+	 * another account used it on that phone before, moved to the caller.
+	 */
+	NexHomePushDeviceResponse registerDevice(NexHomePushDeviceRegisterRequest request);
+
+	/** Stops pushes to one of the caller's phones (LOGGED_OUT); an unknown or another user's token is ignored. */
+	void unregisterDevice(NexHomePushDeviceUnregisterRequest request);
 }

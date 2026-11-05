@@ -170,14 +170,14 @@ export default function NotificationsMenu() {
 
   const loadSummary = useCallback(
     () =>
-      authRequest('/api/notifications/me/summary')
+      authRequest('/api/notifications/me/summary?app=STAFF')
         .then(setSummary)
         .catch(() => {}),
     [authRequest]
   );
   const loadList = useCallback(
     () =>
-      authRequest(`/api/notifications/me?size=${PANEL_SIZE}`)
+      authRequest(`/api/notifications/me?size=${PANEL_SIZE}&app=STAFF`)
         .then((page) => {
           setNotifications(page.content);
           setLoaded(true);
@@ -192,7 +192,7 @@ export default function NotificationsMenu() {
     let cancelled = false;
     const check = () => {
       loadSummary();
-      authRequest('/api/notifications/me?size=10&unread=true')
+      authRequest('/api/notifications/me?size=10&unread=true&app=STAFF')
         .then((page) => {
           if (cancelled) return;
           const newestId = page.content.reduce((max, item) => Math.max(max, item.notificationId), 0);
@@ -272,7 +272,7 @@ export default function NotificationsMenu() {
   const markAllRead = () => {
     setNotifications((current) => current.map((item) => ({ ...item, isRead: true })));
     setSummary((current) => ({ ...current, unread: 0 }));
-    authRequest('/api/notifications/me/read-all', { method: 'PUT' }).catch(() => loadSummary());
+    authRequest('/api/notifications/me/read-all?app=STAFF', { method: 'PUT' }).catch(() => loadSummary());
   };
   const remove = (notification) => {
     setNotifications((current) => current.filter((item) => item.notificationId !== notification.notificationId));
@@ -288,7 +288,7 @@ export default function NotificationsMenu() {
   const clearAll = () => {
     setNotifications([]);
     setSummary({ total: 0, unread: 0 });
-    authRequest('/api/notifications/me/clear', { method: 'DELETE' }).catch(() => {
+    authRequest('/api/notifications/me/clear?app=STAFF', { method: 'DELETE' }).catch(() => {
       loadList();
       loadSummary();
     });

@@ -33,8 +33,9 @@ import GeneralSettingsPage from './pages/admin/GeneralSettingsPage';
 import PoliciesFaqsPage from './pages/admin/PoliciesFaqsPage';
 import ReviewsPage from './pages/admin/ReviewsPage';
 import SendNotificationsPage from './pages/admin/SendNotificationsPage';
-import SupportTicketPage from './pages/admin/SupportTicketPage';
-import SupportTicketsPage from './pages/admin/SupportTicketsPage';
+// Support tickets are paused for now (Coming soon); the screens stay for later:
+// import SupportTicketPage from './pages/admin/SupportTicketPage';
+// import SupportTicketsPage from './pages/admin/SupportTicketsPage';
 import LookupTypePage from './pages/admin/LookupTypePage';
 import RoleDetailPage from './pages/admin/RoleDetailPage';
 import RolesPage from './pages/admin/RolesPage';
@@ -118,8 +119,11 @@ export default function App() {
               <Route path="system/lookups/:lookupTypeId" element={<LookupTypePage />} />
               <Route path="system/audit-logs" element={<AuditLogsPage />} />
               <Route path="reviews" element={<ReviewsPage />} />
+              {/* Support tickets: Coming soon for now. To bring them back, restore the imports above and use:
               <Route path="support" element={<SupportTicketsPage />} />
-              <Route path="support/:ticketId" element={<SupportTicketPage />} />
+              <Route path="support/:ticketId" element={<SupportTicketPage />} /> */}
+              <Route path="support" element={<AdminComingSoonPage />} />
+              <Route path="support/:ticketId" element={<AdminComingSoonPage />} />
               <Route path="marketing/notifications" element={<SendNotificationsPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="settings" element={<GeneralSettingsPage />} />

@@ -124,7 +124,8 @@ class NexHomeCatalogServiceImplTest {
 				partnerServiceRepository, lookupService, permissionService, new NexHomeServiceCategoryMapper(),
 				new NexHomeServiceMapper(), new NexHomeServiceVariantMapper(), new NexHomeServiceMediaMapper(),
 				new NexHomeServiceRequirementMapper(), mock(NexHomeAdminProfileRepository.class),
-				mock(NexHomeUserRepository.class), files);
+				mock(NexHomeUserRepository.class), files,
+				mock(com.nexhome.app.repository.NexHomeBookingReviewRepository.class));
 	}
 
 	// ----------------------------------------------------------------------------------------------------------------

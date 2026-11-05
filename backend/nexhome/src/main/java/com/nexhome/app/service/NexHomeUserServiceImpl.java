@@ -485,6 +485,43 @@ public class NexHomeUserServiceImpl implements NexHomeUserService {
 
 	@Override
 	@Transactional
+	public NexHomeUserResponse joinAsCustomer() {
+		Long userId = permissionService.currentUserId();
+		NexHomeUser user = findUser(userId);
+		if (!AccountStatus.ACTIVE.equals(user.getAccountStatus())) {
+			throw new AccessDeniedException("Only an active account can add a customer account.");
+		}
+		List<NexHomeUserRole> roles = userRoleRepository.findByUserIdOrderByRoleIdAsc(userId);
+		boolean staff = roles.stream()
+				.anyMatch(r -> r.isActive() && r.getRole().isActiveFlag() && STAFF_ROLES.contains(r.getRole().getCode()));
+		if (!staff) {
+			throw new AccessDeniedException("Only staff accounts can add a customer account to their number.");
+		}
+		NexHomeUserRole existing = roles.stream()
+				.filter(r -> NexHomeRole.CUSTOMER.equals(r.getRole().getCode()))
+				.findFirst()
+				.orElse(null);
+		if (existing != null && existing.isActive()) {
+			throw new DuplicateResourceException("This number already has a customer account.");
+		}
+		if (existing != null) {
+			// Withdrawn by staff: not undone by the account itself
+			throw new AccessDeniedException("The customer account of this number was turned off; please contact NexHome support.");
+		}
+		NexHomeRole role = roleRepository.findByCode(NexHomeRole.CUSTOMER)
+				.filter(NexHomeRole::isActiveFlag)
+				.orElseThrow(() -> new ResourceNotFoundException("Role Not Found or Inactive"));
+		userRoleRepository.saveAndFlush(userMapper.toUserRoleEntity(user, role, userId));
+		ensureCustomerProfile(user, role, userId);
+
+		auditRecorder.record("ROLE_ASSIGNED", "USER", userId, null, NexHomeAuditRecorder.values("role", role.getCode(),
+				"selfService", true), userId);
+		log.info("Staff User ID {} added a customer account to their number", userId);
+		return toUserDto(user);
+	}
+
+	@Override
+	@Transactional
 	public NexHomeUserResponse updateUserRole(NexHomeUserRoleUpdateRequest request) {
 		Long actingUserId = permissionService.currentUserId();
 		NexHomeUserRole userRole = userRoleRepository.findById(new NexHomeUserRoleId(request.userId(),

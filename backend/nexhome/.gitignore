@@ -34,3 +34,7 @@ build/
 
 ### Env ###
 .env
+
+### Firebase service account key (push notifications) ###
+firebase-service-account*.json
+*-firebase-adminsdk-*.json

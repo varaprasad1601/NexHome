@@ -210,6 +210,17 @@ public class NexHomeUserController {
 		return userService.assignRole(request);
 	}
 
+	/**
+	 * A staff member adds a customer account to their own number (CUSTOMER role and customer profile), for the
+	 * customer app; 403 for other accounts, 409 when it already has one.
+	 */
+	@PostMapping("/me/customer/join")
+	@ResponseStatus(HttpStatus.CREATED)
+	@PreAuthorize("isAuthenticated()")
+	public NexHomeUserResponse joinAsCustomer() {
+		return userService.joinAsCustomer();
+	}
+
 	@PutMapping("/roles/update")
 	@PreAuthorize("isAuthenticated()")
 	public NexHomeUserResponse updateUserRole(@Valid @RequestBody NexHomeUserRoleUpdateRequest request) {

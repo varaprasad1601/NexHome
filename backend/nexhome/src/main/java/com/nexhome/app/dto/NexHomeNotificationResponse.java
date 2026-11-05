@@ -21,6 +21,8 @@ public record NexHomeNotificationResponse(
 		Long referenceId,
 		/** NORMAL or HIGH (V45). */
 		String priority,
+		/** The app it belongs to (V54): CUSTOMER, PARTNER, STAFF or ALL. */
+		String audience,
 		boolean isRead,
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
 				timezone = "Asia/Kolkata")

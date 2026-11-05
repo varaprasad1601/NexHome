@@ -34,6 +34,25 @@ public interface NexHomeNotificationRepository extends JpaRepository<NexHomeNoti
 			+ "where n.user.id = :userId and n.readAt is null and n.id in :ids")
 	int markRead(@Param("userId") Long userId, @Param("ids") Collection<Long> ids, @Param("now") Instant now);
 
+	/** Marks every unread notification of the user in these apps (V54) read; returns how many changed. */
+	@Modifying
+	@Query("update NexHomeNotification n set n.readAt = :now, n.updatedBy = :userId, n.updatedDate = :now "
+			+ "where n.user.id = :userId and n.readAt is null and n.audience in :audiences")
+	int markAllReadIn(@Param("userId") Long userId, @Param("audiences") Collection<String> audiences,
+			@Param("now") Instant now);
+
+	/** Deletes the user's notifications in these apps; returns how many. */
+	@Modifying
+	@Query("delete from NexHomeNotification n where n.user.id = :userId and n.audience in :audiences")
+	int deleteAllOfUserIn(@Param("userId") Long userId, @Param("audiences") Collection<String> audiences);
+
+	/** The user's unread notifications in these apps by type: [type, count]. */
+	@Query("select n.notificationType, count(n) from NexHomeNotification n where n.user.id = :userId "
+			+ "and n.readAt is null and n.audience in :audiences group by n.notificationType")
+	List<Object[]> countUnreadByTypeIn(@Param("userId") Long userId, @Param("audiences") Collection<String> audiences);
+
+	long countByUserIdAndAudienceIn(Long userId, Collection<String> audiences);
+
 	/** Marks every unread notification of the user read; returns how many changed. */
 	@Modifying
 	@Query("update NexHomeNotification n set n.readAt = :now, n.updatedBy = :userId, n.updatedDate = :now "
@@ -78,6 +97,17 @@ public interface NexHomeNotificationRepository extends JpaRepository<NexHomeNoti
 		else if (Boolean.FALSE.equals(unread)) {
 			spec = spec.and((notification, query, cb) -> cb.isNotNull(notification.get("readAt")));
 		}
+		return withSearch(spec, search);
+	}
+
+	/** {@link #notificationSpec} limited to the notifications of these apps (V54). */
+	static Specification<NexHomeNotification> notificationSpec(Long userId, String type, Boolean unread, String search,
+			Collection<String> audiences) {
+		Specification<NexHomeNotification> spec = notificationSpec(userId, type, unread, search);
+		return audiences == null ? spec : spec.and((notification, query, cb) -> notification.get("audience").in(audiences));
+	}
+
+	private static Specification<NexHomeNotification> withSearch(Specification<NexHomeNotification> spec, String search) {
 		if (search != null) {
 			String pattern = NexHomeSearch.containsPattern(search);
 			spec = spec.and((notification, query, cb) -> cb.or(

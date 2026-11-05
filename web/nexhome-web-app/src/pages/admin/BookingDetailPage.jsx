@@ -618,11 +618,27 @@ export default function BookingDetailPage() {
             )}
           </div>
         )}
-        {booking.cancellationReason && (
-          <p className="mb-0 mt-4 rounded-xl bg-[#FDECEC] px-4 py-3 text-sm text-[#C53030]">
-            Cancelled: {booking.cancellationReason}
-          </p>
-        )}
+        {booking.bookingStatus === 'CANCELLED' && (() => {
+          // Who cancelled and when: the last CANCELLED row of the history (staff see the person, not "NexHome Support")
+          const cancelled = [...(detail.history ?? [])].reverse().find((row) => row.newStatus === 'CANCELLED');
+          return (
+            <div className="mb-0 mt-4 grid gap-x-6 gap-y-1.5 rounded-xl bg-[#FDECEC] px-4 py-3 text-sm sm:grid-cols-[auto_1fr]">
+              <span className="text-[var(--muted)]">Cancelled by</span>
+              <span className="font-bold text-[var(--ink)]">
+                {cancelled?.changedByName ?? '—'}
+                {cancelled?.changedByRole && <span className="font-normal text-[var(--muted)]"> · {cancelled.changedByRole}</span>}
+              </span>
+              <span className="text-[var(--muted)]">Cancelled on</span>
+              <span className="font-bold text-[var(--ink)]">{cancelled?.changedAt ? when(cancelled.changedAt) : '—'}</span>
+              {booking.cancellationReason && (
+                <>
+                  <span className="text-[var(--muted)]">Reason</span>
+                  <span className="font-bold text-[#C53030]">{booking.cancellationReason}</span>
+                </>
+              )}
+            </div>
+          );
+        })()}
       </section>
 
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">

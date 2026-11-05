@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "NexHome Partner",
+    "slug": "nexhome-partner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nexhome.partner"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0B438B",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "com.nexhome.partner",
+      "googleServicesFile": "./google-services.json"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-brand.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#f4f8fc"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
+    "scheme": "nexhomepartner",
+    "splash": {
+      "image": "./assets/splash-brand.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f4f8fc"
+    }
+  }
+}

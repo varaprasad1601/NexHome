@@ -257,9 +257,21 @@ public class NexHomePaymentServiceImpl implements NexHomePaymentService {
 		boolean staff = permissionService.can(PAYMENT_MANAGE, NexHomeAccess.READ.name())
 				|| permissionService.can(NexHomeBookingServiceImpl.BOOKING_MANAGE, NexHomeAccess.READ.name());
 		if (!staff && !isCustomer(booking)) {
+			// The assigned partner sees only the cash collection (to mark the cash collected), not the payments
+			if (isAssignedPartner(booking)) {
+				return new NexHomeBookingPaymentsResponse(List.of(), List.of(), List.of(),
+						cashCollectionRepository.findByBookingId(booking.getId()).map(paymentMapper::toCashDto)
+								.orElse(null),
+						null);
+			}
 			throw new AccessDeniedException("Not the booking's customer, and no " + PAYMENT_MANAGE + " READ access.");
 		}
 		return bookingPayments(booking, staff);
+	}
+
+	private boolean isAssignedPartner(NexHomeBooking booking) {
+		return booking.getPartner() != null
+				&& booking.getPartner().getUser().getId().equals(permissionService.currentUserId());
 	}
 
 	/** The booking's money; the partner's payout only for staff. */

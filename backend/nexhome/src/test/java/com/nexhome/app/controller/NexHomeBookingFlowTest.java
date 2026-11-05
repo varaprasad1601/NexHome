@@ -328,7 +328,13 @@ class NexHomeBookingFlowTest {
 				.andExpect(jsonPath("$.bookingStatus").value("CANCELLED"))
 				.andExpect(jsonPath("$.cancellationReason").value("Plumber came early"));
 		perform(get("/api/bookings/" + bookingId), staff, null)
-				.andExpect(jsonPath("$.assignments[0].assignmentStatus").value("CANCELLED"));
+				.andExpect(jsonPath("$.assignments[0].assignmentStatus").value("CANCELLED"))
+				.andExpect(jsonPath("$.booking.cancelledByRole").value("CUSTOMER"))
+				.andExpect(jsonPath("$.booking.cancelledAt").isNotEmpty());
+		// The customer's own list says who cancelled it and when
+		perform(get("/api/bookings/me"), customer, null)
+				.andExpect(jsonPath("$.content[?(@.bookingId == %d)].cancelledByRole".formatted(bookingId)).value("CUSTOMER"))
+				.andExpect(jsonPath("$.content[?(@.bookingId == %d)].cancelledAt".formatted(bookingId)).isNotEmpty());
 		perform(get("/api/availability/partners?serviceId=%d&startsAt=%s&endsAt=%s".formatted(serviceId, start,
 				monday.atTime(11, 0).atZone(IST).toInstant())), staff, null)
 				.andExpect(jsonPath("$.length()").value(1));

@@ -52,5 +52,19 @@ public record NexHomeBookingResponse(
 		String cancellationReason,
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
 				timezone = "Asia/Kolkata")
-		Instant creationDate) {
+		Instant creationDate,
+
+		/** The assigned partner's mobile number (+91 98765 43210), for the customer to call; null without a partner. */
+		String partnerMobile,
+
+		/** When it was cancelled (the CANCELLED history row); null otherwise. Filled in the customer's own list and GET /{id}. */
+		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
+				timezone = "Asia/Kolkata")
+		Instant cancelledAt,
+
+		/** Who cancelled it, seen from the customer: CUSTOMER (the customer), PARTNER (the assigned partner) or STAFF. */
+		String cancelledByRole,
+
+		/** That person's name: the customer's or the partner's; staff "NexHome Support". */
+		String cancelledByName) {
 }

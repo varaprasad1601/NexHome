@@ -37,6 +37,11 @@ public interface NexHomeBookingReviewRepository extends JpaRepository<NexHomeBoo
 			+ "group by r.reviewStatus")
 	List<Object[]> countByStatus();
 
+	/** PUBLISHED reviews of these services: [service id, average service rating, count]. */
+	@Query("select r.booking.service.id, avg(r.serviceRating), count(r) from NexHomeBookingReview r "
+			+ "where r.reviewStatus = 'PUBLISHED' and r.booking.service.id in :serviceIds group by r.booking.service.id")
+	List<Object[]> serviceRatingsOf(@Param("serviceIds") Collection<Long> serviceIds);
+
 	/** PUBLISHED reviews by partner rating: [rating, count]. */
 	@Query("select r.partnerRating, count(r) from NexHomeBookingReview r where r.reviewStatus = 'PUBLISHED' "
 			+ "group by r.partnerRating")

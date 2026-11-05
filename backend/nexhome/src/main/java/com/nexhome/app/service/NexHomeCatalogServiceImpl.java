@@ -72,6 +72,7 @@ import com.nexhome.app.model.NexHomeServiceMedia;
 import com.nexhome.app.model.NexHomeServiceRequirement;
 import com.nexhome.app.model.NexHomeServiceVariant;
 import com.nexhome.app.repository.NexHomeAdminProfileRepository;
+import com.nexhome.app.repository.NexHomeBookingReviewRepository;
 import com.nexhome.app.repository.NexHomeFaqRepository;
 import com.nexhome.app.repository.NexHomePartnerProfileRepository;
 import com.nexhome.app.repository.NexHomePartnerServiceRepository;
@@ -125,6 +126,7 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 	private final NexHomeAdminProfileRepository adminProfileRepository;
 	private final NexHomeUserRepository userRepository;
 	private final NexHomeFiles files;
+	private final NexHomeBookingReviewRepository reviewRepository;
 
 	// ------------------------------------------------------------------------------------------------------------
 	// Categories
@@ -231,8 +233,26 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 
 		Page<NexHomeService> services = serviceRepository.search(categoryId, type, isActive, !includeInactive,
 				NexHomePaging.searchText(search), pageRequest);
-		return NexHomePaging.toPageResponse(pageRequest, services,
-				services.stream().map(service -> serviceMapper.toServiceDto(service, catalogReader)).toList());
+		// The page's cover images and ratings: one query each
+		java.util.List<Long> ids = services.stream().map(NexHomeService::getId).toList();
+		java.util.Map<Long, Long> covers = new java.util.HashMap<>();
+		java.util.Map<Long, Object[]> ratings = new java.util.HashMap<>();
+		if (!ids.isEmpty()) {
+			for (Object[] row : imageRepository.imageIdsOf(ids)) {
+				covers.putIfAbsent((Long) row[0], (Long) row[1]);
+			}
+			for (Object[] row : reviewRepository.serviceRatingsOf(ids)) {
+				ratings.put((Long) row[0], row);
+			}
+		}
+		return NexHomePaging.toPageResponse(pageRequest, services, services.stream().map(service -> {
+			Long cover = covers.get(service.getId());
+			Object[] rating = ratings.get(service.getId());
+			return serviceMapper.toServiceDto(service, catalogReader, cover == null ? null : IMAGE_PATH + cover,
+					rating == null || rating[1] == null ? null
+							: BigDecimal.valueOf(((Number) rating[1]).doubleValue()).setScale(1, RoundingMode.HALF_UP),
+					rating == null ? null : ((Number) rating[2]).longValue());
+		}).toList());
 	}
 
 	@Override
@@ -890,8 +910,14 @@ public class NexHomeCatalogServiceImpl implements NexHomeCatalogService {
 				.findByServiceIdOrderByDisplayOrderAscIdAsc(serviceId);
 		List<NexHomeServiceImageRepository.Info> images = imageRepository
 				.findByServiceIdOrderByDisplayOrderAscIdAsc(serviceId);
+		// The cover and the published rating, as the list has them
+		Object[] rating = reviewRepository.serviceRatingsOf(List.of(serviceId)).stream().findFirst().orElse(null);
 		return new NexHomeServiceDetailResponse(
-				serviceMapper.toServiceDto(service, catalogReader),
+				serviceMapper.toServiceDto(service, catalogReader,
+						images.isEmpty() ? null : IMAGE_PATH + images.get(0).getId(),
+						rating == null || rating[1] == null ? null
+								: BigDecimal.valueOf(((Number) rating[1]).doubleValue()).setScale(1, RoundingMode.HALF_UP),
+						rating == null ? null : ((Number) rating[2]).longValue()),
 				images.stream().map(image -> toImageDto(serviceId, image)).toList(),
 				variants.stream()
 						.filter(variant -> catalogReader || variant.isActive())
