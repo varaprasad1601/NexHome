@@ -10,6 +10,7 @@ import {
   Play,
   Search,
   Square,
+  Banknote,
   UserRound,
   UserRoundPlus,
   Wrench
@@ -21,6 +22,7 @@ import AdminPageHeader from '../../components/admin/AdminPageHeader';
 import BookingPaymentCard from '../../components/admin/payment/BookingPaymentCard';
 import PaymentStatusBadge from '../../components/admin/booking/PaymentStatusBadge';
 import BookingReviewCard from '../../components/admin/review/BookingReviewCard';
+import CollectPaymentModal from '../../components/admin/booking/CollectPaymentModal';
 import FormModal from '../../components/admin/common/FormModal';
 import DatePicker from '../../components/admin/common/DatePicker';
 import Modal from '../../components/admin/common/Modal';
@@ -57,8 +59,10 @@ const TIMER_BUTTONS = {
 const REASON_ACTIONS = {
   CANCEL: { title: 'Cancel Booking', label: 'Why is the booking cancelled?', submit: 'Cancel Booking', required: true }
 };
-/** The timer steps staff run here: the partner starts the work from the partner app. */
-const STAFF_TIMER_ACTIONS = (status) => (TIMER_ACTIONS[status] ?? []).filter((event) => event !== 'START');
+/** The timer steps staff run here: the partner starts the work from the partner app. A cash job whose work is finished
+ * (IN_PROGRESS with its end time) waits for its cash: no timer steps. */
+const STAFF_TIMER_ACTIONS = (status, finished = false) =>
+  finished ? [] : (TIMER_ACTIONS[status] ?? []).filter((event) => event !== 'START');
 /** The history reason the backend writes when staff take the partner off (shown as "Unassigned" alone). */
 const PARTNER_UNASSIGNED = 'Partner unassigned';
 /** A history row of the partner taken off (unassigned, or declining): back to CONFIRMED from ASSIGNED / PARTNER ACCEPTED. */
@@ -416,6 +420,8 @@ export default function BookingDetailPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [reasonFor, setReasonFor] = useState(null);
+  // Collect Payment: Finish Work on a cash job not yet paid (or its work already finished) opens it
+  const [collecting, setCollecting] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [toast, setToast] = useState(() => (location.state?.toast ? { ...location.state.toast, id: 'created' } : null));
   const closeToast = useCallback(() => setToast(null), []);
@@ -478,6 +484,9 @@ export default function BookingDetailPage() {
       method: 'PUT',
       body: { bookingId: booking.bookingId, bookingStatus, reason }
     });
+  // A cash booking not yet paid: Finish Work opens Collect Payment instead of stopping the timer
+  const cashDue =
+    booking.paymentMethod === 'CASH' && !['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(booking.paymentStatus);
   const timer = (eventType) =>
     run(
       () => authRequest('/api/bookings/timer', { method: 'POST', body: { bookingId: booking.bookingId, eventType } }),
@@ -566,7 +575,7 @@ export default function BookingDetailPage() {
           </div>
         </div>
 
-        {canWrite && (CANCELLABLE.includes(status) || STAFF_TIMER_ACTIONS(status).length > 0) && (
+        {canWrite && (CANCELLABLE.includes(status) || STAFF_TIMER_ACTIONS(status, Boolean(booking.actualEndAt)).length > 0 || (cashDue && booking.actualEndAt)) && (
           <div className="mt-5 flex flex-wrap gap-2.5 border-t border-[var(--line)] pt-4">
             {status === 'PENDING' && (
               <button
@@ -585,7 +594,7 @@ export default function BookingDetailPage() {
                 Assign Partner
               </button>
             )}
-            {STAFF_TIMER_ACTIONS(status).map((event) => {
+            {STAFF_TIMER_ACTIONS(status, Boolean(booking.actualEndAt)).map((event) => {
               const button = TIMER_BUTTONS[event];
               const Icon = button.icon;
               return (
@@ -593,7 +602,7 @@ export default function BookingDetailPage() {
                   key={event}
                   type="button"
                   disabled={busy}
-                  onClick={() => timer(event)}
+                  onClick={() => (event === 'STOP' && cashDue ? setCollecting(true) : timer(event))}
                   className={
                     event === 'STOP'
                       ? `${actionButton} bg-[var(--green)] text-white hover:bg-[var(--green-2)]`
@@ -605,6 +614,17 @@ export default function BookingDetailPage() {
                 </button>
               );
             })}
+            {cashDue && booking.actualEndAt && status === 'IN_PROGRESS' && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setCollecting(true)}
+                className={`${actionButton} bg-[var(--green)] text-white hover:bg-[var(--green-2)]`}
+              >
+                <Banknote size={16} />
+                Collect Payment
+              </button>
+            )}
             {CANCELLABLE.includes(status) && (
               <button
                 type="button"
@@ -866,6 +886,19 @@ export default function BookingDetailPage() {
         </div>
       </div>
 
+      {collecting && (
+        <CollectPaymentModal
+          booking={booking}
+          detail={detail}
+          authRequest={authRequest}
+          onClose={() => setCollecting(false)}
+          onCollected={() => {
+            setCollecting(false);
+            showToast('Cash collected. Booking completed.');
+            reload();
+          }}
+        />
+      )}
       {reasonFor && (
         <FormModal
           title={REASON_ACTIONS[reasonFor].title}

@@ -1,4 +1,5 @@
 import Feather from '@expo/vector-icons/Feather';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
@@ -133,6 +134,30 @@ export default function BookingScreen() {
               Booking placed. We will confirm it shortly.
             </Text>
           </View>
+        ) : null}
+
+        {booking.startOtp ? (
+          // The start code (V59): the professional enters it to start the work
+          <LinearGradient colors={[colors.blue, '#1660b8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: 18, padding: 16, gap: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Feather name="key" size={17} color={colors.white} />
+              <Text weight="extrabold" style={{ color: colors.white, fontSize: 15 }}>
+                Start code
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              {booking.startOtp.split('').map((digit, i) => (
+                <View key={i} style={{ width: 50, height: 56, borderRadius: 14, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text weight="extrabold" style={{ fontSize: 26, color: colors.navy }}>
+                    {digit}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            <Text style={{ color: colors.white, opacity: 0.9, fontSize: 12.5, lineHeight: 18 }}>
+              Share this code with your professional when they arrive. They need it to start the work. Do not share it before they are with you.
+            </Text>
+          </LinearGradient>
         ) : null}
 
         <Card style={{ gap: 12, borderRadius: 18 }}>

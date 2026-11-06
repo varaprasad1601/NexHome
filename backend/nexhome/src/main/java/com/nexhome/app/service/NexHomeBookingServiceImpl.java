@@ -55,10 +55,12 @@ import com.nexhome.app.model.NexHomeCustomerProfile;
 import com.nexhome.app.model.NexHomeLookupCodes.AccountStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.AssignmentStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.PartnerOnboardingStatus;
+import com.nexhome.app.model.NexHomeLookupCodes.BookingPaymentStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.BookingStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.BookingType;
 import com.nexhome.app.model.NexHomeLookupCodes.BookingTimerEvent;
 import com.nexhome.app.model.NexHomeLookupCodes.NotificationType;
+import com.nexhome.app.model.NexHomeLookupCodes.PaymentMethod;
 import com.nexhome.app.model.NexHomeLookupCodes.PricingType;
 import com.nexhome.app.model.NexHomeLookupCodes.Types;
 import com.nexhome.app.model.NexHomePartnerLocationUpdate;
@@ -333,7 +335,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		return NexHomePaging.toPageResponse(pageRequest, bookings, bookings.stream().map(booking -> {
 			Object[] row = cancellations.get(booking.getId());
 			if (row == null) {
-				return bookingMapper.toBookingDto(booking);
+				return bookingMapper.toBookingDto(booking, null, null, null, startCodeFor(booking));
 			}
 			return withCancellation(booking, (Long) row[1], (Instant) row[2]);
 		}).toList());
@@ -733,7 +735,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 	// ------------------------------------------------------------------------------------------------------------
 
 	@Override
-	@Transactional
+	@Transactional(noRollbackFor = InvalidRequestException.class)
 	public NexHomeBookingDetailResponse recordTimerEvent(NexHomeBookingTimerRequest request) {
 		Long actingUserId = permissionService.currentUserId();
 		NexHomeBooking booking = findBooking(request.bookingId());
@@ -744,6 +746,23 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		String current = booking.getBookingStatus();
 		if (!TIMER_FROM.getOrDefault(event, Set.of()).contains(current)) {
 			throw new InvalidRequestException("The timer cannot " + event + " a booking that is " + current + ".");
+		}
+		// A cash job whose work is finished waits for its cash: the timer is done
+		if (booking.getActualEndAt() != null) {
+			throw new InvalidRequestException("The work is finished; collect the cash to complete the job.");
+		}
+		// One job at a time: the partner finishes (and, for cash, collects) the job under way before starting another
+		if (BookingTimerEvent.START.equals(event) && booking.getPartner() != null) {
+			bookingRepository.findFirstByPartnerIdAndBookingStatusInAndIdNotOrderByIdAsc(booking.getPartner().getId(),
+					List.of(BookingStatus.IN_PROGRESS, BookingStatus.PAUSED), booking.getId())
+					.ifPresent(other -> {
+						throw new InvalidRequestException("Finish your current job " + other.getPublicId()
+								+ " first; you can start this one after it is completed.");
+					});
+		}
+		// Nothing is changed before this check: only a wrong code's count is kept when it fails (noRollbackFor)
+		if (BookingTimerEvent.START.equals(event) && isAssignedPartner(booking)) {
+			checkStartCode(booking, request.otp());
 		}
 		Instant now = Instant.now();
 
@@ -759,6 +778,10 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 
 		if (BookingTimerEvent.START.equals(event)) {
 			booking.setActualStartAt(now);
+			if (booking.getStartOtp() != null) {
+				booking.setStartOtpVerifiedAt(isAssignedPartner(booking) ? now : null);
+				booking.setStartOtp(null);
+			}
 			// Starting the work also accepts an assignment the partner had not answered yet
 			assignmentRepository.findFirstByBookingIdAndAssignmentStatusIn(booking.getId(), List.copyOf(HOLDING))
 					.ifPresent(assignment -> {
@@ -768,9 +791,34 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 						}
 						assignment.setUpdatedBy(actingUserId);
 					});
+			// A partner who starts work is online (approved partners only have an availability that counts)
+			com.nexhome.app.model.NexHomePartnerProfile partner = booking.getPartner();
+			if (partner != null && !com.nexhome.app.model.NexHomeLookupCodes.PartnerAvailabilityStatus.ONLINE
+					.equals(partner.getAvailabilityStatus())) {
+				partner.setAvailabilityStatus(com.nexhome.app.model.NexHomeLookupCodes.PartnerAvailabilityStatus.ONLINE);
+				partner.setUpdatedBy(actingUserId);
+			}
 		}
 		if (BookingTimerEvent.STOP.equals(event)) {
 			booking.setActualEndAt(now);
+			// Cash still to collect: the work is finished but the booking stays IN_PROGRESS until the cash is
+			// collected (or waived), which completes it (NexHomeSettlement.completeAfterCash)
+			if (PaymentMethod.CASH.equals(booking.getPaymentMethod())
+					&& !BookingPaymentStatus.PAID.equals(booking.getPaymentStatus())) {
+				reprice(booking, actingUserId);
+				settlement.onBookingCompleted(booking, actingUserId);
+				if (BookingStatus.PAUSED.equals(current)) {
+					changeStatus(booking, BookingStatus.IN_PROGRESS, NexHomeSettlement.WORK_FINISHED, actingUserId);
+				}
+				else {
+					bookingCreator.recordStatus(booking, current, current, NexHomeSettlement.WORK_FINISHED, actingUserId);
+				}
+				tell(customerUserOf(booking), "Work finished on " + booking.getPublicId(),
+						"Please pay " + booking.getTotalAmount().toPlainString() + " in cash to your professional.", booking,
+						actingUserId);
+				log.info("Booking {} work finished; cash to collect", booking.getPublicId());
+				return detailOf(booking);
+			}
 			finish(booking, actingUserId);
 		}
 		changeStatus(booking, TIMER_TO.get(event), null, actingUserId);
@@ -796,6 +844,11 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 					assignment.setAssignmentStatus(AssignmentStatus.COMPLETED);
 					assignment.setUpdatedBy(actingUserId);
 				});
+		reprice(booking, actingUserId);
+	}
+
+	/** An HOURLY job priced again for the time worked (rounded and raised as the catalogue's quote does). */
+	private void reprice(NexHomeBooking booking, Long actingUserId) {
 		Map<String, Object> pricing = bookingMapper.readObject(booking.getPricingSnapshot());
 		if (!PricingType.HOURLY.equals(pricing.get("pricingType"))) {
 			return;
@@ -941,9 +994,62 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 
 	private void changeStatus(NexHomeBooking booking, String target, String reason, Long actingUserId) {
 		String current = booking.getBookingStatus();
+		// The start code (V59): made when a partner accepts, gone once the partner is taken off or the booking ends
+		if (BookingStatus.PARTNER_EN_ROUTE.equals(target) && booking.getStartOtp() == null) {
+			booking.setStartOtp(newStartCode());
+			booking.setStartOtpAttempts((short) 0);
+		}
+		else if (BookingStatus.CONFIRMED.equals(target) || BookingStatus.CANCELLED.equals(target)) {
+			booking.setStartOtp(null);
+			booking.setStartOtpAttempts((short) 0);
+		}
 		booking.setBookingStatus(target);
 		booking.setUpdatedBy(actingUserId);
 		bookingCreator.recordStatus(booking, current, target, reason, actingUserId);
+	}
+
+	/** Four random digits for a start code. */
+	private static String newStartCode() {
+		return String.format("%04d", START_CODES.nextInt(10_000));
+	}
+
+	private static final java.security.SecureRandom START_CODES = new java.security.SecureRandom();
+
+	/** Wrong start codes allowed before the partner must ask NexHome support to start the work. */
+	static final int START_CODE_ATTEMPTS = 5;
+
+	/** The start code for the signed-in user: the booking's customer, while the partner has accepted (V59). */
+	private String startCodeFor(NexHomeBooking booking) {
+		return BookingStatus.PARTNER_EN_ROUTE.equals(booking.getBookingStatus()) && booking.getStartOtp() != null
+				&& booking.getCustomer().getUser().getId().equals(permissionService.currentUserId())
+						? booking.getStartOtp()
+						: null;
+	}
+
+	/**
+	 * START by the assigned partner needs the customer's start code (V59): none yet (not accepted) 400; five wrong
+	 * codes 429 (NexHome support starts it); missing or wrong 400, counted. Staff starting the work need none.
+	 */
+	private void checkStartCode(NexHomeBooking booking, String otp) {
+		if (booking.getStartOtp() == null) {
+			throw new InvalidRequestException("Accept the job first; the customer gets the start code then.");
+		}
+		if (booking.getStartOtpAttempts() >= START_CODE_ATTEMPTS) {
+			throw new com.nexhome.app.exception.TooManyRequestsException(
+					"Too many wrong start codes. Ask NexHome support to start the job.");
+		}
+		String entered = otp == null ? "" : otp.trim();
+		if (entered.isEmpty()) {
+			throw new InvalidRequestException("Enter the start code the customer has.");
+		}
+		boolean right = java.security.MessageDigest.isEqual(entered.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+				booking.getStartOtp().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		if (!right) {
+			booking.setStartOtpAttempts((short) (booking.getStartOtpAttempts() + 1));
+			int left = START_CODE_ATTEMPTS - booking.getStartOtpAttempts();
+			throw new InvalidRequestException(left > 0 ? "Wrong start code. " + left + (left == 1 ? " try" : " tries") + " left."
+					: "Wrong start code. Ask NexHome support to start the job.");
+		}
 	}
 
 	private NexHomeBookingDetailResponse detailOf(NexHomeBooking booking) {
@@ -981,7 +1087,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 				? history.stream().filter(h -> BookingStatus.CANCELLED.equals(h.getNewStatus())).reduce((a, b) -> b).orElse(null)
 				: null;
 		return new NexHomeBookingDetailResponse(
-				cancelledRow == null ? bookingMapper.toBookingDto(booking)
+				cancelledRow == null ? bookingMapper.toBookingDto(booking, null, null, null, startCodeFor(booking))
 						: withCancellation(booking, cancelledRow.getChangedBy(), cancelledRow.getCreationDate()),
 				category.getId(),
 				category.getName(),

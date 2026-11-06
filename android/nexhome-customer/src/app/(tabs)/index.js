@@ -13,7 +13,8 @@ import { useAuth } from '../../context/AuthProvider';
 import useApi from '../../hooks/useApi';
 import { colors } from '../../theme';
 import { durationLabel, money, rangeLabel, serviceNameOf } from '../../utils/format';
-import { UPCOMING, bookingStatus, compareUpcoming } from '../../utils/status';
+import { bookingStatus, compareUpcoming, isOpen, isPaymentDue } from '../../utils/status';
+import useTabReset from '../../hooks/useTabReset';
 
 /** The header's blues (the "Ocean curve" of Admin Sreens/customer-app-samples/home-v2-styles.html). */
 const HEADER = ['#1a73d9', colors.blue];
@@ -29,8 +30,8 @@ export default function Home() {
   const categories = useApi('/api/catalog/categories');
   const services = useApi('/api/catalog/services?size=8');
   const addresses = useApi('/api/addresses/me');
-  const summary = useApi('/api/notifications/me/summary?app=CUSTOMER');
-  const bookings = useApi('/api/bookings/me?size=20');
+  const summary = useApi('/api/notifications/me/summary?app=CUSTOMER', { pollMs: 15000 });
+  const bookings = useApi('/api/bookings/me?size=20', { pollMs: 20000 });
   const contact = useApi('/api/settings/public');
 
   // White status bar text over the blue header while Home is shown
@@ -49,6 +50,7 @@ export default function Home() {
   const phone = contact.data?.SUPPORT_PHONE;
   const refresh = () =>
     Promise.all([categories.refresh(), services.refresh(), addresses.refresh(), summary.refresh(), bookings.refresh(), contact.refresh()]);
+  useTabReset(null, refresh);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.ground }}>
@@ -150,7 +152,7 @@ export default function Home() {
                   </Text>
                 </View>
                 <Text style={{ fontSize: 12, lineHeight: 16, color: colors.muted }} numberOfLines={1}>
-                  {bookingStatus(next.bookingStatus).label}
+                  {isPaymentDue(next) ? `Completed · payment due ${money(next.totalAmount)}` : bookingStatus(next.bookingStatus).label}
                   {next.partnerName ? ` · ${next.partnerName}` : ''}
                 </Text>
               </View>
@@ -291,7 +293,7 @@ export default function Home() {
 
 /** The upcoming booking that comes first in the Bookings tab's order (compareUpcoming), or null. */
 function nextBooking(list) {
-  const upcoming = list.filter((b) => UPCOMING.includes(b.bookingStatus));
+  const upcoming = list.filter(isOpen);
   if (!upcoming.length) return null;
   return [...upcoming].sort(compareUpcoming)[0];
 }

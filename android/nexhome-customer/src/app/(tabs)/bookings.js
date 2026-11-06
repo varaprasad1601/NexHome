@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { FlatList, Linking, Pressable, RefreshControl, View } from 'react-native';
+import { FlatList, Linking, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Progress from '../../components/Progress';
@@ -9,10 +9,12 @@ import { Button, Empty, ErrorBox, Loading, Tag, Text } from '../../components/ui
 import useApi from '../../hooks/useApi';
 import { colors } from '../../theme';
 import { dayLabel, money, rangeLabel, serviceNameOf, whenLabel } from '../../utils/format';
-import { UPCOMING, bookingStatus, compareUpcoming, newestFirstBy } from '../../utils/status';
+import { bookingStatus, compareUpcoming, isOpen, isPaymentDue, newestFirstBy } from '../../utils/status';
+import useTabReset from '../../hooks/useTabReset';
 
 const TABS = [
   ['upcoming', 'Upcoming'],
+  ['pending', 'Payment pending'],
   ['past', 'Past'],
   ['cancelled', 'Cancelled']
 ];
@@ -29,7 +31,8 @@ const telOf = (number) => `tel:${String(number).replace(/[^\d+]/g, '')}`;
 /**
  * My bookings (GET /api/bookings/me): Upcoming (in progress, then partner assigned, confirmed, pending; then as soon
  * as possible and the earliest time; then the booking id; the next one with progress, Call Partner and Get help),
- * Past (completed: Pay while unpaid, else the rating given and the amount paid) and Cancelled (who and why).
+ * Payment pending (done but not paid yet: completed, or a cash job whose work is finished; Pay, newest first), Past
+ * (completed and paid: the rating given and the amount paid) and Cancelled (who and why). The tabs scroll sideways.
  */
 export default function Bookings() {
   const [tab, setTab] = useState('upcoming');
@@ -42,8 +45,9 @@ export default function Bookings() {
   const reviewOf = useMemo(() => Object.fromEntries((reviews.data?.content ?? []).map((r) => [r.bookingId, r])), [reviews.data]);
   const groups = useMemo(() => {
     return {
-      upcoming: all.filter((b) => UPCOMING.includes(b.bookingStatus)).sort(compareUpcoming),
-      past: all.filter((b) => b.bookingStatus === 'COMPLETED').sort(newestFirstBy('actualEndAt')),
+      upcoming: all.filter((b) => isOpen(b) && !isPaymentDue(b)).sort(compareUpcoming),
+      pending: all.filter(isPaymentDue).sort(newestFirstBy('actualEndAt')),
+      past: all.filter((b) => b.bookingStatus === 'COMPLETED' && !isPaymentDue(b)).sort(newestFirstBy('actualEndAt')),
       cancelled: all.filter((b) => b.bookingStatus === 'CANCELLED').sort(newestFirstBy('cancelledAt'))
     };
   }, [all]);
@@ -51,6 +55,8 @@ export default function Bookings() {
   const supportPhone = contact.data?.SUPPORT_PHONE;
   const myName = me.data?.firstName ? [me.data.firstName, me.data.lastName].filter(Boolean).join(' ') : 'You';
   const refresh = () => Promise.all([bookings.refresh(), reviews.refresh()]);
+  // Opening the tab shows Upcoming again
+  useTabReset(() => setTab('upcoming'), refresh);
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.ground }}>
@@ -58,7 +64,8 @@ export default function Bookings() {
         <Text weight="extrabold" style={{ fontSize: 22, color: colors.navy }}>
           My bookings
         </Text>
-        <View accessibilityRole="tablist" style={{ flexDirection: 'row', gap: 20 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityRole="tablist" contentContainerStyle={{ gap: 18 }} style={{ marginHorizontal: -20 }}>
+          <View style={{ width: 2 }} />
           {TABS.map(([key, label]) => {
             const on = tab === key;
             return (
@@ -81,7 +88,8 @@ export default function Bookings() {
               </Pressable>
             );
           })}
-        </View>
+          <View style={{ width: 2 }} />
+        </ScrollView>
       </View>
       {bookings.loading ? (
         <Loading />
@@ -95,7 +103,7 @@ export default function Bookings() {
           ListEmptyComponent={
             <Empty
               icon="calendar"
-              title={{ upcoming: 'No upcoming bookings', past: 'No past bookings', cancelled: 'No cancelled bookings' }[tab]}
+              title={{ upcoming: 'No upcoming bookings', pending: 'No payments pending', past: 'No past bookings', cancelled: 'No cancelled bookings' }[tab]}
               text={tab === 'upcoming' ? 'Book a service and it shows here.' : undefined}
               action={tab === 'upcoming' ? <Button title="Book a service" onPress={() => router.push('/search')} /> : null}
             />
@@ -104,7 +112,7 @@ export default function Bookings() {
             if (tab === 'upcoming') {
               return <UpcomingCard booking={item} next={index === 0} later={index === 1} supportPhone={supportPhone} />;
             }
-            if (tab === 'past') return <PastCard booking={item} review={reviewOf[item.bookingId]} myName={myName} />;
+            if (tab === 'past' || tab === 'pending') return <PastCard booking={item} review={reviewOf[item.bookingId]} myName={myName} />;
             return <CancelledCard booking={item} />;
           }}
         />
@@ -179,6 +187,28 @@ function UpcomingCard({ booking, next, later, supportPhone }) {
     <BookingCard booking={booking} when={when} tag={tag}>
       {next ? <Progress status={booking.bookingStatus} /> : null}
       <Professional booking={booking} line={booking.partnerName ? 'Your professional' : status.note} />
+      {isPaymentDue(booking) ? (
+        <View style={{ gap: 10, padding: 12, borderRadius: 12, backgroundColor: colors.amberSoft }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Feather name={booking.paymentMethod === 'CASH' ? 'dollar-sign' : 'credit-card'} size={16} color={colors.amber} />
+            <Text weight="bold" style={{ flex: 1, fontSize: 13, color: colors.amber }}>
+              {booking.paymentMethod === 'CASH' ? `Pay ${money(booking.totalAmount)} in cash to your professional` : `Payment due: ${money(booking.totalAmount)}`}
+            </Text>
+          </View>
+          {booking.paymentMethod === 'CASH' ? null : (
+            <Button title={`Pay ${money(booking.totalAmount)}`} variant="blue" onPress={() => router.push(`/booking/${booking.bookingId}`)} />
+          )}
+        </View>
+      ) : null}
+      {booking.startOtp ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 12, backgroundColor: colors.blueTint }}>
+          <Feather name="key" size={15} color={colors.blue} />
+          <Text style={{ flex: 1, fontSize: 12.5, color: colors.blue }}>Start code for your professional</Text>
+          <Text weight="extrabold" style={{ fontSize: 18, letterSpacing: 4, color: colors.navy }}>
+            {booking.startOtp}
+          </Text>
+        </View>
+      ) : null}
       {next ? (
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <ActionButton
@@ -206,10 +236,10 @@ function UpcomingCard({ booking, next, later, supportPhone }) {
 function PastCard({ booking, review, myName }) {
   const paid = booking.paymentStatus === 'PAID' || booking.paymentStatus === 'PARTIALLY_REFUNDED' || booking.paymentStatus === 'REFUNDED';
   const partnerFirst = booking.partnerName?.split(' ')[0] ?? 'your professional';
-  const when = `Completed ${dayLabel(booking.actualEndAt)}`;
+  const when = `${booking.bookingStatus === 'COMPLETED' ? 'Completed' : 'Work finished'} ${dayLabel(booking.actualEndAt)}`;
   const booked = booking.scheduledStartAt ? rangeLabel(booking.scheduledStartAt, booking.scheduledEndAt) : 'As soon as possible';
   const actual = booking.actualStartAt ? rangeLabel(booking.actualStartAt, booking.actualEndAt) : null;
-  const tag = paid ? <Tag label="Paid" fg={colors.greenDark} bg={colors.greenSoft} /> : <Tag label="Payment due" fg={colors.amber} bg={colors.amberSoft} />;
+  const tag = paid ? <Tag label="Paid" fg={colors.greenDark} bg={colors.greenSoft} /> : <Tag label="Payment pending" fg={colors.amber} bg={colors.amberSoft} />;
   return (
     <BookingCard booking={booking} when={when} tag={tag}>
       <View style={{ gap: 6, padding: 10, borderRadius: 10, backgroundColor: colors.ground }}>

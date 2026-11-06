@@ -21,7 +21,7 @@ function linkOf(item) {
 /** The partner's notifications (GET /api/notifications/me): unread bold with a dot; opening one marks it read. */
 export default function Notifications() {
   const { authRequest } = useAuth();
-  const list = useApi('/api/notifications/me?size=50&app=PARTNER');
+  const list = useApi('/api/notifications/me?size=50&app=PARTNER', { pollMs: 15000 });
   const items = list.data?.content ?? [];
   const unread = items.some((n) => !n.isRead);
 

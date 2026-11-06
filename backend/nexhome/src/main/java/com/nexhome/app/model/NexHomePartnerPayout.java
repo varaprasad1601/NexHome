@@ -78,6 +78,11 @@ public class NexHomePartnerPayout {
 	@Column(name = "paid_at")
 	private Instant paidAt;
 
+	/** The wallet payout that settled it (V60); null while it is in the wallet. */
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "settlement_id", referencedColumnName = "id")
+	private NexHomePartnerSettlement settlement;
+
 	@CreationTimestamp
 	@Column(name = "creation_date", nullable = false, updatable = false)
 	private Instant creationDate;

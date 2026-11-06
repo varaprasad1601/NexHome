@@ -78,6 +78,7 @@ export default function Status() {
           accessibilityRole="button"
           onPress={async () => {
             await signOut();
+            if (router.canDismiss()) router.dismissAll();
             router.replace('/login');
           }}
         >

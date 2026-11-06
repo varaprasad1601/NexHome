@@ -30,6 +30,7 @@ export default function CompleteProfile() {
         body: { customerProfileId: profile.customerProfileId, firstName: firstName.trim(), lastName: lastName.trim() }
       });
       await reloadProfile();
+      if (router.canDismiss()) router.dismissAll();
       router.replace('/');
     } catch (err) {
       setError(err.message);
@@ -54,6 +55,7 @@ export default function CompleteProfile() {
           style={{ color: colors.muted, textAlign: 'center' }}
           onPress={async () => {
             await signOut();
+            if (router.canDismiss()) router.dismissAll();
             router.replace('/login');
           }}
           accessibilityRole="button"

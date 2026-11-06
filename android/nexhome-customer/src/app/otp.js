@@ -32,6 +32,8 @@ export default function Otp() {
         body: { countryCode: '+91', mobileNumber: mobile, purpose, otp }
       });
       await signIn(result);
+      // Nothing to go back to: back from Home closes the app
+      if (router.canDismiss()) router.dismissAll();
       router.replace('/');
     } catch (err) {
       setError(err.message);

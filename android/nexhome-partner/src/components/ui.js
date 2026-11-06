@@ -382,22 +382,34 @@ export function Avatar({ uri, name, size = 60 }) {
 }
 
 /** Two or more tabs under a screen title (Upcoming / Completed ...). */
+/** Underlined tabs: `tabs` [key, label, count?]; a count shows as a small badge (blue on the chosen tab). */
 export function Tabs({ tabs, value, onChange }) {
   return (
-    <View accessibilityRole="tablist" style={{ flexDirection: 'row', gap: 22 }}>
-      {tabs.map(([key, label]) => (
-        <Pressable
-          key={key}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: value === key }}
-          onPress={() => onChange(key)}
-          style={{ paddingBottom: 12, minHeight: 44, justifyContent: 'flex-end', borderBottomWidth: 3, borderBottomColor: value === key ? colors.blue : 'transparent' }}
-        >
-          <Text weight="bold" style={{ color: value === key ? colors.blue : colors.muted }}>
-            {label}
-          </Text>
-        </Pressable>
-      ))}
+    <View accessibilityRole="tablist" style={{ flexDirection: 'row', gap: 20 }}>
+      {tabs.map(([key, label, count]) => {
+        const on = value === key;
+        return (
+          <Pressable
+            key={key}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}
+            accessibilityLabel={count === undefined ? label : `${label}, ${count}`}
+            onPress={() => onChange(key)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingBottom: 11, borderBottomWidth: 3, borderBottomColor: on ? colors.blue : 'transparent' }}
+          >
+            <Text weight="bold" style={{ fontSize: 13, color: on ? colors.blue : colors.muted }}>
+              {label}
+            </Text>
+            {count === undefined ? null : (
+              <View style={{ minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.blue : '#e8eef5' }}>
+                <Text weight="extrabold" style={{ fontSize: 10, color: on ? colors.white : colors.muted }}>
+                  {count}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        );
+      })}
     </View>
   );
 }

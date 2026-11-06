@@ -1,14 +1,16 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { useAuth } from '../context/AuthProvider';
 
 /**
  * Loads `path` (signed in) whenever the screen comes into focus, so lists are fresh after going back.
  * Returns { data, loading, error, reload, refreshing, refresh }; `refresh` is for pull-to-refresh. A null path loads
- * nothing.
+ * nothing. With `pollMs` it also loads again every `pollMs` while the screen is focused and the app is in the
+ * foreground, and as soon as the app comes back to the foreground (new notifications, offers).
  */
-export default function useApi(path) {
+export default function useApi(path, { pollMs } = {}) {
   const { authRequest } = useAuth();
   const [state, setState] = useState({ data: null, loading: Boolean(path), error: '' });
   const [refreshing, setRefreshing] = useState(false);
@@ -28,7 +30,18 @@ export default function useApi(path) {
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load, path]) // eslint-disable-line react-hooks/exhaustive-deps
+      if (!pollMs) return undefined;
+      const timer = setInterval(() => {
+        if (AppState.currentState === 'active') load();
+      }, pollMs);
+      const subscription = AppState.addEventListener('change', (next) => {
+        if (next === 'active') load();
+      });
+      return () => {
+        clearInterval(timer);
+        subscription.remove();
+      };
+    }, [load, path, pollMs]) // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const refresh = useCallback(async () => {

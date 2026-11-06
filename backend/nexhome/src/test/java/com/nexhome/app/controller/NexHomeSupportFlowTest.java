@@ -134,11 +134,11 @@ class NexHomeSupportFlowTest {
 		perform(get("/api/notifications/me"), partner, null)
 				.andExpect(jsonPath("$.content[0].referenceType").value("BOOKING"))
 				.andExpect(jsonPath("$.content[0].referenceId").value(bookingId));
-		for (String event : List.of("START", "STOP")) {
-			perform(post("/api/bookings/timer"), partner,
-					"{\"bookingId\": %d, \"eventType\": \"%s\"}".formatted(bookingId, event))
-					.andExpect(status().isCreated());
-		}
+		startWithCode(partner, customer, bookingId);
+		perform(post("/api/bookings/timer"), partner,
+				"{\"bookingId\": %d, \"eventType\": \"STOP\"}".formatted(bookingId))
+				.andExpect(status().isCreated());
+		collectCash(partner, bookingId);
 
 		// The customer reviews it once; others cannot
 		perform(post("/api/reviews/create"), otherCustomer,
@@ -338,11 +338,11 @@ class NexHomeSupportFlowTest {
 					.andExpect(status().isCreated());
 		}
 		// The first job is done, the second cancelled by its customer
-		for (String event : List.of("START", "STOP")) {
-			perform(post("/api/bookings/timer"), partners[0],
-					"{\"bookingId\": %d, \"eventType\": \"%s\"}".formatted(bookings[0], event))
-					.andExpect(status().isCreated());
-		}
+		startWithCode(partners[0], customers[0], bookings[0]);
+		perform(post("/api/bookings/timer"), partners[0],
+				"{\"bookingId\": %d, \"eventType\": \"STOP\"}".formatted(bookings[0]))
+				.andExpect(status().isCreated());
+		collectCash(partners[0], bookings[0]);
 		perform(put("/api/bookings/cancel"), customers[1],
 				"{\"bookingId\": %d, \"reason\": \"Plans changed\"}".formatted(bookings[1]))
 				.andExpect(status().isOk());
@@ -436,5 +436,33 @@ class NexHomeSupportFlowTest {
 
 	private static String randomMobile() {
 		return "8" + ThreadLocalRandom.current().nextLong(100_000_000L, 999_999_999L);
+	}
+
+	/**
+	 * The partner accepts the booking (if not yet), the customer reads its start code (V59), and the partner starts the
+	 * work with it.
+	 */
+	private void startWithCode(String partnerToken, String customerToken, long bookingId) throws Exception {
+		String status = json(perform(get("/api/bookings/" + bookingId), customerToken, null)).get("booking")
+				.get("bookingStatus").asText();
+		if ("ASSIGNED".equals(status)) {
+			perform(put("/api/bookings/status/update"), partnerToken,
+					"{\"bookingId\": %d, \"bookingStatus\": \"PARTNER_EN_ROUTE\"}".formatted(bookingId))
+					.andExpect(status().isOk());
+		}
+		String code = json(perform(get("/api/bookings/" + bookingId), customerToken, null)).get("booking")
+				.get("startOtp").asText();
+		perform(post("/api/bookings/timer"), partnerToken,
+				"{\"bookingId\": %d, \"eventType\": \"START\", \"otp\": \"%s\"}".formatted(bookingId, code))
+				.andExpect(status().isCreated());
+	}
+
+	/** A finished cash job (V59 flow): the partner collects the cash, which completes it. */
+	private void collectCash(String partnerToken, long bookingId) throws Exception {
+		long cashId = json(perform(get("/api/payments/bookings/" + bookingId), partnerToken, null))
+				.get("cashCollection").get("cashCollectionId").asLong();
+		perform(put("/api/payments/cash-collections/update"), partnerToken,
+				"{\"cashCollectionId\": %d, \"status\": \"COLLECTED\"}".formatted(cashId))
+				.andExpect(status().isOk());
 	}
 }

@@ -1,28 +1,30 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Linking, RefreshControl, ScrollView, View } from 'react-native';
+import { Linking, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import OfferCard from '../../components/OfferCard';
 import Progress from '../../components/Progress';
+import StartCodeModal from '../../components/StartCodeModal';
+import { CollectScreen, WorkingScreen } from '../../components/WorkScreens';
 import { Avatar, Banner, Button, Card, Empty, ErrorBox, Header, Loading, Row, SectionTitle, Tag, Text } from '../../components/ui';
 import { useAuth } from '../../context/AuthProvider';
 import useApi from '../../hooks/useApi';
 import { colors } from '../../theme';
 import { dayLabel, durationLabel, minutesLabel, money, parseApiDate, serviceNameOf, whenLabel } from '../../utils/format';
-import { UPCOMING, bookingStatus } from '../../utils/status';
+import { UPCOMING, bookingStatus, isPaid, isPaymentPending, isWorkFinished, jobTag } from '../../utils/status';
 
 /**
  * Minutes worked so far, worked out from the timer events as the backend does (START / RESUME to PAUSE / STOP, an
  * open stretch up to `now`, rounded up), so it keeps counting while the work runs; the backend's figure otherwise.
  */
-function liveMinutes(detail, now) {
+function liveSeconds(detail, now) {
   let seconds = 0;
   let since = null;
   for (const log of detail.timeLogs ?? []) {
     const at = parseApiDate(log.eventAt)?.date?.getTime();
-    if (at === undefined) return Number(detail.workedMinutes) || 0;
+    if (at === undefined) return (Number(detail.workedMinutes) || 0) * 60;
     if (log.eventType === 'START' || log.eventType === 'RESUME') since = at;
     else if ((log.eventType === 'PAUSE' || log.eventType === 'STOP') && since !== null) {
       seconds += (at - since) / 1000;
@@ -30,7 +32,12 @@ function liveMinutes(detail, now) {
     }
   }
   if (since !== null) seconds += Math.max(0, (now - since) / 1000);
-  return Math.ceil(seconds / 60);
+  return seconds;
+}
+
+/** Minutes worked, rounded up as the backend does. */
+function liveMinutes(detail, now) {
+  return Math.ceil(liveSeconds(detail, now) / 60);
 }
 
 /**
@@ -40,19 +47,33 @@ function liveMinutes(detail, now) {
  * a cash job once completed, Cash collected (PUT /api/payments/cash-collections/update, COLLECTED); the time worked;
  * history; Get help.
  */
+/** Who cancelled a job, as a tag: the customer, the partner (You) or NexHome support staff (Admin). */
+const CANCELLED_BY = {
+  CUSTOMER: { label: 'Customer', fg: colors.blue, bg: colors.blueTint },
+  PARTNER: { label: 'You', fg: colors.greenDark, bg: colors.greenSoft },
+  STAFF: { label: 'Admin', fg: colors.navy, bg: '#eef2f6' }
+};
+
 export default function JobScreen() {
-  const { id } = useLocalSearchParams();
-  const { authRequest, profile } = useAuth();
+  const { id, collected } = useLocalSearchParams();
+  const { authRequest, profile, reloadProfile } = useAuth();
   const detail = useApi(`/api/bookings/${id}`);
+  // The partner's jobs: one job at a time, so another one under way blocks Start work here
+  const myJobs = useApi('/api/bookings/partner/me?size=50');
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(collected ? 'Cash marked as collected.' : '');
+  const [askingCode, setAskingCode] = useState(false);
+  // Finish work on a cash job: the Collect payment screen, nothing sent until the cash is collected
+  const [finishing, setFinishing] = useState(false);
+  const [finalAmount, setFinalAmount] = useState(null);
 
   const running = detail.data?.booking?.bookingStatus === 'IN_PROGRESS';
   useEffect(() => {
     if (!running) return undefined;
-    const timer = setInterval(() => setNow(Date.now()), 20000);
+    // Every second: the working screen shows a running clock
+    const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [running]);
 
@@ -85,8 +106,10 @@ export default function JobScreen() {
       await action();
       if (message) setNotice(message);
       await detail.reload();
+      return true;
     } catch (err) {
       setError(err.message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -94,20 +117,86 @@ export default function JobScreen() {
 
   const timer = (eventType, message) => run(() => authRequest('/api/bookings/timer', { method: 'POST', body: { bookingId: booking.bookingId, eventType } }), message);
 
-  const finish = () =>
-    Alert.alert('Finish this job?', booking.paymentMethod === 'CASH' ? `Then collect ${money(booking.totalAmount)} in cash from the customer.` : 'The customer will be asked to rate the work.', [
-      { text: 'Not yet', style: 'cancel' },
-      { text: 'Finish work', onPress: () => timer('STOP', 'Job completed. Well done!') }
-    ]);
+  // Start work with the customer's code (V59): a wrong code's message stays in the pop-up; success closes it
+  const startWithCode = async (code) => {
+    await authRequest('/api/bookings/timer', { method: 'POST', body: { bookingId: booking.bookingId, eventType: 'START', otp: code } });
+    setAskingCode(false);
+    setError('');
+    setNotice('Code verified. Work started.');
+    // Starting work puts the partner online (backend): Home's card follows
+    await Promise.all([detail.reload(), reloadProfile().catch(() => {})]);
+  };
 
-  const cashCollected = () =>
-    run(async () => {
-      const payments = await authRequest(`/api/payments/bookings/${booking.bookingId}`);
-      const cash = payments?.cashCollection;
-      if (!cash) throw new Error('No cash is due for this job.');
-      if (cash.status === 'COLLECTED') return;
+  const cashToCollect = booking.paymentMethod === 'CASH' && !isPaid(booking);
+  // Another job under way (working, paused, or waiting for its cash)
+  const otherJob = (myJobs.data?.content ?? []).find((job) => job.bookingId !== booking.bookingId && ['IN_PROGRESS', 'PAUSED'].includes(job.bookingStatus)) ?? null;
+  // Finish work: a cash job only shows the Collect payment screen (nothing changes until the cash is collected); an
+  // online job stops the timer and completes
+  const finish = async () => {
+    if (!cashToCollect) {
+      await timer('STOP');
+      return;
+    }
+    setError('');
+    setFinalAmount(null);
+    setFinishing(true);
+    // An hourly job is priced for the time worked so far, as the backend will when the work is finished
+    if (booking.pricing?.pricingType === 'HOURLY') {
+      const query = new URLSearchParams({ serviceId: String(booking.serviceId), minutes: String(Math.max(1, liveMinutes(detail.data, Date.now()))) });
+      if (booking.serviceVariantId) query.set('serviceVariantId', String(booking.serviceVariantId));
+      authRequest(`/api/catalog/services/quote?${query}`)
+        .then((quote) => setFinalAmount(quote.total))
+        .catch(() => {});
+    }
+  };
+
+  // Cash collected: finish the work (STOP) and record the cash, which completes the booking
+  const collectAndComplete = async () => {
+    if (!isWorkFinished(booking)) {
+      await authRequest('/api/bookings/timer', { method: 'POST', body: { bookingId: booking.bookingId, eventType: 'STOP' } });
+    }
+    const payments = await authRequest(`/api/payments/bookings/${booking.bookingId}`);
+    const cash = payments?.cashCollection;
+    if (!cash) throw new Error('No cash is due for this job.');
+    if (cash.status !== 'COLLECTED') {
       await authRequest('/api/payments/cash-collections/update', { method: 'PUT', body: { cashCollectionId: cash.cashCollectionId, status: 'COLLECTED' } });
-    }, 'Cash marked as collected.');
+    }
+    setFinishing(false);
+    setNotice('Cash collected. Job completed.');
+    await detail.reload();
+  };
+
+
+  // Collect payment: after Finish work on a cash job (Back returns to the work), or a cash job already finished
+  if (isMine && (isWorkFinished(booking) || (finishing && ['IN_PROGRESS', 'PAUSED'].includes(booking.bookingStatus)))) {
+    return (
+      <CollectScreen
+        booking={booking}
+        amount={isWorkFinished(booking) ? booking.totalAmount : finalAmount ?? booking.totalAmount}
+        onBack={() => {
+          if (finishing) setFinishing(false);
+          else if (router.canGoBack()) router.back();
+          else router.replace('/');
+        }}
+        onCashCollected={collectAndComplete}
+      />
+    );
+  }
+  // While working: only the timer, Pause / Resume and Finish work
+  if (isMine && ['IN_PROGRESS', 'PAUSED'].includes(booking.bookingStatus) && !isWorkFinished(booking)) {
+    return (
+      <WorkingScreen
+        booking={booking}
+        seconds={liveSeconds(detail.data, now)}
+        expectedMinutes={duration}
+        busy={busy}
+        error={error}
+        onPause={() => timer('PAUSE', 'Work paused.')}
+        onResume={() => timer('RESUME', 'Work resumed.')}
+        onFinish={finish}
+      />
+    );
+  }
 
   const openMaps = () => {
     const query = address.latitude && address.longitude ? `${address.latitude},${address.longitude}` : fullAddress;
@@ -128,10 +217,47 @@ export default function JobScreen() {
               </Text>
               <Text style={{ fontSize: 12.5, color: colors.muted }}>{booking.scheduledStartAt ? whenLabel(booking.scheduledStartAt) : 'As soon as possible'}</Text>
             </View>
-            <Tag label={status.label} fg={status.fg} bg={status.bg} />
+            <Tag label={jobTag(booking).label} fg={jobTag(booking).fg} bg={jobTag(booking).bg} />
           </View>
           {UPCOMING.includes(booking.bookingStatus) && status.step ? <Progress step={status.step} /> : null}
-          <Text style={{ fontSize: 13, color: colors.muted }}>{booking.bookingStatus === 'CANCELLED' && booking.cancellationReason ? `Cancelled: ${booking.cancellationReason}` : status.note}</Text>
+          {booking.bookingStatus === 'CANCELLED' ? (
+            // Who cancelled, when and why (as the customer's booking page shows it)
+            <View style={{ gap: 7, padding: 11, borderRadius: 12, backgroundColor: colors.redSoft }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <Text style={{ fontSize: 12.5, color: colors.muted }}>Cancelled by</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+                  {CANCELLED_BY[booking.cancelledByRole] ? (
+                    <View style={{ backgroundColor: CANCELLED_BY[booking.cancelledByRole].bg, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }}>
+                      <Text weight="extrabold" style={{ fontSize: 10, color: CANCELLED_BY[booking.cancelledByRole].fg }}>
+                        {CANCELLED_BY[booking.cancelledByRole].label}
+                      </Text>
+                    </View>
+                  ) : null}
+                  <Text weight="semibold" style={{ fontSize: 12.5, flexShrink: 1 }} numberOfLines={1}>
+                    {booking.cancelledByRole === 'PARTNER' ? 'You' : booking.cancelledByName ?? '—'}
+                  </Text>
+                </View>
+              </View>
+              {booking.cancelledAt ? (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
+                  <Text style={{ fontSize: 12.5, color: colors.muted }}>When</Text>
+                  <Text weight="semibold" style={{ fontSize: 12.5 }}>
+                    {whenLabel(booking.cancelledAt)}
+                  </Text>
+                </View>
+              ) : null}
+              {booking.cancellationReason ? (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
+                  <Text style={{ fontSize: 12.5, color: colors.muted }}>Reason</Text>
+                  <Text weight="semibold" style={{ fontSize: 12.5, color: colors.red, flexShrink: 1, textAlign: 'right' }}>
+                    {booking.cancellationReason}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={{ fontSize: 13, color: colors.muted }}>{status.note}</Text>
+          )}
           {['IN_PROGRESS', 'PAUSED', 'COMPLETED'].includes(booking.bookingStatus) ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 12, backgroundColor: colors.ground }}>
               <Feather name="clock" size={16} color={colors.blue} />
@@ -181,13 +307,26 @@ export default function JobScreen() {
         <Card style={{ gap: 10 }}>
           <SectionTitle>Payment</SectionTitle>
           <Row label="Job total" value={money(booking.totalAmount)} strong />
-          <Row label="Paid by" value={booking.paymentMethod === 'CASH' ? 'Cash to you' : 'Online'} />
-          {booking.paymentMethod === 'CASH' && booking.bookingStatus !== 'CANCELLED' ? (
+          <Row label="Paid by" value={booking.bookingStatus === 'CANCELLED' ? '–' : booking.paymentMethod === 'CASH' ? 'Cash to you' : 'Online'} />
+          {booking.bookingStatus !== 'CANCELLED' ? (
+            <Row label="Payment" value={isPaid(booking) ? 'Paid' : 'Pending'} color={isPaid(booking) ? colors.greenDark : colors.amber} />
+          ) : null}
+          {isPaymentPending(booking) ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 12, backgroundColor: colors.amberSoft }}>
+              <Feather name="clock" size={15} color={colors.amber} />
+              <Text weight="semibold" style={{ flex: 1, fontSize: 12.5, color: colors.amber }}>
+                {booking.paymentMethod === 'CASH'
+                  ? `Payment pending: collect ${money(booking.totalAmount)} in cash and tap Cash collected.`
+                  : `Payment pending: the customer pays ${money(booking.totalAmount)} online.`}
+              </Text>
+            </View>
+          ) : null}
+          {booking.paymentMethod === 'CASH' && booking.bookingStatus !== 'CANCELLED' && !isPaymentPending(booking) ? (
             <Text style={{ fontSize: 12.5, color: colors.muted }}>
               {booking.paymentStatus === 'PAID' ? 'The cash is recorded as collected.' : `Collect ${money(booking.totalAmount)} from the customer after the work.`}
             </Text>
           ) : null}
-          {booking.paymentMethod === 'ONLINE' ? <Text style={{ fontSize: 12.5, color: colors.muted }}>Your share is paid to your bank account after the job. See Earnings.</Text> : null}
+          {booking.paymentMethod === 'ONLINE' && booking.bookingStatus !== 'CANCELLED' ? <Text style={{ fontSize: 12.5, color: colors.muted }}>Your share is paid to your bank account after the job. See Earnings.</Text> : null}
         </Card>
 
         {(detail.data.history ?? []).length ? (
@@ -213,8 +352,20 @@ export default function JobScreen() {
 
         {isMine ? (
           <View style={{ gap: 10 }}>
-            {booking.bookingStatus === 'PARTNER_EN_ROUTE' ? <Button title="Start work" icon="play" onPress={() => timer('START', 'Work started.')} loading={busy} /> : null}
-            {booking.bookingStatus === 'IN_PROGRESS' ? (
+            {booking.bookingStatus === 'PARTNER_EN_ROUTE' ? (
+              <View style={{ gap: 8 }}>
+                <Button title="Start work" icon="play" onPress={() => setAskingCode(true)} loading={busy} disabled={Boolean(otherJob)} />
+                {otherJob ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 12, backgroundColor: colors.amberSoft }}>
+                    <Feather name="lock" size={15} color={colors.amber} />
+                    <Text weight="semibold" style={{ flex: 1, fontSize: 12.5, color: colors.amber }}>
+                      Finish your current job {otherJob.publicId} first; you can start this one after it is completed.
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+            {booking.bookingStatus === 'IN_PROGRESS' && !isWorkFinished(booking) ? (
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <Button title="Pause" variant="secondary" icon="pause" onPress={() => timer('PAUSE', 'Work paused.')} disabled={busy} style={{ flex: 1 }} />
                 <Button title="Finish work" icon="check" onPress={finish} loading={busy} style={{ flex: 1 }} />
@@ -226,8 +377,8 @@ export default function JobScreen() {
                 <Button title="Finish work" icon="check" onPress={finish} disabled={busy} style={{ flex: 1 }} />
               </View>
             ) : null}
-            {booking.bookingStatus === 'COMPLETED' && booking.paymentMethod === 'CASH' && booking.paymentStatus !== 'PAID' ? (
-              <Button title={`Cash collected (${money(booking.totalAmount)})`} icon="dollar-sign" onPress={cashCollected} loading={busy} />
+            {isPaymentPending(booking) && booking.paymentMethod === 'CASH' ? (
+              <Button title={`Cash collected (${money(booking.totalAmount)})`} icon="dollar-sign" onPress={() => router.push(`/collect/${booking.bookingId}`)} disabled={busy} />
             ) : null}
           </View>
         ) : null}
@@ -239,6 +390,7 @@ export default function JobScreen() {
         />
         {booking.bookingStatus === 'COMPLETED' ? <Text style={{ color: colors.muted, fontSize: 12, textAlign: 'center' }}>Completed on {dayLabel(booking.actualEndAt)}</Text> : null}
       </ScrollView>
+      <StartCodeModal visible={askingCode} onSubmit={startWithCode} onClose={() => setAskingCode(false)} />
     </SafeAreaView>
   );
 }

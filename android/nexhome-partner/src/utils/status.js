@@ -25,6 +25,31 @@ export function bookingStatus(code) {
 /** Jobs still to do (the Upcoming tab); the rest are Completed / past. */
 export const UPCOMING = ['PENDING', 'CONFIRMED', 'ASSIGNED', 'PARTNER_EN_ROUTE', 'IN_PROGRESS', 'PAUSED'];
 
+/** Whether a job's payment is done (paid, or refunded after paying). */
+export function isPaid(job) {
+  return ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(job.paymentStatus);
+}
+
+/** A cash job whose work is finished: it stays IN_PROGRESS (with its end time) until the cash is collected. */
+export function isWorkFinished(job) {
+  return job.bookingStatus === 'IN_PROGRESS' && Boolean(job.actualEndAt);
+}
+
+/** A finished job whose payment has not come in yet (completed, or a cash job waiting for its cash). */
+export function isPaymentPending(job) {
+  return (job.bookingStatus === 'COMPLETED' || isWorkFinished(job)) && !isPaid(job);
+}
+
+/** The tag a job shows: Payment pending (amber) while a finished job is unpaid, else its status. */
+export function jobTag(job) {
+  return isPaymentPending(job) ? { label: 'Payment pending', ...AMBER } : bookingStatus(job.bookingStatus);
+}
+
+/** Still open: to do, or finished but not paid yet (it stays in Upcoming and on Home until it is). */
+export function isOpen(job) {
+  return UPCOMING.includes(job.bookingStatus) || isPaymentPending(job);
+}
+
 /** The partner onboarding statuses (PARTNER_ONBOARDING_STATUS, V18 and V52). */
 const ONBOARDING = {
   NOT_STARTED: { label: 'Not started', ...GREY },
@@ -79,7 +104,8 @@ const CASH = {
 
 export function settlementStatus(settlement, code) {
   if (settlement === 'CASH') return CASH[code] ?? { label: code ?? 'Cash', ...GREY };
-  if (!code) return { label: 'Payout to come', ...GREY };
+  // An online job without a payout yet: the customer has not paid
+  if (!code) return { label: 'Payment pending', ...AMBER };
   return payoutStatus(code);
 }
 

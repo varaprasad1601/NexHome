@@ -23,6 +23,11 @@ import jakarta.persistence.criteria.JoinType;
 public interface NexHomeBookingRepository extends JpaRepository<NexHomeBooking, Long>,
 		JpaSpecificationExecutor<NexHomeBooking> {
 
+	/** Another booking the partner is working on (statuses given), the oldest first; one partner works one job at a time. */
+	java.util.Optional<NexHomeBooking> findFirstByPartnerIdAndBookingStatusInAndIdNotOrderByIdAsc(Long partnerId,
+			java.util.Collection<String> bookingStatuses, Long id);
+
+
 	/** A page of bookings, with the customers and partners in the same query (their names are listed). */
 	@Override
 	@EntityGraph(attributePaths = { "customer", "customer.user", "partner" })

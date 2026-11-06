@@ -423,6 +423,10 @@ public class NexHomePaymentServiceImpl implements NexHomePaymentService {
 					NexHomeSettlement.CASH_COLLECTED, actingUserId);
 		}
 		cash.setUpdatedBy(actingUserId);
+		// A cash job waits IN_PROGRESS after its work is finished; the cash settles it
+		if (CashCollectionStatus.COLLECTED.equals(target) || CashCollectionStatus.WAIVED.equals(target)) {
+			settlement.completeAfterCash(booking, actingUserId);
+		}
 		log.info("Cash for booking {} is now {}", booking.getPublicId(), target);
 		return paymentMapper.toCashDto(cash);
 	}

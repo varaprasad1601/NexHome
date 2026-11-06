@@ -48,6 +48,12 @@ public class NexHomeBookingMapper {
 	/** With who cancelled it and when (from the status history), for the customer's own list. */
 	public NexHomeBookingResponse toBookingDto(NexHomeBooking booking, Instant cancelledAt, String cancelledByRole,
 			String cancelledByName) {
+		return toBookingDto(booking, cancelledAt, cancelledByRole, cancelledByName, null);
+	}
+
+	/** With the start code, for the booking's customer (V59). */
+	public NexHomeBookingResponse toBookingDto(NexHomeBooking booking, Instant cancelledAt, String cancelledByRole,
+			String cancelledByName, String startOtp) {
 		NexHomeCustomerProfile customer = booking.getCustomer();
 		NexHomePartnerProfile partner = booking.getPartner();
 		return new NexHomeBookingResponse(
@@ -86,7 +92,8 @@ public class NexHomeBookingMapper {
 				partner == null ? null : mobileOf(partner),
 				cancelledAt,
 				cancelledByRole,
-				cancelledByName);
+				cancelledByName,
+				startOtp);
 	}
 
 	/** "+91 9876543210", as staff screens show numbers. */

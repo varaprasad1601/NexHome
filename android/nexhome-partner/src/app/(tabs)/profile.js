@@ -12,6 +12,7 @@ import { useAuth } from '../../context/AuthProvider';
 import useApi from '../../hooks/useApi';
 import { colors } from '../../theme';
 import { onboardingStatus } from '../../utils/status';
+import useTabReset from '../../hooks/useTabReset';
 
 function Row({ icon, label, onPress, danger, detail }) {
   return (
@@ -36,6 +37,7 @@ function Row({ icon, label, onPress, danger, detail }) {
 export default function Profile() {
   const { authRequest, user, profile, signOut, reloadProfile } = useAuth();
   const rating = useApi(profile ? `/api/reviews/summary?partnerProfileId=${profile.partnerProfileId}` : null);
+  useTabReset(null, () => Promise.all([rating.refresh(), reloadProfile().catch(() => {})]));
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const name = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || 'Your profile';
@@ -96,15 +98,16 @@ export default function Profile() {
         <ErrorBox message={error} />
 
         <Card style={{ paddingVertical: 4 }}>
+          <Row icon="user" label="My details" onPress={() => router.push('/details')} />
           <Row icon="tool" label="My services" onPress={() => router.push('/services')} />
-          <Row icon="calendar" label="Working hours & areas" onPress={() => router.push('/availability')} />
-          <Row icon="sun" label="Time off" onPress={() => router.push('/time-off')} />
           <Row icon="file-text" label="Documents" onPress={() => router.push('/documents')} />
           <Row icon="credit-card" label="Bank accounts" onPress={() => router.push('/bank')} />
+          <Row icon="calendar" label="Working hours & areas" onPress={() => router.push('/availability')} />
+          <Row icon="sun" label="Time off" onPress={() => router.push('/time-off')} />
           <Row icon="star" label="Reviews" onPress={() => router.push('/reviews')} />
         </Card>
         <Card style={{ paddingVertical: 4 }}>
-          <Row icon="bell" label="Notifications" onPress={() => router.push('/notifications')} />
+          <Row icon="info" label="About us" onPress={() => router.push('/about')} />
           <Row icon="life-buoy" label="Help & support" onPress={() => router.push('/support')} />
           <Row icon="file-text" label="Terms & Conditions" onPress={() => router.push('/legal?view=terms')} />
           <Row icon="shield" label="Privacy Policy" onPress={() => router.push('/legal?view=policies')} />
@@ -123,6 +126,7 @@ export default function Profile() {
                   style: 'destructive',
                   onPress: async () => {
                     await signOut();
+                    if (router.canDismiss()) router.dismissAll();
                     router.replace('/login');
                   }
                 }

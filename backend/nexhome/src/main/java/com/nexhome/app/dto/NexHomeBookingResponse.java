@@ -66,5 +66,11 @@ public record NexHomeBookingResponse(
 		String cancelledByRole,
 
 		/** That person's name: the customer's or the partner's; staff "NexHome Support". */
-		String cancelledByName) {
+		String cancelledByName,
+
+		/**
+		 * The start code (V59), only for the booking's own customer while the partner has accepted and the work has not
+		 * started: they share it with the partner, who enters it to start. Null for everyone else.
+		 */
+		String startOtp) {
 }

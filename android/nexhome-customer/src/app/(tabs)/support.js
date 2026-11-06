@@ -6,6 +6,7 @@ import { Button, Card, Text } from '../../components/ui';
 // import { Empty, ErrorBox, Loading, Tag } from '../../components/ui'; // tickets
 import useApi from '../../hooks/useApi';
 import { colors } from '../../theme';
+import useTabReset from '../../hooks/useTabReset';
 // import { dayLabel } from '../../utils/format'; // tickets
 // import { ticketStatus } from '../../utils/status'; // tickets
 
@@ -18,6 +19,7 @@ import { colors } from '../../theme';
  */
 export default function Support() {
   const contact = useApi('/api/settings/public');
+  useTabReset(null, contact.refresh);
   const phone = contact.data?.SUPPORT_PHONE;
   const whatsapp = contact.data?.WHATSAPP_NUMBER;
 

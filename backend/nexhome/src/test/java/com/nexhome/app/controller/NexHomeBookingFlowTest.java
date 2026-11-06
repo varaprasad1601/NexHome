@@ -198,7 +198,30 @@ class NexHomeBookingFlowTest {
 		perform(post("/api/bookings/timer"), partner, "{\"bookingId\": %d, \"eventType\": \"PAUSE\"}".formatted(bookingId))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("The timer cannot PAUSE a booking that is PARTNER_EN_ROUTE."));
-		for (String event : List.of("START", "PAUSE", "RESUME")) {
+		// The start code (V59): only the customer sees it; the partner needs it, a wrong one is counted
+		perform(get("/api/bookings/" + bookingId), partner, null)
+				.andExpect(jsonPath("$.booking.startOtp").doesNotExist());
+		String startCode = json(perform(get("/api/bookings/" + bookingId), customer, null)
+				.andExpect(jsonPath("$.booking.startOtp").value(org.hamcrest.Matchers.matchesPattern("\\d{4}"))))
+				.get("booking").get("startOtp").asText();
+		perform(post("/api/bookings/timer"), partner, "{\"bookingId\": %d, \"eventType\": \"START\"}".formatted(bookingId))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Enter the start code the customer has."));
+		String wrongCode = startCode.equals("0000") ? "1111" : "0000";
+		perform(post("/api/bookings/timer"), partner,
+				"{\"bookingId\": %d, \"eventType\": \"START\", \"otp\": \"%s\"}".formatted(bookingId, wrongCode))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Wrong start code. 4 tries left."));
+		perform(get("/api/bookings/" + bookingId), customer, null)
+				.andExpect(jsonPath("$.booking.bookingStatus").value("PARTNER_EN_ROUTE"));
+		perform(post("/api/bookings/timer"), partner,
+				"{\"bookingId\": %d, \"eventType\": \"START\", \"otp\": \"%s\"}".formatted(bookingId, startCode))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.booking.bookingStatus").value("IN_PROGRESS"));
+		// Once started the code is gone
+		perform(get("/api/bookings/" + bookingId), customer, null)
+				.andExpect(jsonPath("$.booking.startOtp").doesNotExist());
+		for (String event : List.of("PAUSE", "RESUME")) {
 			perform(post("/api/bookings/timer"), partner,
 					"{\"bookingId\": %d, \"eventType\": \"%s\"}".formatted(bookingId, event))
 					.andExpect(status().isCreated());
@@ -210,15 +233,30 @@ class NexHomeBookingFlowTest {
 				"{\"bookingId\": %d, \"reason\": \"Changed my mind\"}".formatted(bookingId))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("A booking that is IN_PROGRESS cannot be cancelled."));
+		// A cash job: Finish work ends the timer, but the job stays IN_PROGRESS until the cash is collected
 		perform(post("/api/bookings/timer"), partner, "{\"bookingId\": %d, \"eventType\": \"STOP\"}".formatted(bookingId))
 				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.booking.bookingStatus").value("COMPLETED"))
+				.andExpect(jsonPath("$.booking.bookingStatus").value("IN_PROGRESS"))
 				.andExpect(jsonPath("$.booking.actualEndAt").isNotEmpty())
 				.andExpect(jsonPath("$.timeLogs.length()").value(4))
+				.andExpect(jsonPath("$.assignments[0].assignmentStatus").value("STARTED"));
+		perform(post("/api/bookings/timer"), partner, "{\"bookingId\": %d, \"eventType\": \"PAUSE\"}".formatted(bookingId))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("The work is finished; collect the cash to complete the job."));
+		long cashId = json(perform(get("/api/payments/bookings/" + bookingId), partner, null))
+				.get("cashCollection").get("cashCollectionId").asLong();
+		perform(put("/api/payments/cash-collections/update"), partner,
+				"{\"cashCollectionId\": %d, \"status\": \"COLLECTED\"}".formatted(cashId))
+				.andExpect(status().isOk());
+		perform(get("/api/bookings/" + bookingId), staff, null)
+				.andExpect(jsonPath("$.booking.bookingStatus").value("COMPLETED"))
+				.andExpect(jsonPath("$.booking.paymentStatus").value("PAID"))
 				.andExpect(jsonPath("$.assignments[0].assignmentStatus").value("COMPLETED"))
 				// PENDING at checkout, then CONFIRMED, PARTNER_EN_ROUTE (accepted), IN_PROGRESS, PAUSED,
-				// IN_PROGRESS, COMPLETED
-				.andExpect(jsonPath("$.history.length()").value(7))
+				// IN_PROGRESS, Work finished, Cash collected, COMPLETED
+				.andExpect(jsonPath("$.history.length()").value(9))
+				.andExpect(jsonPath("$.history[6].reason").value("Work finished"))
+				.andExpect(jsonPath("$.history[8].newStatus").value("COMPLETED"))
 				.andExpect(jsonPath("$.history[0].newStatus").value("PENDING"));
 		// Done: the partner is free again then
 		perform(get("/api/availability/partners?serviceId=%d&startsAt=%s&endsAt=%s".formatted(serviceId, start,
@@ -229,7 +267,7 @@ class NexHomeBookingFlowTest {
 				.andExpect(jsonPath("$.byStatus.COMPLETED").isNumber())
 				.andExpect(jsonPath("$.addedThisMonth").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)))
 				.andExpect(jsonPath("$.months.length()").value(10));
-		// The partner's figures: one job, completed; the cash is not collected yet, so nothing earned
+		// The partner's figures: one job, completed once its cash was collected: earned (the cash less the commission)
 		perform(get("/api/bookings/partner-stats/" + partnerId), partner, null)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.totalJobs").value(1))
@@ -239,10 +277,10 @@ class NexHomeBookingFlowTest {
 				.andExpect(jsonPath("$.rejected").value(0))
 				.andExpect(jsonPath("$.completed").value(1))
 				.andExpect(jsonPath("$.cancelled").value(0))
-				.andExpect(jsonPath("$.totalEarnings").value(0));
+				.andExpect(jsonPath("$.totalEarnings").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.equalTo(0))));
 		perform(get("/api/bookings/partner-stats/" + partnerId), customer, null)
 				.andExpect(status().isForbidden());
-		// The customer's figures: one booking, completed; cash not collected yet, so nothing spent
+		// The customer's figures: one booking, completed and paid in cash
 		perform(get("/api/bookings/customer-stats/" + customerId), customer, null)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.totalBookings").value(1))
@@ -254,7 +292,7 @@ class NexHomeBookingFlowTest {
 				.andExpect(jsonPath("$.partnerRejected").value(0))
 				.andExpect(jsonPath("$.completed").value(1))
 				.andExpect(jsonPath("$.cancelled").value(0))
-				.andExpect(jsonPath("$.totalSpend").value(0));
+				.andExpect(jsonPath("$.totalSpend").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.equalTo(0))));
 		perform(get("/api/bookings/customer-stats/" + customerId), partner, null)
 				.andExpect(status().isForbidden());
 	}

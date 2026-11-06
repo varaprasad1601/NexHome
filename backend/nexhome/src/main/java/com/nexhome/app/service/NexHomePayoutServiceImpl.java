@@ -68,6 +68,7 @@ public class NexHomePayoutServiceImpl implements NexHomePayoutService {
 	private final NexHomeAuditRecorder auditRecorder;
 	private final com.nexhome.app.repository.NexHomeBookingRepository bookingRepository;
 	private final com.nexhome.app.repository.NexHomeCashCollectionRepository cashCollectionRepository;
+	private final com.nexhome.app.repository.NexHomePartnerSettlementRepository settlementRepository;
 
 	private static final java.time.ZoneId ZONE = java.time.ZoneId.of("Asia/Kolkata");
 	/** The periods of a partner's earnings. */
@@ -142,13 +143,19 @@ public class NexHomePayoutServiceImpl implements NexHomePayoutService {
 		BigDecimal totalAmount = sum(records, com.nexhome.app.dto.NexHomePartnerEarningsResponse.Record::totalAmount);
 		BigDecimal commission = sum(records, com.nexhome.app.dto.NexHomePartnerEarningsResponse.Record::commission);
 		BigDecimal earnings = sum(records, com.nexhome.app.dto.NexHomePartnerEarningsResponse.Record::partnerEarnings);
+		// Not paid by the customer yet: an online job without a payout (a cash job completes only once collected)
+		java.util.List<com.nexhome.app.dto.NexHomePartnerEarningsResponse.Record> pending = records.stream()
+				.filter(record -> record.settlement() == null).toList();
+		BigDecimal pendingEarnings = sum(pending,
+				com.nexhome.app.dto.NexHomePartnerEarningsResponse.Record::partnerEarnings);
 		int first = (int) Math.min(pageRequest.getOffset(), records.size());
 		int last = Math.min(first + pageRequest.getPageSize(), records.size());
 		org.springframework.data.domain.Page<com.nexhome.app.dto.NexHomePartnerEarningsResponse.Record> pageOfRecords =
 				new org.springframework.data.domain.PageImpl<>(records.subList(first, last), pageRequest,
 						records.size());
 		return new com.nexhome.app.dto.NexHomePartnerEarningsResponse(chosen, from, records.size(), totalAmount,
-				commission, earnings, NexHomePaging.toPageResponse(pageRequest, pageOfRecords,
+				commission, earnings, earnings.subtract(pendingEarnings), pendingEarnings, pending.size(),
+				NexHomePaging.toPageResponse(pageRequest, pageOfRecords,
 						pageOfRecords.getContent()));
 	}
 
@@ -310,6 +317,228 @@ public class NexHomePayoutServiceImpl implements NexHomePayoutService {
 		return NexHomePaging.toPageResponse(pageRequest, transfers,
 				transfers.stream().map(paymentMapper::toTransferDto).toList());
 	}
+
+	// ------------------------------------------------------------------------------------------------------------
+	// Wallet (V60): online payouts less the commission owed on collected cash, paid out in one transfer
+	// ------------------------------------------------------------------------------------------------------------
+
+	/** Online payouts a wallet payout settles (ON_HOLD ones wait; PAID, PROCESSING and CANCELLED are not owed). */
+	private static final java.util.List<String> WALLET_PAYOUTS = java.util.List.of(PayoutStatus.PENDING,
+			PayoutStatus.FAILED);
+
+	/** What is in a wallet (or was in a wallet payout). */
+	private record Wallet(java.util.List<NexHomePartnerPayout> payouts,
+			java.util.List<com.nexhome.app.model.NexHomeCashCollection> cash,
+			java.util.List<com.nexhome.app.dto.NexHomePartnerWalletResponse.Item> items, BigDecimal cashAmount,
+			BigDecimal cashCommission, BigDecimal onlineAmount, BigDecimal onlineCommission, BigDecimal adjustments) {
+
+		BigDecimal onlineEarnings() {
+			return onlineAmount.subtract(onlineCommission).add(adjustments);
+		}
+
+		BigDecimal balance() {
+			return onlineEarnings().subtract(cashCommission);
+		}
+	}
+
+	private Wallet walletOf(java.util.List<NexHomePartnerPayout> payouts,
+			java.util.List<com.nexhome.app.model.NexHomeCashCollection> cash) {
+		java.util.List<com.nexhome.app.dto.NexHomePartnerWalletResponse.Item> items = new java.util.ArrayList<>();
+		BigDecimal onlineAmount = BigDecimal.ZERO;
+		BigDecimal onlineCommission = BigDecimal.ZERO;
+		BigDecimal adjustments = BigDecimal.ZERO;
+		for (NexHomePartnerPayout payout : payouts) {
+			com.nexhome.app.model.NexHomeBooking booking = payout.getBooking();
+			onlineAmount = onlineAmount.add(payout.getGrossAmount());
+			onlineCommission = onlineCommission.add(payout.getPlatformCommission());
+			adjustments = adjustments.add(payout.getAdjustmentsAmount());
+			items.add(new com.nexhome.app.dto.NexHomePartnerWalletResponse.Item(booking.getId(),
+					booking.getPublicId(), booking.getServiceNameSnapshot(), booking.getActualEndAt(),
+					booking.getPaymentMethod(), payout.getGrossAmount(), payout.getPlatformCommission(),
+					payout.getAdjustmentsAmount(), payout.getNetAmount()));
+		}
+		BigDecimal cashAmount = BigDecimal.ZERO;
+		BigDecimal cashCommission = BigDecimal.ZERO;
+		for (com.nexhome.app.model.NexHomeCashCollection collection : cash) {
+			com.nexhome.app.model.NexHomeBooking booking = collection.getBooking();
+			BigDecimal commission = NexHomeBookingMapper.commissionOf(booking.getService(), collection.getAmount());
+			cashAmount = cashAmount.add(collection.getAmount());
+			cashCommission = cashCommission.add(commission);
+			items.add(new com.nexhome.app.dto.NexHomePartnerWalletResponse.Item(booking.getId(),
+					booking.getPublicId(), booking.getServiceNameSnapshot(), booking.getActualEndAt(),
+					booking.getPaymentMethod(), collection.getAmount(), commission, BigDecimal.ZERO,
+					commission.negate()));
+		}
+		// Latest job first
+		items.sort(java.util.Comparator.comparing(com.nexhome.app.dto.NexHomePartnerWalletResponse.Item::completedAt,
+				java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())));
+		return new Wallet(payouts, cash, items, cashAmount, cashCommission, onlineAmount, onlineCommission,
+				adjustments);
+	}
+
+	private NexHomePartnerProfile partnerForOwnerOrReader(Long partnerProfileId) {
+		NexHomePartnerProfile partner = partnerProfileRepository.findById(partnerProfileId)
+				.orElseThrow(() -> new ResourceNotFoundException("Partner profile does not exist."));
+		requireOwnerOrReader(partner);
+		return partner;
+	}
+
+	private void requireOwnerOrReader(NexHomePartnerProfile partner) {
+		if (!partner.getUser().getId().equals(permissionService.currentUserId())
+				&& !permissionService.can("PAYOUT_MANAGE", com.nexhome.app.model.NexHomeAccess.READ.name())) {
+			throw new org.springframework.security.access.AccessDeniedException(
+					"You do not have permission to see this partner's payouts.");
+		}
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public com.nexhome.app.dto.NexHomePartnerWalletResponse getWallet(Long partnerProfileId) {
+		NexHomePartnerProfile partner = partnerForOwnerOrReader(partnerProfileId);
+		Wallet wallet = walletOf(payoutRepository.findUnsettled(partner.getId(), WALLET_PAYOUTS),
+				cashCollectionRepository.findUnsettledByPartner(partner.getId()));
+		java.util.List<NexHomePartnerPayout> onHold = payoutRepository.findUnsettled(partner.getId(),
+				java.util.List.of(PayoutStatus.ON_HOLD));
+		BigDecimal onHoldAmount = onHold.stream().map(NexHomePartnerPayout::getNetAmount).reduce(BigDecimal.ZERO,
+				BigDecimal::add);
+		var last = settlementRepository.findFirstByPartnerIdAndSettlementStatusOrderByPaidAtDescIdDesc(
+				partner.getId(), com.nexhome.app.model.NexHomePartnerSettlement.PAID);
+		BigDecimal paidTotal = settlementRepository.sumPaidOfPartner(partner.getId())
+				.add(payoutRepository.sumPaidSeparately(partner.getId()));
+		BigDecimal cashKept = cashCollectionRepository.findCollectedByPartnerWithService(partner.getId()).stream()
+				.map(com.nexhome.app.model.NexHomeCashCollection::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+		return new com.nexhome.app.dto.NexHomePartnerWalletResponse(partner.getId(),
+				last.map(com.nexhome.app.model.NexHomePartnerSettlement::getPaidAt).orElse(null), wallet.cash().size(),
+				wallet.cashAmount(), wallet.cashCommission(), wallet.payouts().size(), wallet.onlineAmount(),
+				wallet.onlineCommission(), wallet.adjustments(), wallet.onlineEarnings(), wallet.balance(),
+				onHold.size(), onHoldAmount, paidTotal, cashKept,
+				last.map(found -> settlementDto(found, null)).orElse(null), wallet.items());
+	}
+
+	@Override
+	@Transactional
+	public com.nexhome.app.dto.NexHomePartnerSettlementResponse settleWallet(
+			com.nexhome.app.dto.NexHomeWalletSettleRequest request) {
+		Long actingUserId = permissionService.currentUserId();
+		NexHomePartnerProfile partner = partnerProfileRepository.findById(request.partnerProfileId())
+				.orElseThrow(() -> new ResourceNotFoundException("Partner profile does not exist."));
+		Wallet wallet = walletOf(payoutRepository.findUnsettled(partner.getId(), WALLET_PAYOUTS),
+				cashCollectionRepository.findUnsettledByPartner(partner.getId()));
+		if (wallet.items().isEmpty()) {
+			throw new InvalidRequestException("The wallet is empty; there is nothing to pay out.");
+		}
+		BigDecimal net = wallet.balance();
+		if (net.signum() <= 0) {
+			throw new InvalidRequestException("The partner owes NexHome " + net.negate().toPlainString()
+					+ " in commission on cash jobs; there is nothing to pay out.");
+		}
+		NexHomePartnerBankAccount account = bankAccountRepository.findByPartnerIdAndPrimaryTrue(partner.getId())
+				.filter(found -> VerificationStatus.VERIFIED.equals(found.getVerificationStatus()))
+				.orElseThrow(() -> new InvalidRequestException(
+						"The partner needs a verified primary bank account before being paid."));
+
+		long attempt = settlementRepository.countByPartnerId(partner.getId()) + 1;
+		Map<String, Object> response = gateway.transfer("settlement:" + partner.getPublicId() + ":" + attempt, net,
+				"XXXX" + account.getAccountNumberLast4() + " " + account.getIfscCode());
+		boolean settled = "SETTLED".equals(response.get("status"));
+		Instant now = Instant.now();
+
+		com.nexhome.app.model.NexHomePartnerSettlement settlement = new com.nexhome.app.model.NexHomePartnerSettlement();
+		settlement.setPartner(partner);
+		settlement.setBankAccount(account);
+		settlement.setBankAccountLast4(account.getAccountNumberLast4());
+		settlement.setBankName(account.getBankName());
+		settlement.setCashJobs(wallet.cash().size());
+		settlement.setCashAmount(wallet.cashAmount());
+		settlement.setCashCommission(wallet.cashCommission());
+		settlement.setOnlineJobs(wallet.payouts().size());
+		settlement.setOnlineAmount(wallet.onlineAmount());
+		settlement.setOnlineCommission(wallet.onlineCommission());
+		settlement.setAdjustmentsAmount(wallet.adjustments());
+		settlement.setNetAmount(net);
+		settlement.setSettlementStatus(settled ? com.nexhome.app.model.NexHomePartnerSettlement.PAID
+				: com.nexhome.app.model.NexHomePartnerSettlement.FAILED);
+		settlement.setProviderTransferId((String) response.get("transferId"));
+		settlement.setProviderResponse(bookingMapper.toJson(response));
+		settlement.setPaidAt(settled ? now : null);
+		settlement.setCreatedBy(actingUserId);
+		settlement.setUpdatedBy(actingUserId);
+		settlement = settlementRepository.save(settlement);
+
+		if (settled) {
+			// Everything in the wallet is settled by it: the wallet starts again at 0
+			for (NexHomePartnerPayout payout : wallet.payouts()) {
+				payout.setSettlement(settlement);
+				payout.setPayoutStatus(PayoutStatus.PAID);
+				payout.setPaidAt(now);
+				payout.setProviderTransferId(settlement.getProviderTransferId());
+				payout.setUpdatedBy(actingUserId);
+			}
+			for (com.nexhome.app.model.NexHomeCashCollection collection : wallet.cash()) {
+				collection.setSettlement(settlement);
+				collection.setUpdatedBy(actingUserId);
+			}
+			notifier.notify(partner.getUser().getId(), new NexHomeNotifier.Message(NotificationType.PAYMENT,
+					"NexHome paid you " + net.toPlainString(),
+					"Your wallet for " + wallet.items().size() + " jobs was paid to your bank account ending "
+							+ account.getAccountNumberLast4() + ".",
+					NexHomeNotifier.PARTNER_PROFILE, partner.getId()), actingUserId);
+		}
+		else {
+			notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_PAYOUT_FAILED, "PAYOUT_MANAGE",
+					new NexHomeNotifier.Message(NotificationType.PAYMENT, "Payout failed: " + partner.getPublicId(),
+							"The wallet payout of " + net.toPlainString() + " to partner " + partner.getPublicId()
+									+ " failed; try again.",
+							NexHomeNotifier.PARTNER_PROFILE, partner.getId()),
+					actingUserId);
+		}
+		auditRecorder.record(settled ? "WALLET_PAID" : "WALLET_PAYOUT_FAILED", "PARTNER_SETTLEMENT",
+				settlement.getPublicId(), null,
+				Map.of("partner", partner.getPublicId(), "netAmount", net, "cashCommission", wallet.cashCommission(),
+						"onlineEarnings", wallet.onlineEarnings(), "jobs", wallet.items().size()),
+				actingUserId);
+		log.info("Wallet payout {} of {} to partner {}: {}", settlement.getPublicId(), net, partner.getPublicId(),
+				settlement.getSettlementStatus());
+		return settlementDto(settlement, wallet.items());
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public NexHomePageResponse<com.nexhome.app.dto.NexHomePartnerSettlementResponse> getSettlements(
+			Long partnerProfileId, Integer page, Integer size) {
+		NexHomePartnerProfile partner = partnerForOwnerOrReader(partnerProfileId);
+		PageRequest pageRequest = NexHomePaging.of(page, size, Sort.unsorted());
+		var settlements = settlementRepository.findByPartnerIdOrderByCreationDateDescIdDesc(partner.getId(),
+				pageRequest);
+		return NexHomePaging.toPageResponse(pageRequest, settlements,
+				settlements.stream().map(found -> settlementDto(found, null)).toList());
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public com.nexhome.app.dto.NexHomePartnerSettlementResponse getSettlement(Long settlementId) {
+		com.nexhome.app.model.NexHomePartnerSettlement settlement = settlementRepository.findById(settlementId)
+				.orElseThrow(() -> new ResourceNotFoundException("Payout does not exist."));
+		requireOwnerOrReader(settlement.getPartner());
+		Wallet jobs = walletOf(payoutRepository.findBySettlement(settlement.getId()),
+				cashCollectionRepository.findBySettlement(settlement.getId()));
+		return settlementDto(settlement, jobs.items());
+	}
+
+	private com.nexhome.app.dto.NexHomePartnerSettlementResponse settlementDto(
+			com.nexhome.app.model.NexHomePartnerSettlement settlement,
+			java.util.List<com.nexhome.app.dto.NexHomePartnerWalletResponse.Item> items) {
+		return new com.nexhome.app.dto.NexHomePartnerSettlementResponse(settlement.getId(), settlement.getPublicId(),
+				settlement.getPartner().getId(), settlement.getPartner().getPublicId(), settlement.getCashJobs(),
+				settlement.getCashAmount(), settlement.getCashCommission(), settlement.getOnlineJobs(),
+				settlement.getOnlineAmount(), settlement.getOnlineCommission(), settlement.getAdjustmentsAmount(),
+				settlement.getOnlineAmount().subtract(settlement.getOnlineCommission())
+						.add(settlement.getAdjustmentsAmount()),
+				settlement.getNetAmount(), settlement.getSettlementStatus(), settlement.getProviderTransferId(),
+				settlement.getBankName(), settlement.getBankAccountLast4(), settlement.getPaidAt(),
+				settlement.getCreationDate(), items);
+	}
+
 
 	private String optionalCode(String typeCode, String code, String fieldName) {
 		String trimmed = NexHomeText.trimToNull(code);

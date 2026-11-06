@@ -34,6 +34,18 @@ public interface NexHomeCashCollectionRepository extends JpaRepository<NexHomeCa
 	java.util.List<NexHomeCashCollection> findCollectedByPartnerWithService(
 			@org.springframework.data.repository.query.Param("partnerId") Long partnerId);
 
+	/** A partner's COLLECTED cash that no wallet payout has settled (its commission is owed), with the services. */
+	@org.springframework.data.jpa.repository.Query("select c from NexHomeCashCollection c join fetch c.booking b "
+			+ "join fetch b.service where b.partner.id = :partnerId and c.status = 'COLLECTED' "
+			+ "and c.settlement is null order by c.id")
+	java.util.List<NexHomeCashCollection> findUnsettledByPartner(
+			@org.springframework.data.repository.query.Param("partnerId") Long partnerId);
+
+	@org.springframework.data.jpa.repository.Query("select c from NexHomeCashCollection c join fetch c.booking b "
+			+ "join fetch b.service where c.settlement.id = :settlementId order by c.id")
+	java.util.List<NexHomeCashCollection> findBySettlement(
+			@org.springframework.data.repository.query.Param("settlementId") Long settlementId);
+
 	/** Newest first, with the bookings, their customers and partners. */
 	@EntityGraph(attributePaths = { "booking", "booking.customer", "booking.partner" })
 	Page<NexHomeCashCollection> findAllByOrderByCreationDateDescIdDesc(Pageable pageable);

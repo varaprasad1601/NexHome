@@ -15,5 +15,9 @@ public record NexHomeBookingTimerRequest(
 		String eventType,
 
 		@Size(max = 2000, message = "Notes must be at most 2000 characters")
-		String notes) {
+		String notes,
+
+		/** START by the partner: the customer's 4-digit start code (V59). Staff starting the work leave it out. */
+		@Size(max = 10, message = "Start code must be at most 10 characters")
+		String otp) {
 }

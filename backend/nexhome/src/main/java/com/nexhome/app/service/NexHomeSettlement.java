@@ -66,6 +66,7 @@ class NexHomeSettlement {
 	private final NexHomeBookingCreator bookingCreator;
 	private final NexHomeNotifier notifier;
 	private final NexHomeAuditRecorder auditRecorder;
+	private final com.nexhome.app.repository.NexHomeBookingAssignmentRepository assignmentRepository;
 
 	// ------------------------------------------------------------------------------------------------------------
 	// Payments
@@ -299,6 +300,35 @@ class NexHomeSettlement {
 		}
 		paymentRepository.findFirstByBookingIdAndStatusInOrderByIdDesc(booking.getId(), REFUNDABLE)
 				.ifPresent(payment -> ensurePayout(booking, payment, actingUserId));
+	}
+
+	/** The history reason of a cash job whose work is finished while its cash is still to be collected. */
+	static final String WORK_FINISHED = "Work finished";
+
+	/**
+	 * A cash job whose work is finished (IN_PROGRESS with its end time) is completed once its cash is collected or
+	 * waived: the assignment COMPLETED, the booking COMPLETED (history), and the customer asked to rate it.
+	 */
+	void completeAfterCash(NexHomeBooking booking, Long actingUserId) {
+		if (!BookingStatus.IN_PROGRESS.equals(booking.getBookingStatus()) || booking.getActualEndAt() == null) {
+			return;
+		}
+		assignmentRepository.findFirstByBookingIdAndAssignmentStatusIn(booking.getId(),
+				List.of(com.nexhome.app.model.NexHomeLookupCodes.AssignmentStatus.ASSIGNED,
+						com.nexhome.app.model.NexHomeLookupCodes.AssignmentStatus.ACCEPTED,
+						com.nexhome.app.model.NexHomeLookupCodes.AssignmentStatus.STARTED))
+				.ifPresent(assignment -> {
+					assignment.setAssignmentStatus(com.nexhome.app.model.NexHomeLookupCodes.AssignmentStatus.COMPLETED);
+					assignment.setUpdatedBy(actingUserId);
+				});
+		String old = booking.getBookingStatus();
+		booking.setBookingStatus(BookingStatus.COMPLETED);
+		booking.setUpdatedBy(actingUserId);
+		bookingCreator.recordStatus(booking, old, BookingStatus.COMPLETED, null, actingUserId);
+		notifier.notify(booking.getCustomer().getUser().getId(), new NexHomeNotifier.Message(NotificationType.BOOKING,
+				"Booking " + booking.getPublicId() + " completed",
+				booking.getServiceNameSnapshot() + " is done. Rate your service and partner.", NexHomeNotifier.BOOKING,
+				booking.getId()), actingUserId);
 	}
 
 	/** The partner's payout for a completed, paid online booking (once per booking). */

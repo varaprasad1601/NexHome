@@ -78,6 +78,35 @@ public class NexHomePayoutController {
 		return payoutService.adjust(request);
 	}
 
+	/** The partner themself or PAYOUT_MANAGE read (checked in the service). */
+	@GetMapping("/wallet/{partnerProfileId}")
+	public com.nexhome.app.dto.NexHomePartnerWalletResponse getWallet(
+			@org.springframework.web.bind.annotation.PathVariable Long partnerProfileId) {
+		return payoutService.getWallet(partnerProfileId);
+	}
+
+	@org.springframework.web.bind.annotation.PostMapping("/wallet/settle")
+	@org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.CREATED)
+	@PreAuthorize("@permissions.can('PAYOUT_MANAGE', 'WRITE')")
+	public com.nexhome.app.dto.NexHomePartnerSettlementResponse settleWallet(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomeWalletSettleRequest request) {
+		return payoutService.settleWallet(request);
+	}
+
+	/** The partner themself or PAYOUT_MANAGE read (checked in the service). */
+	@GetMapping("/settlements")
+	public NexHomePageResponse<com.nexhome.app.dto.NexHomePartnerSettlementResponse> getSettlements(
+			@RequestParam Long partnerProfileId, @RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return payoutService.getSettlements(partnerProfileId, page, size);
+	}
+
+	@GetMapping("/settlements/{settlementId}")
+	public com.nexhome.app.dto.NexHomePartnerSettlementResponse getSettlement(
+			@org.springframework.web.bind.annotation.PathVariable Long settlementId) {
+		return payoutService.getSettlement(settlementId);
+	}
+
 	@GetMapping("/transfers")
 	@PreAuthorize("@permissions.can('PAYOUT_MANAGE', 'READ')")
 	public NexHomePageResponse<NexHomeTransferResponse> getTransfers(@RequestParam(required = false) Integer page,

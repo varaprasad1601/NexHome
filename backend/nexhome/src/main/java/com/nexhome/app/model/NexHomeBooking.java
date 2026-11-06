@@ -139,6 +139,18 @@ public class NexHomeBooking {
 	@Column(name = "cancellation_reason", columnDefinition = "text")
 	private String cancellationReason;
 
+	/** The start code (V59): made when the partner accepts, shown to the customer, entered to start the work. */
+	@Column(name = "start_otp", length = 4)
+	@org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.CHAR)
+	private String startOtp;
+
+	/** Wrong start codes entered (V59); after five the partner cannot start the work themself. */
+	@Column(name = "start_otp_attempts", nullable = false)
+	private short startOtpAttempts;
+
+	@Column(name = "start_otp_verified_at")
+	private Instant startOtpVerifiedAt;
+
 	@CreationTimestamp
 	@Column(name = "creation_date", nullable = false, updatable = false)
 	private Instant creationDate;

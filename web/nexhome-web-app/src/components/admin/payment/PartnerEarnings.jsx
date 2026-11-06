@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import Pagination from '../common/Pagination';
+import PartnerWalletCard from './PartnerWalletCard';
 import { MoneyBadge } from './moneyParts';
 import { headClass, linkClass } from '../system/systemStyles';
 import { useAdminAuth } from '../../../context/adminAuth';
@@ -47,15 +48,18 @@ function usePage(path) {
  * Overall picks the period (IST, by when the job was completed; GET /api/payouts/earnings/{id}?period=): the earnings
  * in large type with the job count, the jobs, total amount, commission and partner earnings, then the details in two
  * parts: the period's jobs (booking id, payment method, total, commission, partner earnings; 5 to a page) and the
- * partner's payouts (GET /api/payouts?partnerProfileId=, the most recent 5 to a page).
+ * partner's payouts (GET /api/payouts?partnerProfileId=, the most recent 5 to a page). Above it all the partner's
+ * wallet (PartnerWalletCard) with Pay Out Wallet.
  */
 export default function PartnerEarnings({ partnerProfileId }) {
   const { label } = useLookupLabels(PAYMENT_LOOKUPS);
   const [period, setPeriod] = useState('TODAY');
   const [recordsPage, setRecordsPage] = useState(0);
   const [payoutsPage, setPayoutsPage] = useState(0);
+  // Bumped after a wallet payout, so the payouts list loads again
+  const [paidCount, setPaidCount] = useState(0);
   const earnings = usePage(`/api/payouts/earnings/${partnerProfileId}?period=${period}&page=${recordsPage}&size=${PAGE_SIZE}`);
-  const payouts = usePage(`/api/payouts?partnerProfileId=${partnerProfileId}&page=${payoutsPage}&size=${PAGE_SIZE}`);
+  const payouts = usePage(`/api/payouts?partnerProfileId=${partnerProfileId}&page=${payoutsPage}&size=${PAGE_SIZE}&v=${paidCount}`);
   const summary = earnings.data;
   const phrase = PERIODS.find((item) => item.key === period).phrase;
   const records = summary?.records ?? EMPTY_PAGE;
@@ -68,6 +72,7 @@ export default function PartnerEarnings({ partnerProfileId }) {
 
   return (
     <div className="space-y-5 pt-3">
+      <PartnerWalletCard partnerProfileId={partnerProfileId} onPaid={() => setPaidCount((count) => count + 1)} />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="text-[2.5rem] font-black leading-none text-[var(--navy)]">

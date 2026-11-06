@@ -276,6 +276,9 @@ class NexHomePaymentFlowTest {
 					.andExpect(jsonPath("$.totalAmount").value(400))
 					.andExpect(jsonPath("$.commission").value(60))
 					.andExpect(jsonPath("$.earnings").value(340))
+					.andExpect(jsonPath("$.receivedEarnings").value(340))
+					.andExpect(jsonPath("$.pendingEarnings").value(0))
+					.andExpect(jsonPath("$.pendingJobs").value(0))
 					.andExpect(jsonPath("$.records.content[0].settlement").value("CASH"))
 					.andExpect(jsonPath("$.records.content[0].settlementStatus").value("COLLECTED"));
 		}
@@ -286,6 +289,104 @@ class NexHomePaymentFlowTest {
 				"select count(*) from nexhome_partner_payouts where booking_id = :id").setParameter("id", bookingId)
 				.getSingleResult();
 		assertThat(count.intValue()).isZero();
+	}
+
+	/**
+	 * The wallet (V60): an online job (NexHome owes 400 - 60) and a cash job (the partner owes its 60 commission);
+	 * one wallet payout pays the difference and empties the wallet.
+	 */
+	@Test
+	void theWalletPaysOnlineEarningsLessTheCommissionOnCash() throws Exception {
+		setUp();
+		long online = book("ONLINE", 10);
+		long orderId = json(perform(post("/api/payments/orders/create"), customer,
+				"{\"bookingId\": %d}".formatted(online))).get("paymentOrderId").asLong();
+		perform(post("/api/payments/orders/capture"), staff, "{\"paymentOrderId\": %d}".formatted(orderId))
+				.andExpect(status().isOk());
+		finish(online);
+		long cash = book("CASH", 10);
+		finish(cash);
+		long cashId = json(perform(get("/api/payments/bookings/" + cash), partner, null)).get("cashCollection")
+				.get("cashCollectionId").asLong();
+		perform(put("/api/payments/cash-collections/update"), partner,
+				"{\"cashCollectionId\": %d, \"status\": \"COLLECTED\"}".formatted(cashId))
+				.andExpect(status().isOk());
+
+		perform(get("/api/payouts/wallet/" + partnerId), customer, null).andExpect(status().isForbidden());
+		perform(get("/api/payouts/wallet/" + partnerId), partner, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.since").doesNotExist())
+				.andExpect(jsonPath("$.cashJobs").value(1))
+				.andExpect(jsonPath("$.cashAmount").value(400))
+				.andExpect(jsonPath("$.cashCommission").value(60))
+				.andExpect(jsonPath("$.onlineJobs").value(1))
+				.andExpect(jsonPath("$.onlineAmount").value(400))
+				.andExpect(jsonPath("$.onlineCommission").value(60))
+				.andExpect(jsonPath("$.onlineEarnings").value(340))
+				.andExpect(jsonPath("$.balance").value(280))
+				.andExpect(jsonPath("$.items.length()").value(2));
+
+		// Paying needs a verified primary bank account; the partner cannot pay themself out
+		perform(post("/api/payouts/wallet/settle"), staff, "{\"partnerProfileId\": %d}".formatted(partnerId))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("The partner needs a verified primary bank account before being paid."));
+		long accountId = json(perform(post("/api/partners/bank-accounts/add"), staff, """
+				{"partnerProfileId": %d, "accountHolderName": "Kiran Rao", "accountNumber": "123456784321",
+				 "ifscCode": "SBIN0001234", "bankName": "SBI", "branchName": "Madhapur"}""".formatted(partnerId))
+				.andExpect(status().isCreated())).get("partnerBankAccountId").asLong();
+		perform(put("/api/partners/bank-accounts/verify"), staff,
+				"{\"partnerBankAccountId\": %d, \"verificationStatus\": \"VERIFIED\"}".formatted(accountId))
+				.andExpect(status().isOk());
+		perform(post("/api/payouts/wallet/settle"), partner, "{\"partnerProfileId\": %d}".formatted(partnerId))
+				.andExpect(status().isForbidden());
+		long settlementId = json(perform(post("/api/payouts/wallet/settle"), staff,
+				"{\"partnerProfileId\": %d}".formatted(partnerId))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.settlementStatus").value("PAID"))
+				.andExpect(jsonPath("$.netAmount").value(280))
+				.andExpect(jsonPath("$.bankAccountLast4").value("4321"))
+				.andExpect(jsonPath("$.items.length()").value(2))).get("settlementId").asLong();
+
+		// The wallet starts again at 0; the payout keeps its jobs
+		perform(get("/api/payouts/wallet/" + partnerId), partner, null)
+				.andExpect(jsonPath("$.since").isNotEmpty())
+				.andExpect(jsonPath("$.balance").value(0))
+				.andExpect(jsonPath("$.items.length()").value(0))
+				.andExpect(jsonPath("$.paidTotal").value(280))
+				.andExpect(jsonPath("$.cashKeptTotal").value(400))
+				.andExpect(jsonPath("$.lastSettlement.settlementId").value(settlementId));
+		perform(post("/api/payouts/wallet/settle"), staff, "{\"partnerProfileId\": %d}".formatted(partnerId))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("The wallet is empty; there is nothing to pay out."));
+		perform(get("/api/payouts/settlements?partnerProfileId=" + partnerId), partner, null)
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].onlineEarnings").value(340));
+		perform(get("/api/payouts/settlements/" + settlementId), partner, null)
+				.andExpect(jsonPath("$.cashCommission").value(60))
+				.andExpect(jsonPath("$.items.length()").value(2));
+		perform(get("/api/payouts/settlements/" + settlementId), customer, null).andExpect(status().isForbidden());
+		perform(get("/api/payments/bookings/" + online), staff, null)
+				.andExpect(jsonPath("$.payout.payoutStatus").value("PAID"));
+	}
+
+	/** A partner who went offline is online again once they start the work. */
+	@Test
+	void startingWorkPutsThePartnerOnline() throws Exception {
+		setUp();
+		long bookingId = book("CASH", 10);
+		perform(put("/api/bookings/status/update"), staff,
+				"{\"bookingId\": %d, \"bookingStatus\": \"CONFIRMED\"}".formatted(bookingId));
+		perform(post("/api/bookings/assignments/offer"), staff,
+				"{\"bookingId\": %d, \"partnerProfileId\": %d, \"direct\": true}".formatted(bookingId, partnerId))
+				.andExpect(status().isCreated());
+		perform(put("/api/partners/profiles/availability/update"), partner,
+				"{\"partnerProfileId\": %d, \"availabilityStatus\": \"OFFLINE\"}".formatted(partnerId))
+				.andExpect(status().isOk());
+		perform(get("/api/partners/profiles/me"), partner, null)
+				.andExpect(jsonPath("$.availabilityStatus").value("OFFLINE"));
+		startWithCode(partner, customer, bookingId);
+		perform(get("/api/partners/profiles/me"), partner, null)
+				.andExpect(jsonPath("$.availabilityStatus").value("ONLINE"));
 	}
 
 	/** A category, a FIXED service at 400 (15% platform commission), a customer with an address and a partner. */
@@ -333,11 +434,10 @@ class NexHomePaymentFlowTest {
 		perform(post("/api/bookings/assignments/offer"), staff,
 				"{\"bookingId\": %d, \"partnerProfileId\": %d, \"direct\": true}".formatted(bookingId, partnerId))
 				.andExpect(status().isCreated());
-		for (String event : List.of("START", "STOP")) {
-			perform(post("/api/bookings/timer"), partner,
-					"{\"bookingId\": %d, \"eventType\": \"%s\"}".formatted(bookingId, event))
-					.andExpect(status().isCreated());
-		}
+		startWithCode(partner, customer, bookingId);
+		perform(post("/api/bookings/timer"), partner,
+				"{\"bookingId\": %d, \"eventType\": \"STOP\"}".formatted(bookingId))
+				.andExpect(status().isCreated());
 	}
 
 	private static String sign(String body) throws Exception {
@@ -419,5 +519,24 @@ class NexHomePaymentFlowTest {
 
 	private static String randomMobile() {
 		return "8" + ThreadLocalRandom.current().nextLong(100_000_000L, 999_999_999L);
+	}
+
+	/**
+	 * The partner accepts the booking (if not yet), the customer reads its start code (V59), and the partner starts the
+	 * work with it.
+	 */
+	private void startWithCode(String partnerToken, String customerToken, long bookingId) throws Exception {
+		String status = json(perform(get("/api/bookings/" + bookingId), customerToken, null)).get("booking")
+				.get("bookingStatus").asText();
+		if ("ASSIGNED".equals(status)) {
+			perform(put("/api/bookings/status/update"), partnerToken,
+					"{\"bookingId\": %d, \"bookingStatus\": \"PARTNER_EN_ROUTE\"}".formatted(bookingId))
+					.andExpect(status().isOk());
+		}
+		String code = json(perform(get("/api/bookings/" + bookingId), customerToken, null)).get("booking")
+				.get("startOtp").asText();
+		perform(post("/api/bookings/timer"), partnerToken,
+				"{\"bookingId\": %d, \"eventType\": \"START\", \"otp\": \"%s\"}".formatted(bookingId, code))
+				.andExpect(status().isCreated());
 	}
 }

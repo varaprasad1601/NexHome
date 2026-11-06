@@ -6,14 +6,22 @@ import JobCard from '../../components/JobCard';
 import { Empty, ErrorBox, Loading, Tabs, Text } from '../../components/ui';
 import useApi from '../../hooks/useApi';
 import { colors } from '../../theme';
-import { UPCOMING } from '../../utils/status';
+import { UPCOMING, isPaymentPending } from '../../utils/status';
+import useTabReset from '../../hooks/useTabReset';
 
-/** My jobs (GET /api/bookings/partner/me): Upcoming (still to do) and Completed (done or cancelled). */
+/**
+ * My jobs (GET /api/bookings/partner/me): Upcoming (still to do), Pending payment (done, not paid yet: cash to collect
+ * or an online payment to come) and Completed (paid, or cancelled).
+ */
 export default function Jobs() {
   const [tab, setTab] = useState('upcoming');
   const jobs = useApi('/api/bookings/partner/me?size=100');
+  // Opening the tab shows Upcoming again
+  useTabReset(() => setTab('upcoming'), jobs.refresh);
   const all = jobs.data?.content ?? [];
-  const list = all.filter((b) => (tab === 'upcoming') === UPCOMING.includes(b.bookingStatus));
+  const groupOf = (job) => (isPaymentPending(job) ? 'pending' : UPCOMING.includes(job.bookingStatus) ? 'upcoming' : 'completed');
+  const list = all.filter((job) => groupOf(job) === tab);
+  const count = (key) => all.filter((job) => groupOf(job) === key).length;
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.ground }}>
@@ -23,8 +31,9 @@ export default function Jobs() {
         </Text>
         <Tabs
           tabs={[
-            ['upcoming', 'Upcoming'],
-            ['completed', 'Completed']
+            ['upcoming', 'Upcoming', count('upcoming')],
+            ['pending', 'Pending payment', count('pending')],
+            ['completed', 'Completed', count('completed')]
           ]}
           value={tab}
           onChange={setTab}
@@ -41,9 +50,15 @@ export default function Jobs() {
           ListHeaderComponent={<ErrorBox message={jobs.error} />}
           ListEmptyComponent={
             <Empty
-              icon="briefcase"
-              title={tab === 'upcoming' ? 'No upcoming jobs' : 'No completed jobs yet'}
-              text={tab === 'upcoming' ? 'Jobs you accept show here. Stay online to get offers.' : undefined}
+              icon={tab === 'pending' ? 'check-circle' : 'briefcase'}
+              title={{ upcoming: 'No upcoming jobs', pending: 'No payments pending', completed: 'No completed jobs yet' }[tab]}
+              text={
+                tab === 'upcoming'
+                  ? 'Jobs you accept show here. Stay online to get offers.'
+                  : tab === 'pending'
+                    ? 'Finished jobs wait here until the cash is collected or the customer pays online.'
+                    : undefined
+              }
             />
           }
           renderItem={({ item }) => <JobCard job={item} />}

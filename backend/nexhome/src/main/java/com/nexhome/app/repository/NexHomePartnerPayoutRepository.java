@@ -26,6 +26,24 @@ public interface NexHomePartnerPayoutRepository extends JpaRepository<NexHomePar
 
 	java.util.List<NexHomePartnerPayout> findByBookingIdIn(java.util.Collection<Long> bookingIds);
 
+	/** A partner's payouts in the given statuses that no wallet payout has settled, with their bookings. */
+	@Query("select p from NexHomePartnerPayout p join fetch p.booking where p.partner.id = :partnerId "
+			+ "and p.settlement is null and p.payoutStatus in :statuses order by p.id")
+	java.util.List<NexHomePartnerPayout> findUnsettled(
+			@org.springframework.data.repository.query.Param("partnerId") Long partnerId,
+			@org.springframework.data.repository.query.Param("statuses") java.util.Collection<String> statuses);
+
+	@Query("select p from NexHomePartnerPayout p join fetch p.booking where p.settlement.id = :settlementId "
+			+ "order by p.id")
+	java.util.List<NexHomePartnerPayout> findBySettlement(
+			@org.springframework.data.repository.query.Param("settlementId") Long settlementId);
+
+	/** What was paid to the partner one booking at a time (before wallet payouts). */
+	@Query("select coalesce(sum(p.netAmount), 0) from NexHomePartnerPayout p where p.partner.id = :partnerId "
+			+ "and p.payoutStatus = 'PAID' and p.settlement is null")
+	java.math.BigDecimal sumPaidSeparately(
+			@org.springframework.data.repository.query.Param("partnerId") Long partnerId);
+
 	/** How many payouts are in each status and what they total: [status, count, net]. */
 	@Query("select p.payoutStatus, count(p), coalesce(sum(p.netAmount), 0) from NexHomePartnerPayout p "
 			+ "group by p.payoutStatus")

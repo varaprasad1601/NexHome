@@ -10,6 +10,9 @@ import com.fasterxml.jackson.annotation.JsonFormat;
  * completed): the jobs, their total, the platform's commission and the partner's earnings, and a page of the records.
  *
  * @param from the start of the period; null for ALL
+ * @param receivedEarnings the earnings of jobs the customer has paid (payout or cash collected)
+ * @param pendingEarnings the earnings of jobs the customer has not paid yet (online, no payout yet)
+ * @param pendingJobs how many jobs those are
  */
 public record NexHomePartnerEarningsResponse(
 		String period,
@@ -20,6 +23,9 @@ public record NexHomePartnerEarningsResponse(
 		BigDecimal totalAmount,
 		BigDecimal commission,
 		BigDecimal earnings,
+		BigDecimal receivedEarnings,
+		BigDecimal pendingEarnings,
+		long pendingJobs,
 		NexHomePageResponse<Record> records) {
 
 	/**

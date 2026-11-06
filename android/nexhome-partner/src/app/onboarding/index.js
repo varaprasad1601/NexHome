@@ -134,6 +134,7 @@ export default function Onboarding() {
             style={{ color: colors.muted }}
             onPress={async () => {
               await signOut();
+              if (router.canDismiss()) router.dismissAll();
               router.replace('/login');
             }}
             accessibilityRole="button"

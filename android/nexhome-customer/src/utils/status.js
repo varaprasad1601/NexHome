@@ -20,15 +20,36 @@ export function bookingStatus(code) {
 /** Bookings still to come (the Upcoming tab); the rest are Past. */
 export const UPCOMING = ['PENDING', 'CONFIRMED', 'ASSIGNED', 'PARTNER_EN_ROUTE', 'IN_PROGRESS', 'PAUSED'];
 
+/** Whether a booking's payment is done (paid, or refunded after paying). */
+export function isPaid(booking) {
+  return ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(booking.paymentStatus);
+}
+
+/**
+ * Done but not paid yet: completed, or a cash job whose work is finished (it stays IN_PROGRESS with its end time
+ * until the professional collects the cash). It stays in Upcoming and on Home until paid.
+ */
+export function isPaymentDue(booking) {
+  const finished = booking.bookingStatus === 'COMPLETED' || (booking.bookingStatus === 'IN_PROGRESS' && Boolean(booking.actualEndAt));
+  return finished && !isPaid(booking);
+}
+
+/** Still open: to come, or done and waiting for the payment. */
+export function isOpen(booking) {
+  return UPCOMING.includes(booking.bookingStatus) || isPaymentDue(booking);
+}
+
 /** How urgent an upcoming booking is: work under way first, then a partner on it, then confirmed, then pending. */
 const PRIORITY = { IN_PROGRESS: 0, PAUSED: 0, ASSIGNED: 1, PARTNER_EN_ROUTE: 1, CONFIRMED: 2, PENDING: 3 };
+/** A finished booking waiting for its payment comes before everything else. */
+const PAYMENT_DUE_RANK = -1;
 
 /**
  * The order of upcoming bookings: by status (in progress, partner assigned or accepted, confirmed, pending), then
  * by time (as soon as possible first, then the earliest scheduled start), then by booking id, lowest first.
  */
 export function compareUpcoming(a, b) {
-  const rank = (x) => PRIORITY[x.bookingStatus] ?? 9;
+  const rank = (x) => (isPaymentDue(x) ? PAYMENT_DUE_RANK : PRIORITY[x.bookingStatus] ?? 9);
   if (rank(a) !== rank(b)) return rank(a) - rank(b);
   const at = (x) => (x.scheduledStartAt ? parseApiDate(x.scheduledStartAt)?.date.getTime() ?? Infinity : -Infinity);
   if (at(a) !== at(b)) return at(a) - at(b);

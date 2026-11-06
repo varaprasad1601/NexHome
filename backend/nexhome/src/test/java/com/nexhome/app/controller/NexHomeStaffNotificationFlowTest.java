@@ -262,11 +262,10 @@ class NexHomeStaffNotificationFlowTest {
 		perform(post("/api/bookings/assignments/offer"), staff,
 				"{\"bookingId\": %d, \"partnerProfileId\": %d, \"direct\": true}".formatted(cashBooking, partnerId))
 				.andExpect(status().isCreated());
-		for (String event : List.of("START", "STOP")) {
-			perform(post("/api/bookings/timer"), partner,
-					"{\"bookingId\": %d, \"eventType\": \"%s\"}".formatted(cashBooking, event))
-					.andExpect(status().isCreated());
-		}
+		startWithCode(partner, customer, cashBooking);
+		perform(post("/api/bookings/timer"), partner,
+				"{\"bookingId\": %d, \"eventType\": \"STOP\"}".formatted(cashBooking))
+				.andExpect(status().isCreated());
 		long cashId = json(perform(get("/api/payments/bookings/" + cashBooking), staff, null))
 				.get("cashCollection").get("cashCollectionId").asLong();
 		perform(put("/api/payments/cash-collections/update"), staff,
@@ -276,6 +275,29 @@ class NexHomeStaffNotificationFlowTest {
 		latest("PAYMENT")
 				.andExpect(jsonPath("$.content[0].title").value("Cash disputed: " + publicId(cashBooking)))
 				.andExpect(jsonPath("$.content[0].priority").value("HIGH"));
+
+		// One job at a time: the cash job still waits for its cash (IN_PROGRESS), so another one cannot start
+		long nextJob = confirmedBooking(customerId, addressId, monday.atTime(15, 0).atZone(IST).toInstant());
+		perform(post("/api/bookings/assignments/offer"), staff,
+				"{\"bookingId\": %d, \"partnerProfileId\": %d, \"direct\": true}".formatted(nextJob, partnerId))
+				.andExpect(status().isCreated());
+		perform(put("/api/bookings/status/update"), partner,
+				"{\"bookingId\": %d, \"bookingStatus\": \"PARTNER_EN_ROUTE\"}".formatted(nextJob))
+				.andExpect(status().isOk());
+		String nextCode = json(perform(get("/api/bookings/" + nextJob), customer, null)).get("booking").get("startOtp").asText();
+		perform(post("/api/bookings/timer"), partner,
+				"{\"bookingId\": %d, \"eventType\": \"START\", \"otp\": \"%s\"}".formatted(nextJob, nextCode))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Finish your current job " + publicId(cashBooking)
+						+ " first; you can start this one after it is completed."));
+		// The blocked attempt does not use up a code try: the cash settled, the same code starts it
+		perform(put("/api/payments/cash-collections/update"), staff,
+				"{\"cashCollectionId\": %d, \"status\": \"WAIVED\"}".formatted(cashId))
+				.andExpect(status().isOk());
+		perform(post("/api/bookings/timer"), partner,
+				"{\"bookingId\": %d, \"eventType\": \"START\", \"otp\": \"%s\"}".formatted(nextJob, nextCode))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.booking.bookingStatus").value("IN_PROGRESS"));
 	}
 
 	@Test
@@ -481,5 +503,24 @@ class NexHomeStaffNotificationFlowTest {
 
 	private static String randomMobile() {
 		return "8" + ThreadLocalRandom.current().nextLong(100_000_000L, 999_999_999L);
+	}
+
+	/**
+	 * The partner accepts the booking (if not yet), the customer reads its start code (V59), and the partner starts the
+	 * work with it.
+	 */
+	private void startWithCode(String partnerToken, String customerToken, long bookingId) throws Exception {
+		String status = json(perform(get("/api/bookings/" + bookingId), customerToken, null)).get("booking")
+				.get("bookingStatus").asText();
+		if ("ASSIGNED".equals(status)) {
+			perform(put("/api/bookings/status/update"), partnerToken,
+					"{\"bookingId\": %d, \"bookingStatus\": \"PARTNER_EN_ROUTE\"}".formatted(bookingId))
+					.andExpect(status().isOk());
+		}
+		String code = json(perform(get("/api/bookings/" + bookingId), customerToken, null)).get("booking")
+				.get("startOtp").asText();
+		perform(post("/api/bookings/timer"), partnerToken,
+				"{\"bookingId\": %d, \"eventType\": \"START\", \"otp\": \"%s\"}".formatted(bookingId, code))
+				.andExpect(status().isCreated());
 	}
 }

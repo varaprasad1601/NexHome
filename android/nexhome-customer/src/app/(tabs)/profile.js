@@ -8,6 +8,7 @@ import { fileUrl } from '../../api/client';
 import { Card, Cover, Text } from '../../components/ui';
 import { useAuth } from '../../context/AuthProvider';
 import { colors } from '../../theme';
+import useTabReset from '../../hooks/useTabReset';
 
 function Row({ icon, label, onPress, danger }) {
   return (
@@ -25,7 +26,8 @@ function Row({ icon, label, onPress, danger }) {
 
 /** The customer: photo or initials, name, number and email; edit profile, addresses, policies, log out. */
 export default function Profile() {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, reloadProfile } = useAuth();
+  useTabReset(null, () => reloadProfile().catch(() => {}));
   const name = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || 'Your profile';
   const initials = name
     .split(' ')
@@ -82,6 +84,7 @@ export default function Profile() {
                   style: 'destructive',
                   onPress: async () => {
                     await signOut();
+                    if (router.canDismiss()) router.dismissAll();
                     router.replace('/login');
                   }
                 }

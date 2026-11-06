@@ -36,4 +36,18 @@ public interface NexHomePayoutService {
 	NexHomePayoutResponse adjust(NexHomePayoutAdjustRequest request);
 
 	NexHomePageResponse<NexHomeTransferResponse> getTransfers(Integer page, Integer size);
+
+	/** A partner's wallet (V60): the partner themself, or PAYOUT_MANAGE read. */
+	com.nexhome.app.dto.NexHomePartnerWalletResponse getWallet(Long partnerProfileId);
+
+	/** Pays out the wallet in one transfer to the verified primary bank account (PAYOUT_MANAGE write). */
+	com.nexhome.app.dto.NexHomePartnerSettlementResponse settleWallet(
+			com.nexhome.app.dto.NexHomeWalletSettleRequest request);
+
+	/** A partner's wallet payouts, newest first: the partner themself, or PAYOUT_MANAGE read. */
+	NexHomePageResponse<com.nexhome.app.dto.NexHomePartnerSettlementResponse> getSettlements(Long partnerProfileId,
+			Integer page, Integer size);
+
+	/** One wallet payout with its jobs: its partner, or PAYOUT_MANAGE read. */
+	com.nexhome.app.dto.NexHomePartnerSettlementResponse getSettlement(Long settlementId);
 }

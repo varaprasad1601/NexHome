@@ -14,12 +14,12 @@ export function money(value) {
  * { weekday, day, month, year, hours, minutes, date } with `date` the moment as a Date.
  */
 export function parseApiDate(value) {
-  const match = /(\w{3}), (\d{2}) (\w{3}) (\d{4}) (\d{2}):(\d{2})/.exec(value ?? '');
+  const match = /(\w{3}), (\d{2}) (\w{3}) (\d{4}) (\d{2}):(\d{2})(?::(\d{2}))?/.exec(value ?? '');
   if (!match) return null;
-  const [, weekday, day, month, year, hours, minutes] = match;
+  const [, weekday, day, month, year, hours, minutes, seconds = '00'] = match;
   const monthIndex = MONTHS.indexOf(month);
   if (monthIndex < 0) return null;
-  const date = new Date(`${year}-${String(monthIndex + 1).padStart(2, '0')}-${day}T${hours}:${minutes}:00+05:30`);
+  const date = new Date(`${year}-${String(monthIndex + 1).padStart(2, '0')}-${day}T${hours}:${minutes}:${seconds}+05:30`);
   return { weekday, day: Number(day), month, year: Number(year), hours: Number(hours), minutes: Number(minutes), date };
 }
 
