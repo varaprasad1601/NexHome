@@ -38,8 +38,27 @@ export function fileUrl(path) {
 }
 
 /**
+ * A multipart request through React Native's own XMLHttpRequest. Expo SDK 58 replaces `fetch` with expo/fetch, which
+ * does not support React Native's `{ uri, name, type }` file parts (it throws "Unsupported FormDataPart
+ * implementation" before sending anything); XMLHttpRequest still reads the file from its uri natively.
+ * Resolves { ok, status, text }; rejects only when the request could not be made.
+ */
+function sendMultipart(url, method, headers, form) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url);
+    Object.entries(headers).forEach(([key, value]) => xhr.setRequestHeader(key, value));
+    xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, text: () => Promise.resolve(xhr.responseText) });
+    xhr.onerror = () => reject(new Error('Network request failed'));
+    xhr.ontimeout = () => reject(new Error('Network request timed out'));
+    xhr.timeout = 120000;
+    xhr.send(form);
+  });
+}
+
+/**
  * One request: JSON in and out, the bearer token when given; non-2xx responses throw ApiError. A FormData body is
- * sent as multipart (fetch sets the boundary), anything else as JSON.
+ * sent as multipart (through XMLHttpRequest, see sendMultipart; it sets the boundary), anything else as JSON.
  */
 export async function apiRequest(path, { method = 'GET', body, token } = {}) {
   const headers = { Accept: 'application/json' };
@@ -48,11 +67,13 @@ export async function apiRequest(path, { method = 'GET', body, token } = {}) {
   if (token) headers.Authorization = `Bearer ${token}`;
   let response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : multipart ? body : JSON.stringify(body)
-    });
+    response = multipart
+      ? await sendMultipart(`${API_BASE_URL}${path}`, method, headers, body)
+      : await fetch(`${API_BASE_URL}${path}`, {
+          method,
+          headers,
+          body: body === undefined ? undefined : JSON.stringify(body)
+        });
   } catch {
     throw new ApiError('Cannot reach NexHome right now. Check your internet connection and try again.', 0);
   }

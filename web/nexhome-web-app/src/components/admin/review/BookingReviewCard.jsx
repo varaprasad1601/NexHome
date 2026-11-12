@@ -18,7 +18,7 @@ const RATING_OPTIONS = [5, 4, 3, 2, 1].map((value) => ({ value: String(value), l
  * completed booking without one offers Record Review with REVIEW_MANAGE write (POST /api/reviews/create, on the
  * customer's behalf). Shown only once the booking is completed.
  */
-export default function BookingReviewCard({ booking, onMessage }) {
+export default function BookingReviewCard({ booking, version, onMessage }) {
   const { authRequest, can } = useAdminAuth();
   const { label } = useLookupLabels(REVIEW_LOOKUP);
   const [state, setState] = useState({ review: null, loaded: false });
@@ -35,7 +35,8 @@ export default function BookingReviewCard({ booking, onMessage }) {
     return () => {
       cancelled = true;
     };
-  }, [authRequest, booking.bookingId, completed, reloadKey]);
+    // Also with the booking page's reloads (`version`: its Refresh, reopening it from a notification)
+  }, [authRequest, booking.bookingId, completed, reloadKey, version]);
 
   if (!completed) return null;
   const { review, loaded } = state;

@@ -1,14 +1,17 @@
 import Feather from '@expo/vector-icons/Feather';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Linking, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import OfferCard from '../../components/OfferCard';
+import OnlinePaymentScreen from '../../components/OnlinePaymentScreen';
+import PaymentPendingScreen from '../../components/PaymentPendingScreen';
+import { isLockedJob } from '../../utils/paymentLock';
 import Progress from '../../components/Progress';
 import StartCodeModal from '../../components/StartCodeModal';
-import { CollectScreen, WorkingScreen } from '../../components/WorkScreens';
-import { Avatar, Banner, Button, Card, Empty, ErrorBox, Header, Loading, Row, SectionTitle, Tag, Text } from '../../components/ui';
+import { CollectScreen, WaitingConfirmScreen, WorkingScreen } from '../../components/WorkScreens';
+import { Avatar, Banner, Button, Card, Empty, ErrorBox, Header, Loading, Row, SectionTitle, Tag, Text, showError } from '../../components/ui';
 import { useAuth } from '../../context/AuthProvider';
 import useApi from '../../hooks/useApi';
 import { colors } from '../../theme';
@@ -40,14 +43,32 @@ function liveMinutes(detail, now) {
   return Math.ceil(liveSeconds(detail, now) / 60);
 }
 
+/** A history row's dot: payment failed red, pending amber, cancelled grey, anything else green. */
+function historyDot(reason = '') {
+  if (reason?.startsWith('Payment failed')) return colors.red;
+  if (reason?.startsWith('Payment pending')) return '#e0a100';
+  if (reason?.startsWith('Payment cancelled')) return '#a8b6c6';
+  return colors.green;
+}
+
 /**
  * One job (GET /api/bookings/{id}): status and progress; the customer with Call and Open in Maps (from the booking's
  * address snapshot); what, when, price and payment; actions by state: accept / decline an offer or assignment
- * (PUT /api/bookings/assignments/respond), Start work, Pause, Resume, Finish work (POST /api/bookings/timer), and for
+ * (PUT /api/bookings/assignments/respond), Start work, Resume (a job paused by staff; partners cannot pause), Finish work (POST /api/bookings/timer), and for
  * a cash job once completed, Cash collected (PUT /api/payments/cash-collections/update, COLLECTED); the time worked;
  * history; Get help.
  */
+
 /** Who cancelled a job, as a tag: the customer, the partner (You) or NexHome support staff (Admin). */
+/** Jobs whose timer screen the partner had open (so staff finishing them shows Payment pending first). */
+const timerSeen = new Set();
+
+/** Who made a history change, as the partner sees it (their own: nothing; another partner: by Partner). */
+function historyBy(row, myUserId) {
+  if (row.changedByParty === 'PARTNER') return row.changedBy === myUserId ? null : 'by Partner';
+  return { CUSTOMER: 'by Customer', STAFF: 'by Admin', SYSTEM: 'by NexHome' }[row.changedByParty] ?? null;
+}
+
 const CANCELLED_BY = {
   CUSTOMER: { label: 'Customer', fg: colors.blue, bg: colors.blueTint },
   PARTNER: { label: 'You', fg: colors.greenDark, bg: colors.greenSoft },
@@ -56,8 +77,13 @@ const CANCELLED_BY = {
 
 export default function JobScreen() {
   const { id, collected } = useLocalSearchParams();
-  const { authRequest, profile, reloadProfile } = useAuth();
-  const detail = useApi(`/api/bookings/${id}`);
+  const { authRequest, profile, reloadProfile, user } = useAuth();
+  // Only while the work is under way it reloads every 5 s (a pause, resume or finish by NexHome staff, the customer's
+  // confirmation); otherwise only when the screen opens
+  const detail = useApi(`/api/bookings/${id}`, {
+    pollMs: 5000,
+    pollWhile: (d) => ['IN_PROGRESS', 'PAUSED'].includes(d?.booking?.bookingStatus) && !d?.booking?.actualEndAt
+  });
   // The partner's jobs: one job at a time, so another one under way blocks Start work here
   const myJobs = useApi('/api/bookings/partner/me?size=50');
   const [now, setNow] = useState(() => Date.now());
@@ -67,7 +93,51 @@ export default function JobScreen() {
   const [askingCode, setAskingCode] = useState(false);
   // Finish work on a cash job: the Collect payment screen, nothing sent until the cash is collected
   const [finishing, setFinishing] = useState(false);
+  // Finish work on an online job: the Payment processing screen, nothing sent until the payment is in
+  const [payingOnline, setPayingOnline] = useState(false);
   const [finalAmount, setFinalAmount] = useState(null);
+  const [pendingClosedFor, setPendingClosedFor] = useState(null);
+  // Finish work on an unpaid online job asked the customer to confirm it is done (V70): Waiting for the customer
+  const [awaitingConfirm, setAwaitingConfirm] = useState(false);
+
+  // While the partner had this job's timer (or waiting screen) open, the job became COMPLETED and is not paid: the
+  // customer confirmed it (Payment processing follows) or NexHome staff finished it (Payment pending), shown in place,
+  // never the job page first
+  const shown = detail.data?.booking;
+  const workingShown = Boolean(shown) && ['IN_PROGRESS', 'PAUSED'].includes(shown.bookingStatus) && !isWorkFinished(shown);
+  if (workingShown && shown.partnerProfileId === profile?.partnerProfileId) {
+    timerSeen.add(shown.bookingId);
+  }
+  const completedUnpaid =
+    Boolean(shown) &&
+    !payingOnline &&
+    timerSeen.has(shown.bookingId) &&
+    shown.bookingStatus === 'COMPLETED' &&
+    shown.paymentMethod === 'ONLINE' &&
+    pendingClosedFor !== shown.bookingId;
+  // (an admin completing a job the customer confirmed is shown on its locked Payment processing screen)
+  const showPending = completedUnpaid && !shown.completionConfirmedAt && !isPaid(shown);
+
+  // The customer said it is not finished yet: back to the timer, with their answer
+  const declined = awaitingConfirm && workingShown && !shown.completionRequestedAt;
+  useEffect(() => {
+    if (!declined) return undefined;
+    const timer = setTimeout(() => {
+      setAwaitingConfirm(false);
+      showError('The customer says the job is not finished yet. Carry on with the work.');
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [declined]);
+  useEffect(() => {
+    if (!showPending) return undefined;
+    const bookingId = shown.bookingId;
+    const timer = setTimeout(() => {
+      timerSeen.delete(bookingId);
+      setPendingClosedFor(bookingId);
+      setNotice('Payment pending. Job completed.');
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [showPending, shown?.bookingId]);
 
   const running = detail.data?.booking?.bookingStatus === 'IN_PROGRESS';
   useEffect(() => {
@@ -131,8 +201,30 @@ export default function JobScreen() {
   // Another job under way (working, paused, or waiting for its cash)
   const otherJob = (myJobs.data?.content ?? []).find((job) => job.bookingId !== booking.bookingId && ['IN_PROGRESS', 'PAUSED'].includes(job.bookingStatus)) ?? null;
   // Finish work: a cash job only shows the Collect payment screen (nothing changes until the cash is collected); an
-  // online job stops the timer and completes
+  // online job stops the timer and completes, then waits for the customer's online payment
   const finish = async () => {
+    // An online job: like cash, the payment screen first; the work stops once it is paid. Already paid (the customer
+    // paid during the work): its first check finds it paid, stops the work and shows Payment done at once
+    if (booking.paymentMethod === 'ONLINE') {
+      setError('');
+      // Paid during the work: the payment screen finds it paid and stops the work
+      if (isPaid(booking)) {
+        setPayingOnline(true);
+        return;
+      }
+      // Not paid: the customer confirms the work is done first (the work keeps running until they do)
+      setBusy(true);
+      try {
+        await authRequest('/api/bookings/completion/request', { method: 'PUT', body: { bookingId: booking.bookingId } });
+        await detail.reload();
+        setAwaitingConfirm(true);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (!cashToCollect) {
       await timer('STOP');
       return;
@@ -167,6 +259,43 @@ export default function JobScreen() {
   };
 
 
+  // Staff finished it while the timer was open: Payment pending first, then (after 2.5 s) the job page
+  if (showPending) {
+    return <PaymentPendingScreen amount={booking.totalAmount} publicId={booking.publicId} />;
+  }
+  // The customer confirmed the work is done (from the waiting screen, the timer or later): the locked Payment
+  // processing screen until it is paid or the cash is collected
+  if (isMine && isLockedJob(booking)) {
+    timerSeen.delete(booking.bookingId);
+    return <Redirect href={`/await-payment/${booking.bookingId}`} />;
+  }
+  // Finish work asked the customer: waiting for their confirmation; Back returns to the timer (still running)
+  if (isMine && awaitingConfirm && workingShown && booking.completionRequestedAt) {
+    return (
+      <WaitingConfirmScreen booking={booking} workedMinutes={worked} onBack={() => setAwaitingConfirm(false)} />
+    );
+  }
+  // Payment processing after Finish work on an online job; Back returns to the work (still running)
+  // (kept while the booking changes underneath: staff finishing it is shown there as Payment pending)
+  if (isMine && payingOnline) {
+    return (
+      <OnlinePaymentScreen
+        bookingId={booking.bookingId}
+        stopWork
+        onBack={() => setPayingOnline(false)}
+        onDone={(how) => {
+          setPayingOnline(false);
+          setNotice(how === 'pending' ? 'Payment pending. Job completed.' : how === 'cash' ? 'Cash collected. Job completed.' : 'Payment received. Job completed.');
+          detail.reload();
+        }}
+      />
+    );
+  }
+  // An online job whose work is finished waits for its payment on the Payment processing screen; the job page is
+  // not shown until it is paid (or cash is collected instead)
+  if (isMine && isWorkFinished(booking) && booking.paymentMethod === 'ONLINE' && !isPaid(booking)) {
+    return <Redirect href={`/await-payment/${booking.bookingId}`} />;
+  }
   // Collect payment: after Finish work on a cash job (Back returns to the work), or a cash job already finished
   if (isMine && (isWorkFinished(booking) || (finishing && ['IN_PROGRESS', 'PAUSED'].includes(booking.bookingStatus)))) {
     return (
@@ -191,8 +320,6 @@ export default function JobScreen() {
         expectedMinutes={duration}
         busy={busy}
         error={error}
-        onPause={() => timer('PAUSE', 'Work paused.')}
-        onResume={() => timer('RESUME', 'Work resumed.')}
         onFinish={finish}
       />
     );
@@ -317,7 +444,7 @@ export default function JobScreen() {
               <Text weight="semibold" style={{ flex: 1, fontSize: 12.5, color: colors.amber }}>
                 {booking.paymentMethod === 'CASH'
                   ? `Payment pending: collect ${money(booking.totalAmount)} in cash and tap Cash collected.`
-                  : `Payment pending: the customer pays ${money(booking.totalAmount)} online.`}
+                  : `Payment pending: the customer pays ${money(booking.totalAmount)} online. If it keeps failing, collect it in cash from Waiting for payment.`}
               </Text>
             </View>
           ) : null}
@@ -336,12 +463,19 @@ export default function JobScreen() {
               .filter((h) => h.oldStatus !== h.newStatus || h.reason)
               .map((h) => (
                 <View key={h.historyId} style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.green, marginTop: 5 }} />
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: historyDot(h.reason), marginTop: 5 }} />
                   <View style={{ flex: 1 }}>
                     <Text weight="semibold" style={{ fontSize: 13 }}>
                       {h.oldStatus === h.newStatus ? h.reason : bookingStatus(h.newStatus).label}
                     </Text>
-                    <Text style={{ fontSize: 12, color: colors.muted }}>{whenLabel(h.changedAt)}</Text>
+                    {/* A status change a payment brought (Confirmed by "Payment received · ₹…") shows the payment */}
+                    {h.oldStatus !== h.newStatus && h.reason?.startsWith('Payment') ? (
+                      <Text style={{ fontSize: 12, color: colors.ink }}>{h.reason}</Text>
+                    ) : null}
+                    <Text style={{ fontSize: 12, color: colors.muted }}>
+                      {whenLabel(h.changedAt)}
+                      {historyBy(h, user?.userId) ? ` · ${historyBy(h, user?.userId)}` : ''}
+                    </Text>
                   </View>
                 </View>
               ))}
@@ -367,15 +501,16 @@ export default function JobScreen() {
             ) : null}
             {booking.bookingStatus === 'IN_PROGRESS' && !isWorkFinished(booking) ? (
               <View style={{ flexDirection: 'row', gap: 8 }}>
-                <Button title="Pause" variant="secondary" icon="pause" onPress={() => timer('PAUSE', 'Work paused.')} disabled={busy} style={{ flex: 1 }} />
                 <Button title="Finish work" icon="check" onPress={finish} loading={busy} style={{ flex: 1 }} />
               </View>
             ) : null}
             {booking.bookingStatus === 'PAUSED' ? (
               <View style={{ flexDirection: 'row', gap: 8 }}>
-                <Button title="Resume" variant="blue" icon="play" onPress={() => timer('RESUME', 'Work resumed.')} loading={busy} style={{ flex: 1 }} />
                 <Button title="Finish work" icon="check" onPress={finish} disabled={busy} style={{ flex: 1 }} />
               </View>
+            ) : null}
+            {isPaymentPending(booking) && booking.paymentMethod === 'ONLINE' ? (
+              <Button title={`Waiting for payment (${money(booking.totalAmount)})`} variant="blue" icon="clock" onPress={() => router.push(`/await-payment/${booking.bookingId}`)} disabled={busy} />
             ) : null}
             {isPaymentPending(booking) && booking.paymentMethod === 'CASH' ? (
               <Button title={`Cash collected (${money(booking.totalAmount)})`} icon="dollar-sign" onPress={() => router.push(`/collect/${booking.bookingId}`)} disabled={busy} />

@@ -7,6 +7,9 @@ import jakarta.validation.constraints.Pattern;
  * Sends a LOGIN or REGISTRATION OTP to a mobile number. Phone changes have their own, authenticated endpoints.
  *
  * @param purpose an OTP_PURPOSE lookup code: LOGIN or REGISTRATION
+ * @param roleCode optional: the app asking (CUSTOMER or PARTNER). LOGIN: the account must hold that role, active
+ *        (404 when it never did, so the app offers sign-up; 400 when staff withdrew it). REGISTRATION: allowed for a
+ *        verified account that never held the role (resending the sign-up code)
  */
 public record NexHomeAuthOtpCreateRequest(
 		@NotBlank(message = "Country code is required")
@@ -18,5 +21,12 @@ public record NexHomeAuthOtpCreateRequest(
 		String mobileNumber,
 
 		@NotBlank(message = "Purpose is required")
-		String purpose) {
+		String purpose,
+
+		String roleCode) {
+
+	/** Without a role check (any account). */
+	public NexHomeAuthOtpCreateRequest(String countryCode, String mobileNumber, String purpose) {
+		this(countryCode, mobileNumber, purpose, null);
+	}
 }

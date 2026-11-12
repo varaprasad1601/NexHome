@@ -10,7 +10,8 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { BrandSplash } from '../components/ui';
+import PaymentLock from '../components/PaymentLock';
+import { BrandSplash, FloatingError } from '../components/ui';
 import { AuthProvider } from '../context/AuthProvider';
 import { colors } from '../theme';
 
@@ -23,6 +24,8 @@ export default function RootLayout() {
       <AuthProvider>
         <StatusBar style="dark" />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.ground } }} />
+        <FloatingError />
+        <PaymentLock />
       </AuthProvider>
     </SafeAreaProvider>
   );

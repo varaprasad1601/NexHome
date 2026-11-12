@@ -1009,13 +1009,14 @@ class NexHomePartnerOnboardingServiceImplTest {
 					.containsExactlyInAnyOrder(
 							"Account number must be 9 to 18 digits",
 							"IFSC code must be 4 letters, a zero and 6 letters or digits");
+			// The number and IFSC may be corrected (the service allows it until the profile is submitted), checked as on add
 			assertThat(factory.getValidator().validate(new NexHomePartnerBankAccountUpdateRequest(51L, PROFILE_ID,
-					"123456784321", "SBIN0001234", " ", null, null, null, "VERIFIED")))
+					"12345678", "SBIN1001234", " ", null, null, null, "VERIFIED")))
 					.extracting(ConstraintViolation::getMessage)
 					.containsExactlyInAnyOrder(
 							"Partner profile cannot be updated",
-							"Account number cannot be updated; add a new bank account instead",
-							"IFSC code cannot be updated; add a new bank account instead",
+							"Account number must be 9 to 18 digits",
+							"IFSC code must be 4 letters, a zero and 6 letters or digits",
 							"Account holder name cannot be blank",
 							"Verification status cannot be updated here");
 		}

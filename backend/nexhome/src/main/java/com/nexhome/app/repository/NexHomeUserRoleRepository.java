@@ -28,6 +28,9 @@ public interface NexHomeUserRoleRepository extends JpaRepository<NexHomeUserRole
 	/** Whether the user currently holds any of the roles. */
 	boolean existsByUserIdAndRoleCodeInAndActiveTrueAndRoleActiveFlagTrue(Long userId, Collection<String> roleCodes);
 
+	/** Whether the account holds or ever held one of these roles (active or not). */
+	boolean existsByUserIdAndRoleCodeIn(Long userId, Collection<String> roleCodes);
+
 	/**
 	 * How many current holders of the role (active assignment of an active role) were given it in each month (IST),
 	 * oldest first; months without any are left out.

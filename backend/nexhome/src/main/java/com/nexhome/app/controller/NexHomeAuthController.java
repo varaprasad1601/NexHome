@@ -2,7 +2,10 @@ package com.nexhome.app.controller;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -92,5 +95,14 @@ public class NexHomeAuthController {
 	public NexHomeAuthOtpResponse verifyPhoneChangeOtp(
 			@Valid @RequestBody NexHomeAuthPhoneChangeVerifyRequest request) {
 		return authService.verifyPhoneChangeOtp(request);
+	}
+
+	/** Customers' and partners' login OTPs for staff to share (temporary until OTPs are sent by SMS). */
+	@GetMapping("/otps")
+	@PreAuthorize("@permissions.can('LOGIN_OTP_VIEW', 'READ')")
+	public com.nexhome.app.dto.NexHomePageResponse<com.nexhome.app.dto.NexHomeLoginOtpResponse> getLoginOtps(
+			@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String search) {
+		return authService.getLoginOtps(page, size, search);
 	}
 }

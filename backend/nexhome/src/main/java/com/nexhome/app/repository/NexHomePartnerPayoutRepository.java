@@ -49,6 +49,17 @@ public interface NexHomePartnerPayoutRepository extends JpaRepository<NexHomePar
 			+ "group by p.payoutStatus")
 	java.util.List<Object[]> totalsByStatus();
 
+	/** A partner's payouts that are not cancelled (the online jobs NexHome owes them for), with the bookings. */
+	@Query("select p from NexHomePartnerPayout p join fetch p.booking where p.partner.id = :partnerId "
+			+ "and p.payoutStatus <> 'CANCELLED'")
+	java.util.List<NexHomePartnerPayout> findOwedOfPartner(
+			@org.springframework.data.repository.query.Param("partnerId") Long partnerId);
+
+	/** [partner id, jobs, net] of the payouts that are not cancelled, per partner. */
+	@Query("select p.partner.id, count(p), coalesce(sum(p.netAmount), 0) from NexHomePartnerPayout p "
+			+ "where p.payoutStatus <> 'CANCELLED' group by p.partner.id")
+	java.util.List<Object[]> owedByPartner();
+
 	/** The net of a partner's payouts that are not cancelled. */
 	@Query("select coalesce(sum(p.netAmount), 0) from NexHomePartnerPayout p where p.partner.id = :partnerId "
 			+ "and p.payoutStatus <> 'CANCELLED'")

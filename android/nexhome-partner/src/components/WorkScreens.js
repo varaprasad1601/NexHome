@@ -5,7 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '../theme';
 import { durationLabel, money, serviceNameOf } from '../utils/format';
-import { Button, Header, Text } from './ui';
+import PaymentHelp from './PaymentHelp';
+import { Button, ErrorBox, Header, Text } from './ui';
 
 /** 3725 seconds as "01:02:05". */
 function clock(totalSeconds) {
@@ -16,9 +17,10 @@ function clock(totalSeconds) {
 
 /**
  * While the work runs (IN_PROGRESS or PAUSED) the job page is only this: the job, a large live timer of the time
- * worked, and Pause / Resume and Finish work.
+ * worked, and Finish work. No Pause or Resume: only NexHome staff pause and resume, and the job page, which reloads
+ * every 5 s, follows them (a paused job shows a note and its timer stopped).
  */
-export function WorkingScreen({ booking, seconds, expectedMinutes, busy, error, onPause, onResume, onFinish }) {
+export function WorkingScreen({ booking, seconds, expectedMinutes, busy, error, onFinish }) {
   const paused = booking.bookingStatus === 'PAUSED';
   const customer = booking.address?.contactName || booking.customerName;
   const area = [booking.address?.addressLine2, booking.address?.city].filter(Boolean).join(', ');
@@ -47,18 +49,18 @@ export function WorkingScreen({ booking, seconds, expectedMinutes, busy, error, 
           {expectedMinutes ? <Text style={{ fontSize: 12.5, color: colors.muted }}>Expected: {durationLabel(expectedMinutes)}</Text> : null}
         </View>
 
-        {error ? (
-          <Text weight="semibold" style={{ color: colors.red, textAlign: 'center' }}>
-            {error}
-          </Text>
+        <ErrorBox message={error} />
+
+        {paused ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 12, backgroundColor: colors.amberSoft }}>
+            <Feather name="pause-circle" size={16} color={colors.amber} />
+            <Text weight="semibold" style={{ flex: 1, fontSize: 13, color: colors.amber }}>
+              NexHome paused this job. The timer starts again by itself when NexHome resumes it.
+            </Text>
+          </View>
         ) : null}
 
         <View style={{ gap: 10 }}>
-          {paused ? (
-            <Button title="Resume work" variant="blue" icon="play" onPress={onResume} loading={busy} />
-          ) : (
-            <Button title="Pause" variant="secondary" icon="pause" onPress={onPause} disabled={busy} />
-          )}
           <Button title="Finish work" icon="check" onPress={onFinish} disabled={busy} />
         </View>
       </ScrollView>
@@ -67,8 +69,49 @@ export function WorkingScreen({ booking, seconds, expectedMinutes, busy, error, 
 }
 
 /**
- * After Finish work: the amount to collect, large. Cash: Cash collected (marks the cash collection COLLECTED) and
- * Back; online: the customer pays in the app (or it is paid), and Back.
+ * After Finish work on an unpaid online job (V70): waiting for the customer to confirm the work is done in their
+ * app, with the time worked so far (the timer keeps running), Back to the timer and Help. The job page moves on by
+ * itself: Payment processing once the customer confirms, the timer again (with their answer) if they say not yet.
+ */
+export function WaitingConfirmScreen({ booking, workedMinutes, onBack }) {
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.ground }}>
+      <Header title="Waiting for the customer" onBack={onBack} />
+      <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 20, gap: 18, justifyContent: 'center' }}>
+        <View style={{ alignItems: 'center', gap: 8 }}>
+          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.blueTint, alignItems: 'center', justifyContent: 'center' }}>
+            <Feather name="user-check" size={30} color={colors.blue} />
+          </View>
+          <Text weight="extrabold" style={{ fontSize: 20, color: colors.navy, textAlign: 'center' }}>
+            Waiting for the customer to confirm
+          </Text>
+          <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 19 }}>
+            Ask {booking.address?.contactName || 'the customer'} to confirm in the NexHome app that {serviceNameOf(booking.serviceName)} is done. The final amount is worked out when they confirm.
+          </Text>
+        </View>
+
+        <View style={{ alignItems: 'center', gap: 6, paddingVertical: 24, borderRadius: 24, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line }}>
+          <Text style={{ fontSize: 13, color: colors.muted }}>Time worked so far</Text>
+          <Text weight="extrabold" style={{ fontSize: 34, color: colors.navy }}>
+            {durationLabel(Math.max(1, workedMinutes ?? 0))}
+          </Text>
+          <Text style={{ fontSize: 12.5, color: colors.muted, textAlign: 'center', paddingHorizontal: 16 }}>
+            The timer keeps running until the customer confirms.
+          </Text>
+        </View>
+
+        <View style={{ gap: 10 }}>
+          <Button title="Back to the timer" variant="secondary" icon="arrow-left" onPress={onBack} />
+        </View>
+        <PaymentHelp publicId={booking.publicId} />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+/**
+ * After Finish work on a cash job: the amount to collect, large. Cash: Cash collected (marks the cash collection
+ * COLLECTED) and Back; online: the customer pays in the app (or it is paid), and Back.
  */
 export function CollectScreen({ booking, amount, onCashCollected, onBack }) {
   const [busy, setBusy] = useState(false);
@@ -116,16 +159,13 @@ export function CollectScreen({ booking, amount, onCashCollected, onBack }) {
           </Text>
         </View>
 
-        {error ? (
-          <Text weight="semibold" style={{ color: colors.red, textAlign: 'center' }}>
-            {error}
-          </Text>
-        ) : null}
+        <ErrorBox message={error} />
 
         <View style={{ gap: 10 }}>
           {cash ? <Button title="Cash collected" icon="dollar-sign" onPress={collected} loading={busy} /> : null}
           <Button title="Back" variant="secondary" icon="arrow-left" onPress={onBack} disabled={busy} />
         </View>
+        <PaymentHelp publicId={booking.publicId} />
       </ScrollView>
     </SafeAreaView>
   );

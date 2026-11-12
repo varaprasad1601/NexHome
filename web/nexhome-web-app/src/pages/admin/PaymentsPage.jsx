@@ -1,5 +1,6 @@
-import { Banknote, Hourglass, IndianRupee, RotateCcw, Search, Undo2 } from 'lucide-react';
+import { Banknote, Hourglass, IndianRupee, Percent, RotateCcw, Search, Undo2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import AdminPageHeader from '../../components/admin/AdminPageHeader';
 import FormModal from '../../components/admin/common/FormModal';
@@ -16,10 +17,10 @@ import {
   When
 } from '../../components/admin/payment/moneyParts';
 import RowActions from '../../components/admin/system/RowActions';
-import { cardClass, resetButtonClass, searchInputClass } from '../../components/admin/system/systemStyles';
+import { cardClass, linkClass, resetButtonClass, searchInputClass } from '../../components/admin/system/systemStyles';
 import { useAdminAuth } from '../../context/adminAuth';
 import { formatAmount } from '../../data/bookingOptions';
-import { PAYMENT_LOOKUPS } from '../../data/paymentOptions';
+import { PAYMENT_LOOKUPS, paymentModeLabel } from '../../data/paymentOptions';
 import useDebounced from '../../hooks/useDebounced';
 import useLookupLabels from '../../hooks/useLookupLabels';
 
@@ -51,7 +52,10 @@ export default function PaymentsPage() {
   const { authRequest, can } = useAdminAuth();
   const canWrite = can('PAYMENT_MANAGE', 'WRITE');
   const { values, label } = useLookupLabels(PAYMENT_LOOKUPS);
-  const [tab, setTab] = useState('payments');
+  // The tab is in the address (?tab=orders), so Back from an order's page returns to Payment Orders
+  const [params, setParams] = useSearchParams();
+  const tab = ['payments', 'cash', 'orders'].includes(params.get('tab')) ? params.get('tab') : 'payments';
+  const setTab = (key) => setParams(key === 'payments' ? {} : { tab: key }, { replace: true });
   const [status, setStatus] = useState('');
   const [searchText, setSearchText] = useState('');
   const search = useDebounced(searchText.trim());
@@ -73,14 +77,20 @@ export default function PaymentsPage() {
     setStatus('');
     setSearchText('');
   };
-  const statusType = tab === 'cash' ? 'CASH_COLLECTION_STATUS' : 'PAYMENT_STATUS';
+  const statusType = tab === 'cash' ? 'CASH_COLLECTION_STATUS' : tab === 'orders' ? 'PAYMENT_ORDER_STATUS' : 'PAYMENT_STATUS';
+  // Each tab's search: what the backend matches it against
+  const searchHint = {
+    payments: 'Search by booking ID, order ID or payment reference...',
+    cash: 'Search by booking ID, customer or partner (name or ID)...',
+    orders: 'Search by order ID, booking ID or customer (name or ID)...'
+  }[tab];
   const statusOptions = [
     { value: '', label: 'All Status' },
     ...(values[statusType] ?? []).map((value) => ({ value: value.valueCode, label: value.displayName }))
   ];
   const query = new URLSearchParams();
   if (status) query.set('status', status);
-  if (search && tab === 'payments') query.set('search', search);
+  if (search) query.set('search', search);
 
   const saveCash = async (formValues) => {
     await authRequest('/api/payments/cash-collections/update', {
@@ -102,6 +112,25 @@ export default function PaymentsPage() {
     { header: 'Customer', cell: (row) => <CustomerLink id={row.customerProfileId} name={row.customerName} /> },
     { header: 'Total Amount', cell: (row) => formatAmount(row.bookingTotalAmount) },
     { header: 'Amount Paid', cell: (row) => <span className="font-black">{formatAmount(row.amount)}</span> },
+    {
+      header: 'Paid Via',
+      cell: (row) => (
+        <span className="block whitespace-nowrap">
+          <span className="font-bold">{paymentModeLabel(row)}</span>
+          <span className="block text-xs text-[var(--muted)]">{row.provider === 'CASHFREE' ? 'Cashfree' : row.provider === 'MANUAL' ? 'By staff' : row.provider}</span>
+        </span>
+      )
+    },
+    {
+      // What the gateway kept (V68): reported by webhook or the hourly check, after the payment
+      header: 'Gateway Charges',
+      cell: (row) =>
+        row.gatewayChargesAmount != null ? (
+          formatAmount(row.gatewayChargesAmount)
+        ) : (
+          <span className="text-[var(--muted)]">{row.provider === 'MANUAL' || row.paymentMethod !== 'ONLINE' ? '—' : 'Pending'}</span>
+        )
+    },
     { header: 'Status', cell: (row) => <MoneyBadge status={row.status} label={label('PAYMENT_STATUS', row.status)} /> },
     {
       header: 'Refunded',
@@ -157,7 +186,27 @@ export default function PaymentsPage() {
       : [])
   ];
   const orderColumns = [
-    { header: 'Order', cell: (row) => <span className="font-black">{row.publicId}</span> },
+    {
+      header: 'Order',
+      cell: (row) => (
+        <Link to={`/admin/payments/customers/orders/${row.paymentOrderId}`} className={`${linkClass} font-black`}>
+          {row.publicId}
+        </Link>
+      )
+    },
+    {
+      header: 'Booking',
+      cell: (row) =>
+        row.bookings?.length ? (
+          <span className="flex flex-col">
+            {row.bookings.map((booking) => (
+              <BookingLink key={booking.bookingId} id={booking.bookingId} publicId={booking.publicId} />
+            ))}
+          </span>
+        ) : (
+          <span className="text-[var(--muted)]">—</span>
+        )
+    },
     { header: 'Customer', cell: (row) => <CustomerLink id={row.customerProfileId} name={row.customerName} /> },
     { header: 'Provider', cell: (row) => row.provider },
     {
@@ -180,7 +229,7 @@ export default function PaymentsPage() {
         description="Money in: online payments, cash collected by partners, and the payment orders behind them."
       />
 
-      <div className="nh-scroll-hidden -mx-4 flex gap-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:mx-0 xl:grid xl:grid-cols-4 xl:overflow-visible xl:px-0 xl:pb-0">
+      <div className="nh-scroll-hidden -mx-4 flex gap-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:mx-0 xl:grid xl:grid-cols-5 xl:overflow-visible xl:px-0 xl:pb-0">
         <MoneyTile
           icon={IndianRupee}
           tone="bg-[#E9F6EF] text-[var(--green-2)]"
@@ -205,37 +254,37 @@ export default function PaymentsPage() {
           label="Cash Due"
           value={stats && formatAmount(stats.cashDueAmount)}
         />
+        <MoneyTile
+          icon={Percent}
+          tone="bg-[#FDECEC] text-[#C53030]"
+          label="Gateway Charges"
+          value={stats && formatAmount(stats.gatewayChargesAmount ?? 0)}
+        />
       </div>
 
       <section className={`mt-5 ${cardClass}`}>
         <MoneyTabs tabs={TABS} active={tab} onChange={changeTab} />
-        {tab !== 'orders' && (
-          <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_14rem_auto]">
-            {tab === 'payments' ? (
-              <label className="relative">
-                <span className="sr-only">Search payments</span>
-                <Search
-                  size={16}
-                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--muted)]"
-                />
-                <input
-                  type="search"
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Search by booking ID, order ID or payment reference..."
-                  className={searchInputClass}
-                />
-              </label>
-            ) : (
-              <span />
-            )}
-            <Select ariaLabel="Status" value={status} onChange={setStatus} options={statusOptions} />
-            <button type="button" className={resetButtonClass} onClick={() => changeTab(tab)}>
-              <RotateCcw size={15} />
-              Reset
-            </button>
-          </div>
-        )}
+        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_14rem_auto]">
+          <label className="relative">
+            <span className="sr-only">Search</span>
+            <Search
+              size={16}
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+            />
+            <input
+              type="search"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder={searchHint}
+              className={searchInputClass}
+            />
+          </label>
+          <Select ariaLabel="Status" value={status} onChange={setStatus} options={statusOptions} />
+          <button type="button" className={resetButtonClass} onClick={() => changeTab(tab)}>
+            <RotateCcw size={15} />
+            Reset
+          </button>
+        </div>
         {tab === 'payments' && (
           <PagedTable
             path={`/api/payments?${query}`}
@@ -251,16 +300,20 @@ export default function PaymentsPage() {
             columns={cashColumns}
             rowKey={(row) => row.cashCollectionId}
             reloadKey={reloadKey}
-            emptyText="No cash collections yet: they appear when cash bookings are completed."
+            emptyText={
+              search || status
+                ? 'No cash collections match your search or filters.'
+                : 'No cash collections yet: they appear when cash bookings are completed.'
+            }
           />
         )}
         {tab === 'orders' && (
           <PagedTable
-            path="/api/payments/orders"
+            path={`/api/payments/orders?${query}`}
             columns={orderColumns}
             rowKey={(row) => row.paymentOrderId}
             reloadKey={reloadKey}
-            emptyText="No payment orders yet."
+            emptyText={search || status ? 'No payment orders match your search or filters.' : 'No payment orders yet.'}
           />
         )}
       </section>

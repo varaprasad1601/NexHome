@@ -100,6 +100,7 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 	private final NexHomeSmsSender smsSender;
 	private final NexHomeNotifier notifier;
 	private final com.nexhome.app.repository.NexHomeNotificationDeliveryLogRepository deliveryLogRepository;
+	private final com.nexhome.app.config.NexHomeFieldEncryptor fieldEncryptor;
 
 	@Override
 	@Transactional
@@ -108,39 +109,40 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 		String mobileNumber = request.mobileNumber().trim();
 		String email = normalizeEmail(request.email());
 
-		if (userRepository.findByCountryCodeAndMobileNumber(countryCode, mobileNumber).isPresent()) {
-			throw new DuplicateResourceException("An account already exists with this mobile number. Log in instead.");
+		NexHomeRole role = roleRepository.findByCode(request.roleCode().trim())
+				.filter(NexHomeRole::isActiveFlag)
+				.orElseThrow(() -> new ResourceNotFoundException("Role Not Found or Inactive"));
+		// An account this number already has signs up for the other app: the sign-up code is sent, and verifying it
+		// (with the role) gives the account the role; nothing changes before that
+		java.util.Optional<NexHomeUser> existing = userRepository.findByCountryCodeAndMobileNumber(countryCode,
+				mobileNumber);
+		if (existing.isPresent()) {
+			NexHomeUser user = existing.get();
+			requireActive(user);
+			switch (roleState(user, role.getCode())) {
+				case ROLE_ACTIVE -> throw new DuplicateResourceException(
+						"An account already exists with this mobile number. Log in instead.");
+				case ROLE_WITHDRAWN -> throw new InvalidRequestException(withdrawnMessage(role.getCode()));
+				default -> {
+				}
+			}
+			log.info("User ID {} is signing up as {}", user.getId(), role.getCode());
+			return otpRequestMapper.toAuthOtpDto(issueOtp(countryCode, mobileNumber, OtpPurpose.REGISTRATION, user,
+					role.getCode()), null, null);
 		}
 		if (email != null && userRepository.findByEmail(email).isPresent()) {
 			throw new DuplicateResourceException("An account already exists with this email");
 		}
-		NexHomeRole role = roleRepository.findByCode(request.roleCode().trim())
-				.filter(NexHomeRole::isActiveFlag)
-				.orElseThrow(() -> new ResourceNotFoundException("Role Not Found or Inactive"));
 
 		// Nobody is signed in: the new user is their own creator
 		NexHomeUser user = userRepository.save(userMapper.toUserEntity(countryCode, mobileNumber, email, null, null));
 		user.setCreatedBy(user.getId());
 		user.setUpdatedBy(user.getId());
-		userRoleRepository.save(userMapper.toUserRoleEntity(user, role, user.getId()));
-		// A customer gets the customer profile, and so the NHCUST customer id, at sign-up; the name comes later (V15)
-		if (NexHomeRole.CUSTOMER.equals(role.getCode())) {
-			customerProfileRepository.save(customerProfileMapper.toCustomerProfileEntity(user, user.getId()));
-		}
-		// A partner gets the DRAFT partner profile, and so the NHPART partner id, at sign-up (V16)
-		if (NexHomeRole.PARTNER.equals(role.getCode())) {
-			com.nexhome.app.model.NexHomePartnerProfile profile = partnerProfileRepository.save(
-					partnerProfileMapper.toPartnerProfileEntity(user, user.getId()));
-			// The staff who manage partners hear of a new partner (onboarding not started yet)
-			notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_PARTNER_SIGNUP, "PARTNER_MANAGE", new NexHomeNotifier.Message(
-					com.nexhome.app.model.NexHomeLookupCodes.NotificationType.ACCOUNT, "New partner signed up",
-					countryCode + " " + mobileNumber + " signed up as a partner; onboarding has not started.",
-					NexHomeNotifier.PARTNER_PROFILE, profile.getId()), user.getId());
-		}
+		giveRole(user, role);
 
 		log.info("User registered with User ID {} with Role {}", user.getId(), role.getCode());
-		return otpRequestMapper.toAuthOtpDto(issueOtp(countryCode, mobileNumber, OtpPurpose.REGISTRATION, user),
-				null, null);
+		return otpRequestMapper.toAuthOtpDto(issueOtp(countryCode, mobileNumber, OtpPurpose.REGISTRATION, user,
+				role.getCode()), null, null);
 	}
 
 	@Override
@@ -153,11 +155,24 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 		NexHomeUser user = userRepository.findByCountryCodeAndMobileNumber(countryCode, mobileNumber)
 				.orElseThrow(() -> new ResourceNotFoundException("No account exists with this mobile number."));
 		requireActive(user);
-		if (OtpPurpose.REGISTRATION.equals(purpose) && user.getAccountVerifiedDate() != null) {
+		// The app asking checks the account's role before an OTP is sent: logging in needs it (never held: 404, so the
+		// app offers sign-up; withdrawn: 400); signing up for it is a REGISTRATION code, also on a verified account
+		String roleCode = appRole(request.roleCode());
+		String state = roleCode == null ? null : roleState(user, roleCode);
+		if (ROLE_WITHDRAWN.equals(state)) {
+			throw new InvalidRequestException(withdrawnMessage(roleCode));
+		}
+		if (ROLE_NONE.equals(state) && OtpPurpose.LOGIN.equals(purpose)) {
+			throw new ResourceNotFoundException(NexHomeRole.PARTNER.equals(roleCode)
+					? "This mobile number is not registered as a NexHome partner yet. Sign up to join."
+					: "This mobile number is not registered as a NexHome customer yet. Sign up to join.");
+		}
+		boolean signingUpForRole = ROLE_NONE.equals(state);
+		if (OtpPurpose.REGISTRATION.equals(purpose) && user.getAccountVerifiedDate() != null && !signingUpForRole) {
 			throw new InvalidRequestException("This mobile number is already verified. Log in instead.");
 		}
 
-		return otpRequestMapper.toAuthOtpDto(issueOtp(countryCode, mobileNumber, purpose, user), null, null);
+		return otpRequestMapper.toAuthOtpDto(issueOtp(countryCode, mobileNumber, purpose, user, roleCode), null, null);
 	}
 
 	@Override
@@ -172,7 +187,7 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 						found.getId(), STAFF_ROLES))
 				.orElseThrow(() -> new ResourceNotFoundException(INVALID_ADMIN_USER));
 
-		return otpRequestMapper.toAuthOtpDto(issueOtp(countryCode, mobileNumber, OtpPurpose.LOGIN, user), null,
+		return otpRequestMapper.toAuthOtpDto(issueOtp(countryCode, mobileNumber, OtpPurpose.LOGIN, user, "STAFF"), null,
 				null);
 	}
 
@@ -187,13 +202,28 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 		String mobileNumber = request.mobileNumber().trim();
 		String purpose = validateLoginPurpose(request.purpose());
 
+		String roleCode = OtpPurpose.REGISTRATION.equals(purpose) ? appRole(request.roleCode()) : null;
 		NexHomeAuthOtpRequest otpRequest = checkOtp(countryCode, mobileNumber, purpose, request.otp(), null);
 		NexHomeUser user = otpRequest.getUser();
 		// Checked before the OTP is consumed, so a rejected request leaves it usable
 		requireActive(user);
+		String state = roleCode == null ? null : roleState(user, roleCode);
+		if (ROLE_WITHDRAWN.equals(state)) {
+			throw new InvalidRequestException(withdrawnMessage(roleCode));
+		}
 
 		Instant now = Instant.now();
 		markVerified(otpRequest, now);
+		// Signing up in the other app with an existing account: the verified code gives it the role
+		if (ROLE_NONE.equals(state)) {
+			NexHomeRole role = roleRepository.findByCode(roleCode)
+					.filter(NexHomeRole::isActiveFlag)
+					.orElseThrow(() -> new ResourceNotFoundException("Role Not Found or Inactive"));
+			giveRole(user, role);
+			auditRecorder.record("ROLE_ASSIGNED", "USER", user.getId(), null,
+					NexHomeAuditRecorder.values("role", roleCode, "selfService", true), user.getId());
+			log.info("User ID {} signed up as {} with their existing account", user.getId(), roleCode);
+		}
 		// Both purposes prove the user owns the number, and both sign the user in
 		if (user.getAccountVerifiedDate() == null) {
 			user.setAccountVerifiedDate(now);
@@ -283,7 +313,7 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 			throw new DuplicateResourceException("An account already exists with this mobile number");
 		}
 
-		return otpRequestMapper.toAuthOtpDto(issueOtp(countryCode, mobileNumber, OtpPurpose.PHONE_CHANGE, user), null,
+		return otpRequestMapper.toAuthOtpDto(issueOtp(countryCode, mobileNumber, OtpPurpose.PHONE_CHANGE, user, null), null,
 				null);
 	}
 
@@ -312,6 +342,61 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 	}
 
 	/** Only LOGIN and REGISTRATION are verified through the public OTP endpoints. */
+	// ------------------------------------------------------------------------------------------------------------
+	// One account, both apps: a customer may sign up as a partner on the same number and the other way round
+	// ------------------------------------------------------------------------------------------------------------
+
+	private static final String ROLE_ACTIVE = "ACTIVE";
+	private static final String ROLE_WITHDRAWN = "WITHDRAWN";
+	private static final String ROLE_NONE = "NONE";
+
+	/** Whether the account holds the role: ACTIVE, WITHDRAWN (staff turned it off) or NONE (never held it). */
+	private String roleState(NexHomeUser user, String roleCode) {
+		return userRoleRepository.findByUserIdOrderByRoleIdAsc(user.getId()).stream()
+				.filter(userRole -> roleCode.equals(userRole.getRole().getCode()))
+				.findFirst()
+				.map(userRole -> userRole.isActive() && userRole.getRole().isActiveFlag() ? ROLE_ACTIVE : ROLE_WITHDRAWN)
+				.orElse(ROLE_NONE);
+	}
+
+	/** The app's role from a request: CUSTOMER, PARTNER or null. */
+	private static String appRole(String requested) {
+		if (requested == null || requested.isBlank()) {
+			return null;
+		}
+		String code = requested.trim().toUpperCase(Locale.ROOT);
+		if (!NexHomeRole.CUSTOMER.equals(code) && !NexHomeRole.PARTNER.equals(code)) {
+			throw new InvalidRequestException("Role must be CUSTOMER or PARTNER.");
+		}
+		return code;
+	}
+
+	private static String withdrawnMessage(String roleCode) {
+		return "The " + (NexHomeRole.PARTNER.equals(roleCode) ? "partner" : "customer")
+				+ " account of this number was turned off; please contact NexHome support.";
+	}
+
+	/**
+	 * Gives the account the role, as signing up does: a customer gets the empty customer profile (NHCUST id, V15), a
+	 * partner the NOT_STARTED partner profile (NHPART id, V16) and the partner staff are told.
+	 */
+	private void giveRole(NexHomeUser user, NexHomeRole role) {
+		userRoleRepository.saveAndFlush(userMapper.toUserRoleEntity(user, role, user.getId()));
+		if (NexHomeRole.CUSTOMER.equals(role.getCode()) && !customerProfileRepository.existsByUserId(user.getId())) {
+			customerProfileRepository.save(customerProfileMapper.toCustomerProfileEntity(user, user.getId()));
+		}
+		if (NexHomeRole.PARTNER.equals(role.getCode()) && !partnerProfileRepository.existsByUserId(user.getId())) {
+			com.nexhome.app.model.NexHomePartnerProfile profile = partnerProfileRepository.save(
+					partnerProfileMapper.toPartnerProfileEntity(user, user.getId()));
+			notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_PARTNER_SIGNUP, "PARTNER_MANAGE",
+					new NexHomeNotifier.Message(com.nexhome.app.model.NexHomeLookupCodes.NotificationType.ACCOUNT,
+							"New partner signed up", user.getCountryCode() + " " + user.getMobileNumber()
+									+ " signed up as a partner; onboarding has not started.",
+							NexHomeNotifier.PARTNER_PROFILE, profile.getId()),
+					user.getId());
+		}
+	}
+
 	private String validateLoginPurpose(String requested) {
 		String purpose = lookupService.validateCode(Types.OTP_PURPOSE, requested, "Purpose");
 		return switch (purpose) {
@@ -329,7 +414,8 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 	 * first, flushed before the insert because IDENTITY inserts run immediately and the one-pending index would reject
 	 * them.
 	 */
-	private NexHomeAuthOtpRequest issueOtp(String countryCode, String mobileNumber, String purpose, NexHomeUser user) {
+	private NexHomeAuthOtpRequest issueOtp(String countryCode, String mobileNumber, String purpose, NexHomeUser user,
+			String requestedFrom) {
 		Instant now = Instant.now();
 		otpRequestRepository.findFirstByCountryCodeAndMobileNumberAndPurposeOrderByCreationDateDesc(countryCode,
 				mobileNumber, purpose).ifPresent(latest -> {
@@ -344,14 +430,28 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 		otpRequestRepository.findByCountryCodeAndMobileNumberAndPurposeAndRequestStatus(countryCode, mobileNumber,
 				purpose, OtpRequestStatus.PENDING).ifPresent(previous -> {
 					previous.setRequestStatus(OtpRequestStatus.EXPIRED);
+					previous.setOtpEncrypted(null);
 					previous.setUpdatedBy(user.getId());
 					otpRequestRepository.saveAndFlush(previous);
 				});
 
-		String otp = generateOtp();
-		NexHomeAuthOtpRequest otpRequest = otpRequestRepository.save(otpRequestMapper.toAuthOtpRequestEntity(
-				countryCode, mobileNumber, purpose, user, passwordEncoder.encode(otp),
-				now.plus(Duration.ofMinutes(otpProperties.expiryMinutes())), user.getId()));
+		// Testing only (dev profile, OTP_FIXED_CODES): a number may always get the same code
+		String fixed = otpProperties.fixedCodeFor(countryCode, mobileNumber);
+		String otp = fixed != null ? fixed : generateOtp();
+		if (fixed != null) {
+			log.warn("OTP for {} {} is the fixed testing code (OTP_FIXED_CODES)", countryCode, mobileNumber);
+		}
+		NexHomeAuthOtpRequest otpRequest = otpRequestMapper.toAuthOtpRequestEntity(countryCode, mobileNumber, purpose,
+				user, passwordEncoder.encode(otp), now.plus(Duration.ofMinutes(otpProperties.expiryMinutes())),
+				user.getId());
+		otpRequest.setRequestedFrom(requestedFrom);
+		// Temporary (V61, V65): staff read login and sign-up OTPs out to people until SMS works (never a phone
+		// change's); super users' and admins' codes only super users see (getLoginOtps)
+		if (otpProperties.shareWithStaff()
+				&& (OtpPurpose.LOGIN.equals(purpose) || OtpPurpose.REGISTRATION.equals(purpose))) {
+			otpRequest.setOtpEncrypted(fieldEncryptor.encrypt(otp));
+		}
+		otpRequest = otpRequestRepository.save(otpRequest);
 
 		// By SMS (nexhome.sms.provider); a failure undoes the OTP (and a sign-up with it), so the client can retry at
 		// once: the resend wait has not started
@@ -408,6 +508,7 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 
 		if (!Instant.now().isBefore(otpRequest.getExpiresAt())) {
 			otpRequest.setRequestStatus(OtpRequestStatus.EXPIRED);
+			otpRequest.setOtpEncrypted(null);
 			otpRequest.setUpdatedBy(ownerId);
 			throw new InvalidRequestException("OTP has expired. Request a new one.");
 		}
@@ -417,6 +518,7 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 			otpRequest.setUpdatedBy(ownerId);
 			if (attempts >= otpProperties.maxAttempts()) {
 				otpRequest.setRequestStatus(OtpRequestStatus.LOCKED);
+				otpRequest.setOtpEncrypted(null);
 				log.info("OTP {} locked after {} wrong attempts", otpRequest.getId(), attempts);
 				throw new InvalidRequestException("Too many wrong attempts. Request a new OTP.");
 			}
@@ -425,8 +527,50 @@ public class NexHomeAuthServiceImpl implements NexHomeAuthService {
 		return otpRequest;
 	}
 
+	@Override
+	@Transactional(readOnly = true)
+	public com.nexhome.app.dto.NexHomePageResponse<com.nexhome.app.dto.NexHomeLoginOtpResponse> getLoginOtps(
+			Integer page, Integer size, String search) {
+		org.springframework.data.domain.PageRequest pageRequest = NexHomePaging.newestFirst(page, size);
+		String digits = search == null ? "" : search.replaceAll("\\D", "");
+		// By the app that asked: the apps' codes every viewer; console codes by rank (sharedOtpSpec)
+		NexHomeAuthOtpRequestRepository.OtpViewer viewer = permissionService.isCurrentUserSuperUser()
+				? NexHomeAuthOtpRequestRepository.OtpViewer.SUPER_USER
+				: userRoleRepository.existsByUserIdAndRoleCodeInAndActiveTrueAndRoleActiveFlagTrue(
+						permissionService.currentUserId(), List.of(NexHomeRole.ADMIN))
+								? NexHomeAuthOtpRequestRepository.OtpViewer.ADMIN
+								: NexHomeAuthOtpRequestRepository.OtpViewer.OTHER;
+		org.springframework.data.domain.Page<NexHomeAuthOtpRequest> otps = otpRequestRepository.findAll(
+				NexHomeAuthOtpRequestRepository.sharedOtpSpec(digits.isEmpty() ? null : digits, viewer), pageRequest);
+
+		// Each account's active roles, one query for the page
+		java.util.Map<Long, List<String>> roles = new java.util.HashMap<>();
+		List<Long> userIds = otps.getContent().stream().map(otp -> otp.getUser().getId()).distinct().toList();
+		if (!userIds.isEmpty()) {
+			userRoleRepository.findWithRoleByUserIdIn(userIds).stream()
+					.filter(userRole -> userRole.isActive() && userRole.getRole().isActiveFlag())
+					.forEach(userRole -> roles
+							.computeIfAbsent(userRole.getUser().getId(), id -> new java.util.ArrayList<>())
+							.add(userRole.getRole().getCode()));
+		}
+		Instant now = Instant.now();
+		List<com.nexhome.app.dto.NexHomeLoginOtpResponse> content = otps.getContent().stream().map(otp -> {
+			boolean pending = OtpRequestStatus.PENDING.equals(otp.getRequestStatus());
+			boolean usable = pending && now.isBefore(otp.getExpiresAt());
+			String status = pending && !usable ? OtpRequestStatus.EXPIRED : otp.getRequestStatus();
+			String code = usable && otp.getOtpEncrypted() != null ? fieldEncryptor.decrypt(otp.getOtpEncrypted())
+					: null;
+			return new com.nexhome.app.dto.NexHomeLoginOtpResponse(otp.getId(), otp.getUser().getId(),
+					roles.getOrDefault(otp.getUser().getId(), List.of()), otp.getRequestedFrom(), otp.getCountryCode(),
+					otp.getMobileNumber(),
+					otp.getPurpose(), status, code, otp.getCreationDate(), otp.getExpiresAt(), otp.getVerifiedAt());
+		}).toList();
+		return NexHomePaging.toPageResponse(pageRequest, otps, content);
+	}
+
 	private static void markVerified(NexHomeAuthOtpRequest otpRequest, Instant now) {
 		otpRequest.setRequestStatus(OtpRequestStatus.VERIFIED);
+		otpRequest.setOtpEncrypted(null);
 		otpRequest.setVerifiedAt(now);
 		otpRequest.setUpdatedBy(otpRequest.getUser().getId());
 	}

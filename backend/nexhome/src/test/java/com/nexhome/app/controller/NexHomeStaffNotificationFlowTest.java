@@ -105,7 +105,7 @@ class NexHomeStaffNotificationFlowTest {
 		perform(get("/api/settings/public"), null, null)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.WHATSAPP_NUMBER").isNotEmpty())
-				.andExpect(jsonPath("$.TRANSACTION_FEE_PERCENTAGE").isNotEmpty())
+				.andExpect(jsonPath("$.TRANSACTION_FEE_PERCENTAGE").doesNotExist())
 				.andExpect(jsonPath("$.MAX_CART_ITEMS").doesNotExist());
 		perform(get("/api/settings"), accessToken(newUser("CUSTOMER").getId()), null)
 				.andExpect(status().isForbidden());
@@ -166,7 +166,7 @@ class NexHomeStaffNotificationFlowTest {
 				.andExpect(jsonPath("$.content[0].title").value("New partner signed up"))
 				.andExpect(jsonPath("$.content[0].message").value(Matchers.containsString(mobile)))
 				.andExpect(jsonPath("$.content[0].referenceType").value("PARTNER_PROFILE"))
-				.andExpect(jsonPath("$.content[0].priority").value("NORMAL"));
+				.andExpect(jsonPath("$.content[0].priority").value("MEDIUM"));
 
 		// Changes requested, then submitted again: "resubmitted"
 		long partnerId = submittedPartner(newUser("PARTNER"));
@@ -313,11 +313,11 @@ class NexHomeStaffNotificationFlowTest {
 				.andExpect(jsonPath("$.content[0].referenceId").value(urgentId))
 				.andExpect(jsonPath("$.content[0].priority").value("HIGH"));
 
-		// Opened normally (NORMAL), then raised to High (HIGH)
+		// Opened normally (MEDIUM), then raised to High (HIGH)
 		long ticketId = json(perform(post("/api/support/tickets/create"), customer, """
 				{"category": "ACCOUNT", "subject": "Cannot change my email", "description": "It fails"}""")
 				.andExpect(status().isCreated())).get("supportTicketId").asLong();
-		latest("SUPPORT").andExpect(jsonPath("$.content[0].priority").value("NORMAL"));
+		latest("SUPPORT").andExpect(jsonPath("$.content[0].priority").value("MEDIUM"));
 		perform(put("/api/support/tickets/update"), staff,
 				"{\"supportTicketId\": %d, \"priority\": \"HIGH\"}".formatted(ticketId))
 				.andExpect(status().isOk());

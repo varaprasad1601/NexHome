@@ -55,6 +55,14 @@ export const NOTIFICATION_STYLES = {
   ACCOUNT: { icon: ShieldCheck, tile: 'bg-[#FDECEC] text-[#C53030]' },
   ANNOUNCEMENT: { icon: Megaphone, tile: 'bg-[#E8EEF6] text-[var(--navy)]' }
 };
+/** Notification priorities (V64): HIGH red, MEDIUM amber, LOW grey; the tag and the send form's options. */
+export const NOTIFICATION_PRIORITIES = {
+  HIGH: { label: 'High', tag: 'bg-[#FDECEC] text-[#C53030]' },
+  MEDIUM: { label: 'Medium', tag: 'bg-[#FFF7DE] text-[#B7860B]' },
+  LOW: { label: 'Low', tag: 'bg-[#F1F4F8] text-[#5B6B7F]' }
+};
+export const notificationPriority = (code) => NOTIFICATION_PRIORITIES[code] ?? NOTIFICATION_PRIORITIES.MEDIUM;
+
 export const notificationStyle = (type) => NOTIFICATION_STYLES[type] ?? { icon: Bell, tile: GREY };
 
 /** The console page a notification is about (null when it is about nothing in particular). */

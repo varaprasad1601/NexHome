@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Alert, View } from 'react-native';
 
 import { useAuth } from '../context/AuthProvider';
 import { colors } from '../theme';
@@ -11,7 +11,9 @@ import { Button, Card, ErrorBox, Field, Tag, Text } from './ui';
 /**
  * A job offered or assigned to the partner, with Accept / Decline (a reason): PUT /api/bookings/assignments/respond.
  * The offer itself carries only the booking id, so the card loads the booking (GET /api/bookings/{id}) for the
- * service, time, area and amount. `onDone` runs after an answer; `inJob` when shown on the job's own page.
+ * service, time, area and amount. `onDone` runs after an answer; `inJob` when shown on the job's own page. Declining
+ * asks for a reason and a confirmation; declined from the job's page, the partner goes to Home (the job is no longer
+ * theirs).
  */
 export default function OfferCard({ assignment, onDone, inJob }) {
   const { authRequest } = useAuth();
@@ -41,12 +43,26 @@ export default function OfferCard({ assignment, onDone, inJob }) {
       });
       onDone?.(accept);
       if (accept && !inJob) router.push(`/job/${assignment.bookingId}`);
+      // Declined on the job's own page: nothing more to do there, so Home
+      if (!accept && inJob) router.replace('/(tabs)');
     } catch (err) {
       setError(err.message);
       onDone?.(null);
     } finally {
       setBusy(false);
     }
+  };
+
+  // Declining is final: the reason first, then a confirmation
+  const confirmDecline = () => {
+    if (!reason.trim()) {
+      setError('Tell NexHome why you cannot take it.');
+      return;
+    }
+    Alert.alert('Decline this job?', 'NexHome will give it to another partner. You cannot take it back.', [
+      { text: 'Keep it', style: 'cancel' },
+      { text: 'Decline', style: 'destructive', onPress: () => respond(false) }
+    ]);
   };
 
   const area = [booking?.address?.addressLine2, booking?.address?.city].filter(Boolean).join(', ');
@@ -86,7 +102,7 @@ export default function OfferCard({ assignment, onDone, inJob }) {
         {declining ? (
           <>
             <Button title="Back" variant="secondary" onPress={() => setDeclining(false)} style={{ flex: 1 }} />
-            <Button title="Decline" variant="danger" onPress={() => respond(false)} loading={busy} style={{ flex: 1 }} />
+            <Button title="Decline" variant="danger" onPress={confirmDecline} loading={busy} style={{ flex: 1 }} />
           </>
         ) : (
           <>

@@ -155,6 +155,11 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 		String audience = request.audience().trim().toUpperCase();
 		String type = NexHomeText.trimToNull(request.notificationType()) == null ? NotificationType.ANNOUNCEMENT
 				: lookupService.validateCode(Types.NOTIFICATION_TYPE, request.notificationType(), "Notification type");
+		String priority = NexHomeText.trimToNull(request.priority()) == null ? NexHomeNotifier.MEDIUM
+				: request.priority().trim().toUpperCase();
+		if (!NexHomeNotifier.PRIORITIES.contains(priority)) {
+			throw new InvalidRequestException("Priority must be one of: HIGH, MEDIUM, LOW.");
+		}
 		List<Long> recipients;
 		if (USER.equals(audience)) {
 			if (request.userId() == null) {
@@ -173,12 +178,13 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 		}
 		// Staff sending to their own group get it too: only the sender is left out of a group
 		List<NexHomeNotification> sent = notifier.notifyAll(recipients, new NexHomeNotifier.Message(type,
-				request.title().trim(), request.message().trim(), null, null).forApp(SENT_TO.getOrDefault(audience,
-						NexHomeNotifier.ALL)), actingUserId);
+				request.title().trim(), request.message().trim(), null, null).withPriority(priority)
+				.forApp(SENT_TO.getOrDefault(audience, NexHomeNotifier.ALL)), actingUserId);
 		Map<String, Object> details = new LinkedHashMap<>();
 		details.put("audience", audience);
 		details.put("userId", request.userId());
 		details.put("notificationType", type);
+		details.put("priority", priority);
 		details.put("title", request.title().trim());
 		details.put("recipients", sent.size());
 		auditRecorder.record("NOTIFICATION_SENT", "NOTIFICATION", audience, null, details, actingUserId);

@@ -57,7 +57,7 @@ export default function Login() {
       } else {
         await apiRequest('/api/auth/otp/request', {
           method: 'POST',
-          body: { countryCode: '+91', mobileNumber: digits, purpose: 'LOGIN' }
+          body: { countryCode: '+91', mobileNumber: digits, purpose: 'LOGIN', roleCode: 'PARTNER' }
         });
         goToCode('LOGIN');
       }

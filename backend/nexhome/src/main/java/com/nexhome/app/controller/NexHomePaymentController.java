@@ -54,12 +54,59 @@ public class NexHomePaymentController {
 		return paymentService.capture(request);
 	}
 
-	/** Public: the provider signs the body (header X-NexHome-Signature: hex HMAC-SHA256). */
+	/**
+	 * Public: the provider signs the body (MANUAL: X-NexHome-Signature, hex HMAC-SHA256; CASHFREE:
+	 * x-webhook-signature over x-webhook-timestamp + body).
+	 */
 	@PostMapping("/webhooks/{provider}")
 	public NexHomeWebhookEventResponse receiveWebhook(@PathVariable String provider,
-			@RequestHeader(name = "X-NexHome-Signature", required = false) String signature,
-			@RequestBody String body) {
-		return paymentService.receiveWebhook(provider, signature, body);
+			@RequestHeader java.util.Map<String, String> headers, @RequestBody String body) {
+		java.util.Map<String, String> lower = new java.util.HashMap<>();
+		headers.forEach((name, value) -> lower.put(name.toLowerCase(java.util.Locale.ROOT), value));
+		return paymentService.receiveWebhook(provider, lower, body);
+	}
+
+	/** Staff: one order with its bookings, every gateway attempt (success, failed, pending, ...) and payments. */
+	@GetMapping("/orders/{paymentOrderId}")
+	@org.springframework.security.access.prepost.PreAuthorize("@permissions.can('PAYMENT_MANAGE', 'READ')")
+	public com.nexhome.app.dto.NexHomePaymentOrderDetailResponse getOrder(@PathVariable Long paymentOrderId) {
+		return paymentService.getOrder(paymentOrderId);
+	}
+
+	/** Staff: fetch the order's attempts from the gateway again (and capture it if it was paid). */
+	@PostMapping("/orders/sync")
+	@org.springframework.security.access.prepost.PreAuthorize("@permissions.can('PAYMENT_MANAGE', 'WRITE')")
+	public com.nexhome.app.dto.NexHomePaymentOrderDetailResponse syncOrder(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomePaymentOrderVerifyRequest request) {
+		return paymentService.syncOrder(request.paymentOrderId());
+	}
+
+	/** The customer (or staff): asks the gateway whether the order was paid, and captures it if so. */
+	@PostMapping("/orders/verify")
+	public NexHomePaymentOrderResponse verifyOrder(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomePaymentOrderVerifyRequest request) {
+		return paymentService.verifyOrder(request.paymentOrderId());
+	}
+
+	/** Public: the hosted payment page the customer app opens (Cashfree checkout), then back to the app. */
+	@GetMapping(value = "/checkout", produces = org.springframework.http.MediaType.TEXT_HTML_VALUE)
+	public String checkoutPage(@org.springframework.web.bind.annotation.RequestParam String session,
+			@org.springframework.web.bind.annotation.RequestParam("return") String returnUrl) {
+		return paymentService.checkoutPage(session, returnUrl);
+	}
+
+	/** The booking's customer, its partner or staff: has its online payment come in? (asks the gateway) */
+	@PostMapping("/bookings/check")
+	public com.nexhome.app.dto.NexHomeBookingPaymentStatusResponse checkBookingPayment(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomeBookingPaymentCheckRequest request) {
+		return paymentService.checkBookingPayment(request.bookingId());
+	}
+
+	/** The partner (or staff): the online payment did not go through, so the partner collected cash instead. */
+	@PostMapping("/bookings/collect-cash")
+	public com.nexhome.app.dto.NexHomeBookingPaymentStatusResponse collectCashInstead(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomeCollectCashRequest request) {
+		return paymentService.collectCashInstead(request);
 	}
 
 	@GetMapping("/bookings/{bookingId}")
@@ -78,8 +125,9 @@ public class NexHomePaymentController {
 	@GetMapping("/orders")
 	@PreAuthorize("@permissions.can('PAYMENT_MANAGE', 'READ')")
 	public NexHomePageResponse<NexHomePaymentOrderResponse> getOrders(@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
-		return paymentService.getOrders(page, size);
+			@RequestParam(required = false) Integer size, @RequestParam(required = false) String status,
+			@RequestParam(required = false) String search) {
+		return paymentService.getOrders(page, size, status, search);
 	}
 
 	@GetMapping("/stats")
@@ -106,8 +154,8 @@ public class NexHomePaymentController {
 	@PreAuthorize("@permissions.can('PAYMENT_MANAGE', 'READ')")
 	public NexHomePageResponse<NexHomeCashCollectionResponse> getCashCollections(
 			@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer size,
-			@RequestParam(required = false) String status) {
-		return paymentService.getCashCollections(page, size, status);
+			@RequestParam(required = false) String status, @RequestParam(required = false) String search) {
+		return paymentService.getCashCollections(page, size, status, search);
 	}
 
 	@PutMapping("/cash-collections/update")

@@ -128,17 +128,14 @@ class NexHomeBookingCreator {
 		booking.setScheduledEndAt(start == null ? null : start.plus(Duration.ofMinutes(duration)));
 		booking.setServiceNameSnapshot(truncate(itemName, 150));
 		booking.setAddressSnapshot(bookingMapper.toAddressSnapshot(address));
-		// Online payments carry the gateway's fee (V35), at the rate of the day, kept with the booking
-		BigDecimal feePercentage = cash ? BigDecimal.ZERO : onlineFeePercentage();
-		BigDecimal fee = feeOf(quote.total(), feePercentage);
-		Map<String, Object> pricing = pricingOf(quote, variant);
-		pricing.put("transactionFeePercentage", feePercentage);
-		booking.setPricingSnapshot(bookingMapper.toJson(pricing));
+		// No online payment fee any more (V68): the customer pays the price; what the gateway takes is recorded with
+		// the payment. transaction_fee_amount stays for the bookings that paid the old fee (V35).
+		booking.setPricingSnapshot(bookingMapper.toJson(pricingOf(quote, variant)));
 		booking.setSubtotalAmount(quote.regularSubtotal());
 		booking.setDiscountAmount(discount);
 		booking.setTaxAmount(BigDecimal.ZERO);
-		booking.setTransactionFeeAmount(fee);
-		booking.setTotalAmount(quote.total().add(fee));
+		booking.setTransactionFeeAmount(BigDecimal.ZERO);
+		booking.setTotalAmount(quote.total());
 		booking.setCreatedBy(actingUserId);
 		booking.setUpdatedBy(actingUserId);
 		booking = bookingRepository.save(booking);
@@ -185,14 +182,10 @@ class NexHomeBookingCreator {
 	}
 
 	/** The quote as the booking's pricing snapshot. */
-	/** The online payment fee's rate (general setting TRANSACTION_FEE_PERCENTAGE, V49; 0 turns it off). */
-	BigDecimal onlineFeePercentage() {
-		BigDecimal percentage = settingsService.decimalValue(NexHomeSettingsService.Keys.TRANSACTION_FEE_PERCENTAGE);
-		return percentage.signum() > 0 && percentage.compareTo(BigDecimal.valueOf(100)) <= 0 ? percentage
-				: BigDecimal.ZERO;
-	}
-
-	/** The fee on an amount at a percentage, to the paisa (HALF_UP). */
+	/**
+	 * The fee on an amount at a percentage, to the paisa (HALF_UP): the online payment fee of bookings made before
+	 * V68, worked out again when an hourly one is re-priced.
+	 */
 	static BigDecimal feeOf(BigDecimal amount, BigDecimal percentage) {
 		return percentage == null || percentage.signum() <= 0 ? BigDecimal.ZERO
 				: amount.multiply(percentage).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);

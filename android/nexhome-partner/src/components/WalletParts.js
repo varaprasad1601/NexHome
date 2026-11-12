@@ -1,19 +1,18 @@
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
 import { View } from 'react-native';
 
 import { colors } from '../theme';
-import { dayLabel, money, serviceNameOf } from '../utils/format';
-import { Card, SectionTitle, Text } from './ui';
+import { money } from '../utils/format';
+import { Card, Text } from './ui';
 
 /**
- * The wallet's pieces (Earnings > Wallet and a payout's page): the green "NexHome pays you" card, the cash and
- * online cards with their commission, how the amount is worked out, and the jobs. Online jobs: NexHome received the
- * money and owes the partner it less commission; cash jobs: the partner kept the cash and owes its commission.
+ * The wallet's pieces (Earnings > Wallet): the green "NexHome owes you" card, the cash and online cards with their
+ * commission, and how the amount is worked out. Partners hand the cash of cash jobs to NexHome, so NexHome
+ * owes them every job (cash and online) less its commission, less what it has already paid them.
  */
 
-/** The amount on a green card (amber when the partner owes NexHome). */
+/** The amount on a green card (amber for `owe`, e.g. paid in advance). */
 export function PayHero({ label, amount, note, footer, owe }) {
   return (
     <LinearGradient
@@ -38,32 +37,32 @@ export function PayHero({ label, amount, note, footer, owe }) {
   );
 }
 
-function MoneyCard({ cash, jobs, amount, commission, note }) {
+function MoneyCard({ cash, amount, commission, note }) {
   return (
     <View style={{ flex: 1, borderRadius: 16, padding: 13, gap: 3, backgroundColor: cash ? colors.amberSoft : colors.blueTint }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
         <Feather name={cash ? 'dollar-sign' : 'credit-card'} size={13} color={cash ? colors.amber : colors.blue} />
         <Text weight="extrabold" style={{ fontSize: 12, color: colors.ink }}>
-          {cash ? 'Cash' : 'Online'} · {jobs} {jobs === 1 ? 'job' : 'jobs'}
+          {cash ? 'Cash' : 'Online'}
         </Text>
       </View>
       <Text weight="extrabold" style={{ fontSize: 20, color: colors.navy }}>
         {money(amount)}
       </Text>
       <Text style={{ fontSize: 11.5, color: colors.muted }}>{note}</Text>
-      <Text weight="bold" style={{ fontSize: 11.5, color: cash ? colors.red : colors.blue }}>
+      <Text weight="bold" style={{ fontSize: 11.5, color: colors.red }}>
         Commission {money(commission)}
       </Text>
     </View>
   );
 }
 
-/** Cash and online side by side; `paid` words them for a payout already made. */
-export function CashOnlineCards({ data, paid }) {
+/** Cash and online side by side. */
+export function CashOnlineCards({ data }) {
   return (
     <View style={{ flexDirection: 'row', gap: 10 }}>
-      <MoneyCard cash jobs={data.cashJobs} amount={data.cashAmount} commission={data.cashCommission} note="You kept it" />
-      <MoneyCard jobs={data.onlineJobs} amount={data.onlineAmount} commission={data.onlineCommission} note={paid ? 'NexHome received it' : 'NexHome holds it'} />
+      <MoneyCard cash amount={data.cashAmount} commission={data.cashCommission} note="Handed to NexHome" />
+      <MoneyCard amount={data.onlineAmount} commission={data.onlineCommission} note="NexHome received it" />
     </View>
   );
 }
@@ -81,55 +80,29 @@ function Line({ label, value, tone, strong }) {
   );
 }
 
-/** Online after commission (and adjustments), less the commission on cash, = the amount. */
-export function HowWorkedOut({ data, total, label }) {
+/**
+ * The cash and the online amount, each less its commission (and adjustments) = earned, less what NexHome paid and
+ * deducted (penalties, damage, ...) = what NexHome owes.
+ */
+export function HowWorkedOut({ data }) {
   const adjustments = Number(data.adjustmentsAmount || 0);
+  const balance = Number(data.balance);
   return (
     <Card style={{ gap: 9 }}>
       <Text weight="extrabold" style={{ color: colors.navy, fontSize: 14 }}>
         How it is worked out
       </Text>
-      <Line label="Online jobs" value={money(data.onlineAmount)} />
-      <Line label="Commission on online jobs" value={`− ${money(data.onlineCommission)}`} tone="red" />
+      <Line label="Cash collected" value={money(data.cashAmount)} />
+      <Line label="Commission on cash" value={`− ${money(data.cashCommission)}`} tone="red" />
+      <Line label="Online payments" value={`+ ${money(data.onlineAmount)}`} />
+      <Line label="Commission on online" value={`− ${money(data.onlineCommission)}`} tone="red" />
       {adjustments ? <Line label="Adjustments" value={`${adjustments > 0 ? '+' : '−'} ${money(Math.abs(adjustments))}`} tone={adjustments < 0 ? 'red' : undefined} /> : null}
-      <Line label="Commission on your cash jobs" value={`− ${money(data.cashCommission)}`} tone="red" />
       <View style={{ height: 1, backgroundColor: colors.line }} />
-      <Line label={label} value={money(Math.abs(Number(total)))} strong />
+      <Line label="You earned" value={money(data.totalEarned)} strong />
+      <Line label="Paid by NexHome" value={`− ${money(data.paidTotal)}`} tone="red" />
+      {Number(data.deductedTotal || 0) > 0 ? <Line label="Deducted by NexHome" value={`− ${money(data.deductedTotal)}`} tone="red" /> : null}
+      <View style={{ height: 1, backgroundColor: colors.line }} />
+      <Line label={balance < 0 ? 'Paid in advance' : 'NexHome owes you'} value={money(Math.abs(balance))} strong />
     </Card>
-  );
-}
-
-/** Each job with its method, commission and what it does to the payout (online +, cash −). */
-export function WalletJobs({ items, title }) {
-  if (!items?.length) return null;
-  return (
-    <>
-      <SectionTitle>{title}</SectionTitle>
-      {items.map((item) => {
-        const cash = item.paymentMethod === 'CASH';
-        return (
-          <Card key={`${item.paymentMethod}-${item.bookingId}`} onPress={() => router.push(`/job/${item.bookingId}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
-            <View style={{ width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: cash ? colors.amberSoft : colors.blueTint }}>
-              <Feather name={cash ? 'dollar-sign' : 'credit-card'} size={16} color={cash ? colors.amber : colors.blue} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text weight="bold" numberOfLines={1}>
-                {serviceNameOf(item.serviceName)}
-              </Text>
-              <Text style={{ fontSize: 12, color: colors.muted }} numberOfLines={1}>
-                {item.bookingPublicId}
-                {item.completedAt ? ` · ${dayLabel(item.completedAt)}` : ''}
-              </Text>
-              <Text style={{ fontSize: 12, color: colors.muted }}>
-                {cash ? 'Cash' : 'Online'} {money(item.amount)} · commission {money(item.commission)}
-              </Text>
-            </View>
-            <Text weight="extrabold" style={{ fontSize: 14, color: cash ? colors.red : colors.greenDark }}>
-              {cash ? `− ${money(item.commission)}` : `+ ${money(item.effect)}`}
-            </Text>
-          </Card>
-        );
-      })}
-    </>
   );
 }

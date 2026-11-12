@@ -536,7 +536,7 @@ export default function PartnerProfilePage() {
         : dialog.kind === 'document'
           ? documentDialog(dialog.item, values, dialog.documentKind ?? dialog.item?.documentType)
           : dialog.kind === 'bank'
-            ? bankDialog(dialog.item)
+            ? bankDialog(dialog.item, profile?.onboardingStatus)
             : null;
   // Until approval PARTNER_ONBOARDING_MANAGE (sub-admins too) may change the partner; afterwards only those with
   // PARTNER_APPROVED_EDIT (admins, V25), as the backend checks
@@ -1099,7 +1099,7 @@ export default function PartnerProfilePage() {
                     key={bank.partnerBankAccountId}
                     icon={Banknote}
                     onEdit={canEdit ? open('bank', bank) : undefined}
-                    title={`${bank.bankName ?? 'Bank account'} · XXXX${bank.accountNumberLast4}`}
+                    title={`${bank.bankName ?? 'Bank account'} · ${bank.accountNumber ?? `XXXX${bank.accountNumberLast4}`}`}
                     details={[
                       bank.accountHolderName,
                       `IFSC ${bank.ifscCode}`,
@@ -1201,7 +1201,7 @@ export default function PartnerProfilePage() {
           )}
 
           {tab === 'earnings' && can('PAYOUT_MANAGE', 'READ') ? (
-            <PartnerEarnings partnerProfileId={profile.partnerProfileId} />
+            <PartnerEarnings partnerProfileId={profile.partnerProfileId} partnerPublicId={profile.publicId} partnerName={name || null} />
           ) : tab === 'reviews' && can('REVIEW_MANAGE', 'READ') ? (
             <ProfileReviews of="partner" profileId={profile.partnerProfileId} />
           ) : tab === 'jobs' && can('BOOKING_MANAGE', 'READ') ? (

@@ -28,7 +28,8 @@ export const ADMIN_NAV = [
       { label: 'Manage Admins', to: '/admin/users/admins', fn: 'ADMIN_MANAGE' },
       { label: 'Manage Sub Admins', to: '/admin/users/sub-admins', fn: 'SUB_ADMIN_MANAGE' },
       { label: 'Manage Customers', to: '/admin/users/customers', fn: 'CUSTOMER_MANAGE' },
-      { label: 'Manage Partners', to: '/admin/users/partners', fn: 'PARTNER_MANAGE' }
+      { label: 'Manage Partners', to: '/admin/users/partners', fn: 'PARTNER_MANAGE' },
+      { label: 'Login OTPs', to: '/admin/users/login-otps', fn: 'LOGIN_OTP_VIEW' }
     ]
   },
   {
@@ -53,7 +54,6 @@ export const ADMIN_NAV = [
     items: [
       { label: 'Customer Payments', to: '/admin/payments/customers', fn: 'PAYMENT_MANAGE' },
       { label: 'Partner Payouts', to: '/admin/payments/payouts', fn: 'PAYOUT_MANAGE' },
-      { label: 'Transactions', to: '/admin/payments/transactions', fn: ['PAYMENT_MANAGE', 'PAYOUT_MANAGE'] },
       { label: 'Refunds', to: '/admin/payments/refunds', fn: 'PAYMENT_MANAGE' }
     ]
   },
@@ -92,7 +92,8 @@ export const ADMIN_NAV = [
       { label: 'Manage Roles', to: '/admin/system/roles', fn: 'ROLE_MANAGE' },
       { label: 'Manage Functions', to: '/admin/system/functions', fn: 'FUNCTION_MANAGE' },
       { label: 'Manage Lookups', to: '/admin/system/lookups', fn: 'LOOKUP_MANAGE' },
-      { label: 'Audit Logs', to: '/admin/system/audit-logs', fn: 'AUDIT_LOG_VIEW' }
+      { label: 'Audit Logs', to: '/admin/system/audit-logs', fn: 'AUDIT_LOG_VIEW' },
+      { label: 'Login OTPs', to: '/admin/system/login-otps', fn: 'LOGIN_OTP_VIEW' }
     ]
   },
   {

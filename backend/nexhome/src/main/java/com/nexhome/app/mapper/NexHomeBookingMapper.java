@@ -86,6 +86,8 @@ public class NexHomeBookingMapper {
 				booking.getTaxAmount(),
 				booking.getTransactionFeeAmount(),
 				booking.getTotalAmount(),
+				booking.getGatewayServiceCharge(),
+				booking.getGatewayServiceTax(),
 				booking.getCurrency(),
 				booking.getCancellationReason(),
 				booking.getCreationDate(),
@@ -93,7 +95,9 @@ public class NexHomeBookingMapper {
 				cancelledAt,
 				cancelledByRole,
 				cancelledByName,
-				startOtp);
+				startOtp,
+				booking.getCompletionRequestedAt(),
+				booking.getCompletionConfirmedAt());
 	}
 
 	/** "+91 9876543210", as staff screens show numbers. */

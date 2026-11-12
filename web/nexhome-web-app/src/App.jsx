@@ -21,13 +21,14 @@ import BookingsPage from './pages/admin/BookingsPage';
 import PaymentsPage from './pages/admin/PaymentsPage';
 import PayoutsPage from './pages/admin/PayoutsPage';
 import RefundsPage from './pages/admin/RefundsPage';
-import TransactionsPage from './pages/admin/TransactionsPage';
+import PaymentOrderPage from './pages/admin/PaymentOrderPage';
 import PartnerOnboardPage from './pages/admin/PartnerOnboardPage';
 import PartnerProfilePage from './pages/admin/PartnerProfilePage';
 import PartnersPage from './pages/admin/PartnersPage';
 import FunctionsPage from './pages/admin/FunctionsPage';
 import LookupsPage from './pages/admin/LookupsPage';
 import AuditLogsPage from './pages/admin/AuditLogsPage';
+import LoginOtpsPage from './pages/admin/LoginOtpsPage';
 import NotificationsPage from './pages/admin/NotificationsPage';
 import GeneralSettingsPage from './pages/admin/GeneralSettingsPage';
 import PoliciesFaqsPage from './pages/admin/PoliciesFaqsPage';
@@ -84,6 +85,7 @@ export default function App() {
               <Route path="users/super-admins" element={<AdminsPage key="super-admins" variant="superAdmins" />} />
               <Route path="users/sub-admins" element={<AdminsPage key="sub-admins" variant="subAdmins" />} />
               <Route path="users/customers" element={<CustomersPage />} />
+              <Route path="users/login-otps" element={<LoginOtpsPage />} />
               <Route path="users/customers/:customerProfileId" element={<CustomerProfilePage />} />
               <Route path="users/partners" element={<PartnersPage />} />
               <Route path="users/partners/onboarding" element={<OnboardRequestsPage />} />
@@ -107,8 +109,8 @@ export default function App() {
               <Route path="services/:serviceId/edit" element={<ServiceEditorPage key="edit" />} />
               <Route path="bookings" element={<BookingsPage />} />
               <Route path="payments/customers" element={<PaymentsPage />} />
+              <Route path="payments/customers/orders/:paymentOrderId" element={<PaymentOrderPage />} />
               <Route path="payments/payouts" element={<PayoutsPage />} />
-              <Route path="payments/transactions" element={<TransactionsPage />} />
               <Route path="payments/refunds" element={<RefundsPage />} />
               <Route path="bookings/availability" element={<PartnerAvailabilityPage />} />
               <Route path="bookings/:bookingId" element={<BookingDetailPage />} />
@@ -118,6 +120,7 @@ export default function App() {
               <Route path="system/lookups" element={<LookupsPage />} />
               <Route path="system/lookups/:lookupTypeId" element={<LookupTypePage />} />
               <Route path="system/audit-logs" element={<AuditLogsPage />} />
+              <Route path="system/login-otps" element={<LoginOtpsPage />} />
               <Route path="reviews" element={<ReviewsPage />} />
               {/* Support tickets: Coming soon for now. To bring them back, restore the imports above and use:
               <Route path="support" element={<SupportTicketsPage />} />

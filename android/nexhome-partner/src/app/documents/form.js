@@ -42,7 +42,7 @@ export default function DocumentForm() {
         const doc = list.find((d) => String(d.partnerDocumentId) === String(documentId));
         if (!doc) return;
         setExisting(doc);
-        setForm({ idType: doc.idType, documentName: doc.documentName ?? '', documentNumber: '', expiryDate: doc.expiryDate ?? '' });
+        setForm({ idType: doc.idType, documentName: doc.documentName ?? '', documentNumber: doc.fullDocumentNumber ?? '', expiryDate: doc.expiryDate ?? '' });
       })
       .catch((err) => setError(err.message));
   }, [documentId, profile, authRequest]);
@@ -65,7 +65,7 @@ export default function DocumentForm() {
     if (!isId && !form.documentName.trim()) found.documentName = 'Enter the certificate’s name';
     const number = form.documentNumber.trim();
     if (number && !/^[A-Za-z0-9][A-Za-z0-9 /-]{2,28}[A-Za-z0-9]$/.test(number)) found.documentNumber = '4 to 30 letters, digits, spaces, / or -';
-    if (isId && !number && !existing) found.documentNumber = 'Enter the ID number';
+    if (isId && !number && (!existing || existing.fullDocumentNumber)) found.documentNumber = 'Enter the ID number';
     if (form.expiryDate && (!isIsoDate(form.expiryDate) || form.expiryDate < todayInIndia())) found.expiryDate = 'Enter a date from today on, as YYYY-MM-DD';
     if (!file && !existing) found.file = 'Add a photo or scan of the document';
     setErrors(found);
@@ -77,7 +77,9 @@ export default function DocumentForm() {
       try {
         const uploaded = file ? await uploadFile(authRequest, file, 'PARTNER_DOCUMENT') : null;
         const body = {
-          documentNumber: number || undefined,
+          // Sent only when new or changed: an unchanged number is not a change (for an approved partner a changed
+          // government ID means a new review)
+          documentNumber: number && number.toUpperCase() !== (existing?.fullDocumentNumber ?? '').toUpperCase() ? number : undefined,
           expiryDate: form.expiryDate || undefined,
           ...(isId ? { idType: form.idType } : { documentName: form.documentName.trim() }),
           ...(uploaded ? { fileId: uploaded.fileId } : {})
@@ -138,7 +140,7 @@ export default function DocumentForm() {
             <Field label="Certificate name" value={form.documentName} onChangeText={set('documentName')} error={errors.documentName} placeholder="e.g. ITI Electrician" maxLength={150} />
           )}
           <Field
-            label={existing ? `Number (saved: ${existing.documentNumber ?? 'none'}; type it only to change it)` : isId ? 'ID number' : 'Certificate number (optional)'}
+            label={isId ? 'ID number' : 'Certificate number (optional)'}
             value={form.documentNumber}
             onChangeText={set('documentNumber')}
             error={errors.documentNumber}

@@ -117,11 +117,12 @@ class NexHomeAuthServiceImplTest {
 				userRoleRepository, roleRepository, lookupService, permissionService, mock(NexHomeAuditRecorder.class),
 				new NexHomeAuthOtpRequestMapper(),
 				new NexHomeAuthRefreshTokenMapper(), new NexHomeUserMapper(), passwordEncoder,
-				new NimbusJwtEncoder(new ImmutableSecret<>(KEY)), new NexHomeOtpProperties(6, 5, 3, 60, false),
+				new NimbusJwtEncoder(new ImmutableSecret<>(KEY)), new NexHomeOtpProperties(6, 5, 3, 60, false, false, "+919999999999:221916"),
 				new NexHomeSecurityProperties("unused", "nexhome", 15, 30, List.of(), "unused"),
 				customerProfileRepository, new NexHomeCustomerProfileMapper(), mock(NexHomePartnerProfileRepository.class),
 				mock(NexHomePartnerProfileMapper.class), smsSender, mock(NexHomeNotifier.class),
-				mock(com.nexhome.app.repository.NexHomeNotificationDeliveryLogRepository.class));
+				mock(com.nexhome.app.repository.NexHomeNotificationDeliveryLogRepository.class),
+				mock(com.nexhome.app.config.NexHomeFieldEncryptor.class));
 	}
 
 	@Test
@@ -137,6 +138,23 @@ class NexHomeAuthServiceImplTest {
 		verify(otpRequestRepository).save(saved.capture());
 		assertThat(otp.getValue()).matches("\\d{6}");
 		assertThat(passwordEncoder.matches(otp.getValue(), saved.getValue().getOtpHash())).isTrue();
+	}
+
+	@Test
+	void aFixedTestingNumberAlwaysGetsItsCode() {
+		NexHomeUser user = new NexHomeUserMapper().toUserEntity(CC, "9999999999", null, null, 1L);
+		user.setId(11L);
+		when(userRepository.findByCountryCodeAndMobileNumber(CC, "9999999999")).thenReturn(Optional.of(user));
+
+		authService.requestOtp(new NexHomeAuthOtpCreateRequest(CC, "9999999999", "LOGIN"));
+
+		verify(smsSender).sendOtp(eq(CC), eq("9999999999"), eq("221916"));
+		ArgumentCaptor<NexHomeAuthOtpRequest> saved = ArgumentCaptor.forClass(NexHomeAuthOtpRequest.class);
+		verify(otpRequestRepository).save(saved.capture());
+		assertThat(passwordEncoder.matches("221916", saved.getValue().getOtpHash())).isTrue();
+		// Any other number still gets a random code
+		assertThat(new com.nexhome.app.config.NexHomeOtpProperties(6, 5, 3, 60, false, false, "+919999999999:221916")
+				.fixedCodeFor(CC, MOBILE)).isNull();
 	}
 
 	@Test
@@ -169,7 +187,7 @@ class NexHomeAuthServiceImplTest {
 		verify(userRepository).save(user.capture());
 		assertThat(user.getValue().getEmail()).isEqualTo("new@example.com");
 		assertThat(user.getValue().getCreatedBy()).isEqualTo(10L);
-		verify(userRoleRepository).save(org.mockito.ArgumentMatchers.argThat(userRole ->
+		verify(userRoleRepository).saveAndFlush(org.mockito.ArgumentMatchers.argThat(userRole ->
 				userRole.getRole() == customer && userRole.getAssignedBy().equals(10L)));
 		// A customer gets the (empty) customer profile with its customer id at sign-up
 		verify(customerProfileRepository).save(org.mockito.ArgumentMatchers.argThat(profile ->
@@ -179,8 +197,13 @@ class NexHomeAuthServiceImplTest {
 	}
 
 	@Test
-	void registerRejectsExistingNumber() {
-		existingUser();
+	void registerRejectsANumberThatAlreadyHasTheRole() {
+		NexHomeUser user = existingUser();
+		NexHomeRole partnerRole = new NexHomeRole();
+		partnerRole.setCode("PARTNER");
+		when(roleRepository.findByCode("PARTNER")).thenReturn(Optional.of(partnerRole));
+		when(userRoleRepository.findByUserIdOrderByRoleIdAsc(10L))
+				.thenReturn(List.of(new NexHomeUserMapper().toUserRoleEntity(user, partnerRole, 1L)));
 
 		assertThatThrownBy(() -> authService.register(new NexHomeAuthRegisterRequest(CC, MOBILE, null, "PARTNER")))
 				.isInstanceOf(DuplicateResourceException.class)

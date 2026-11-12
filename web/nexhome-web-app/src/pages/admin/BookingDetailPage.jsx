@@ -8,6 +8,7 @@ import {
   MapPin,
   Pause,
   Play,
+  RefreshCw,
   Search,
   Square,
   Banknote,
@@ -15,7 +16,7 @@ import {
   UserRoundPlus,
   Wrench
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import AdminPageHeader from '../../components/admin/AdminPageHeader';
@@ -428,19 +429,53 @@ export default function BookingDetailPage() {
   const showToast = useCallback((message, tone = 'success') => setToast({ message, tone, id: Date.now() }), []);
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
 
+  // Clearing the toast from the address replaces the entry: that is not a new visit
+  const clearingToast = useRef(false);
   useEffect(() => {
-    if (location.state?.toast) navigate(location.pathname, { replace: true, state: null });
+    if (location.state?.toast) {
+      clearingToast.current = true;
+      navigate(location.pathname, { replace: true, state: null });
+    }
   }, [location, navigate]);
 
+  // Opened again while already on it (a notification about this booking, a link to it): the page stays mounted, so
+  // it reloads instead
+  const visitKey = useRef(location.key);
+  useEffect(() => {
+    if (location.key === visitKey.current) return;
+    visitKey.current = location.key;
+    if (clearingToast.current) {
+      clearingToast.current = false;
+      return;
+    }
+    reload();
+  }, [location.key, reload]);
+
+  const loadedOnce = useRef(false);
   useEffect(() => {
     let cancelled = false;
     authRequest(`/api/bookings/${bookingId}`)
-      .then((loaded) => !cancelled && setDetail(loaded))
-      .catch((err) => !cancelled && setError(err.message));
+      .then((loaded) => {
+        if (cancelled) return;
+        loadedOnce.current = true;
+        setDetail(loaded);
+      })
+      // A refresh that fails keeps what is shown; only a first load shows the error
+      .catch((err) => !cancelled && !loadedOnce.current && setError(err.message));
     return () => {
       cancelled = true;
     };
   }, [authRequest, bookingId, reloadKey]);
+
+  // No polling: the booking reloads once when the tab becomes visible again (and with the Refresh button); the
+  // Payment card reloads only when the booking's status or payment status changed
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') reload();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [reload]);
 
   const booking = detail?.booking;
   useEffect(() => {
@@ -487,6 +522,18 @@ export default function BookingDetailPage() {
   // A cash booking not yet paid: Finish Work opens Collect Payment instead of stopping the timer
   const cashDue =
     booking.paymentMethod === 'CASH' && !['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(booking.paymentStatus);
+  // An online job whose work is finished (the customer confirmed it) and not paid: staff may complete it, the payment
+  // staying pending (PUT /api/bookings/complete)
+  const onlineFinishedUnpaid =
+    booking.paymentMethod === 'ONLINE' &&
+    booking.bookingStatus === 'IN_PROGRESS' &&
+    Boolean(booking.actualEndAt) &&
+    !['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(booking.paymentStatus);
+  const completeJob = () =>
+    run(
+      () => authRequest('/api/bookings/complete', { method: 'PUT', body: { bookingId: booking.bookingId } }),
+      'Job completed. The payment is still pending.'
+    );
   const timer = (eventType) =>
     run(
       () => authRequest('/api/bookings/timer', { method: 'POST', body: { bookingId: booking.bookingId, eventType } }),
@@ -536,7 +583,19 @@ export default function BookingDetailPage() {
 
   return (
     <div className="mx-auto max-w-[92.5rem]">
-      <AdminPageHeader crumbs={crumbs} />
+      <AdminPageHeader
+        crumbs={crumbs}
+        actions={
+          <button
+            type="button"
+            onClick={reload}
+            className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 text-sm font-bold text-[var(--ink)] hover:bg-[var(--light)]"
+          >
+            <RefreshCw size={15} />
+            Refresh
+          </button>
+        }
+      />
 
       {/* Header: booking, customer, total and payment, then the actions */}
       <section className={`mb-5 ${cardClass}`}>
@@ -575,7 +634,7 @@ export default function BookingDetailPage() {
           </div>
         </div>
 
-        {canWrite && (CANCELLABLE.includes(status) || STAFF_TIMER_ACTIONS(status, Boolean(booking.actualEndAt)).length > 0 || (cashDue && booking.actualEndAt)) && (
+        {canWrite && (CANCELLABLE.includes(status) || STAFF_TIMER_ACTIONS(status, Boolean(booking.actualEndAt)).length > 0 || (cashDue && booking.actualEndAt) || onlineFinishedUnpaid) && (
           <div className="mt-5 flex flex-wrap gap-2.5 border-t border-[var(--line)] pt-4">
             {status === 'PENDING' && (
               <button
@@ -623,6 +682,17 @@ export default function BookingDetailPage() {
               >
                 <Banknote size={16} />
                 Collect Payment
+              </button>
+            )}
+            {onlineFinishedUnpaid && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={completeJob}
+                className={`${actionButton} bg-[var(--green)] text-white hover:bg-[var(--green-2)]`}
+              >
+                <Check size={16} />
+                Complete Job
               </button>
             )}
             {CANCELLABLE.includes(status) && (
@@ -723,8 +793,11 @@ export default function BookingDetailPage() {
                     // Regular amount (the subtotal before the discount), the discount off it, then the total
                     ['Regular Amount', formatAmount(booking.subtotalAmount), ''],
                     ['Discount', `− ${formatAmount(booking.discountAmount)}`, 'text-[var(--green-2)]'],
-                    // The online payment fee (V35), added to the total (₹0 for cash bookings)
-                    ['Gateway Charges', `+ ${formatAmount(booking.transactionFeeAmount ?? 0)}`, '']
+                    // Only bookings made before V68 paid an online payment fee; the gateway's own charges are
+                    // NexHome's cost, shown in the Payment card
+                    ...(Number(booking.transactionFeeAmount ?? 0) > 0
+                      ? [['Online Payment Fee', `+ ${formatAmount(booking.transactionFeeAmount)}`, '']]
+                      : [])
                   ].map(([name, amount, tone], index) => (
                     <tr key={name}>
                       <td
@@ -845,21 +918,29 @@ export default function BookingDetailPage() {
           </Card>
 
           {(can('PAYMENT_MANAGE', 'READ') || can('BOOKING_MANAGE', 'READ')) && (
-            <BookingPaymentCard booking={booking} onChanged={reload} onMessage={showToast} />
+            <BookingPaymentCard booking={booking} version={reloadKey} onChanged={reload} onMessage={showToast} />
           )}
 
           {(can('REVIEW_MANAGE', 'READ') || can('BOOKING_MANAGE', 'READ')) && (
-            <BookingReviewCard booking={booking} onMessage={showToast} />
+            <BookingReviewCard booking={booking} version={reloadKey} onMessage={showToast} />
           )}
 
           <Card title="Booking History" icon={History}>
             <ol className="m-0 list-none space-y-3 p-0">
               {detail.history.map((row) => {
-                // A row whose status stays the same is a payment event ("Payment received", "Cash collected")
+                // A row whose status stays the same is a payment event ("Payment received · ₹…", "Payment failed ·
+                // …", "Cash collected"), its dot coloured by what happened
                 const paymentEvent = row.oldStatus === row.newStatus && row.reason;
+                const dot = row.reason?.startsWith('Payment failed')
+                  ? 'bg-[#C53030]'
+                  : row.reason?.startsWith('Payment pending')
+                    ? 'bg-[#E0A100]'
+                    : row.reason?.startsWith('Payment cancelled')
+                      ? 'bg-[#A8B6C6]'
+                      : 'bg-[var(--green)]';
                 return (
                 <li key={row.historyId} className="flex gap-3 text-sm">
-                  <span className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full bg-[var(--green)]" />
+                  <span className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full ${dot}`} />
                   <div>
                     <div className="font-bold text-[var(--ink)]">
                       {paymentEvent ? row.reason : isUnassigned(row) ? 'Unassigned' : label('BOOKING_STATUS', row.newStatus)}

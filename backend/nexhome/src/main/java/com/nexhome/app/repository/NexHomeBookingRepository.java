@@ -38,6 +38,10 @@ public interface NexHomeBookingRepository extends JpaRepository<NexHomeBooking, 
 	/** The bookings of a checkout. */
 	List<NexHomeBooking> findByCheckoutIdOrderByIdAsc(UUID checkoutId);
 
+	/** The bookings of several checkouts paid one way (a page of payment orders), in id order. */
+	List<NexHomeBooking> findByCheckoutIdInAndPaymentMethodOrderByIdAsc(java.util.Collection<UUID> checkoutIds,
+			String paymentMethod);
+
 	/** How many bookings are in each status: [status, count]. */
 	@Query("select b.bookingStatus, count(b) from NexHomeBooking b group by b.bookingStatus")
 	List<Object[]> countByStatus();

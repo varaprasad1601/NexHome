@@ -65,6 +65,24 @@ public interface NexHomeBookingService {
 
 	NexHomeBookingDetailResponse recordTimerEvent(NexHomeBookingTimerRequest request);
 
+	/**
+	 * The partner tapped Finish work on an unpaid ONLINE job (V70): the customer is asked to confirm the work is
+	 * done; the work keeps running until they do. The assigned partner or BOOKING_MANAGE write.
+	 */
+	NexHomeBookingDetailResponse requestCompletion(Long bookingId);
+
+	/**
+	 * The booking's customer answers it: not done clears the request (the partner carries on); done stops the work
+	 * (an HOURLY job priced for the minutes worked) and completes the booking with its payment PENDING.
+	 */
+	NexHomeBookingDetailResponse answerCompletion(Long bookingId, boolean completed);
+
+	/**
+	 * Staff (BOOKING_MANAGE write) complete a job whose work is finished (IN_PROGRESS with its end time) but is not
+	 * paid: assignment and booking COMPLETED, the payment staying PENDING; the customer and partner told.
+	 */
+	NexHomeBookingDetailResponse completeJob(Long bookingId);
+
 	NexHomePartnerLocationResponse updateLocation(NexHomePartnerLocationUpdateRequest request);
 
 	/** The partner's latest position for the booking, or null; visible like the booking. */

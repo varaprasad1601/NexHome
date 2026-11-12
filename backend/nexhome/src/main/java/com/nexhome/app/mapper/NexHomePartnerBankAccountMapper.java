@@ -66,12 +66,37 @@ public class NexHomePartnerBankAccountMapper {
 		account.setUpdatedBy(actingUserId);
 	}
 
+	/**
+	 * A new account number and / or IFSC (null keeps each): the account goes back to PENDING verification. The service
+	 * checks first that they may change and are not another account of the partner's.
+	 */
+	public void changeAccountIdentity(NexHomePartnerBankAccount account, String accountNumber, String ifscCode,
+			Long actingUserId) {
+		if (accountNumber != null) {
+			String number = accountNumber.trim();
+			account.setAccountNumberEncrypted(encryptor.encrypt(number));
+			account.setAccountNumberLast4(number.substring(number.length() - 4));
+		}
+		if (ifscCode != null) {
+			account.setIfscCode(upperCase(ifscCode));
+		}
+		account.setVerificationStatus(VerificationStatus.PENDING);
+		account.setRejectionReason(null);
+		account.setUpdatedBy(actingUserId);
+	}
+
 	/** Decrypts the stored number, e.g. to recognise an account that is added twice. Never log the result. */
 	public String accountNumber(NexHomePartnerBankAccount account) {
 		return encryptor.decrypt(account.getAccountNumberEncrypted());
 	}
 
 	public NexHomePartnerBankAccountResponse toPartnerBankAccountDto(NexHomePartnerBankAccount account) {
+		return toPartnerBankAccountDto(account, false);
+	}
+
+	/** With {@code forOwner} the full account number too (the partner and staff who may see the account). */
+	public NexHomePartnerBankAccountResponse toPartnerBankAccountDto(NexHomePartnerBankAccount account,
+			boolean forOwner) {
 		return new NexHomePartnerBankAccountResponse(
 				account.getId(),
 				account.getPartner().getId(),
@@ -85,6 +110,7 @@ public class NexHomePartnerBankAccountMapper {
 				account.isPrimary(),
 				account.getCreationDate(),
 				account.getUpdatedBy(),
-				account.getUpdatedDate());
+				account.getUpdatedDate(),
+				forOwner ? accountNumber(account) : null);
 	}
 }

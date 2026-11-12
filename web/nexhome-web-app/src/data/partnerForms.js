@@ -504,8 +504,16 @@ export function documentDialog(item, values, kind = item?.documentType) {
   };
 }
 
-/** Add / edit a bank account; the account number and IFSC are fixed once added (and never shown in full). */
-export function bankDialog(item) {
+/** Statuses before the profile is sent for review: a bank account's number and IFSC can still be corrected. */
+const BANK_IDENTITY_EDITABLE = ['NOT_STARTED', 'DRAFT', 'CHANGES_REQUESTED'];
+
+/**
+ * Add / edit a bank account. The account number and IFSC are entered when adding and can be corrected while the
+ * partner profile is not sent for review yet (`onboardingStatus`); after that they are fixed. Only changed values
+ * are sent (a change sends the account back to PENDING verification).
+ */
+export function bankDialog(item, onboardingStatus) {
+  const identity = !item || BANK_IDENTITY_EDITABLE.includes(onboardingStatus);
   return {
     title: item ? 'Edit Bank Account' : 'Add Bank Account',
     fields: [
@@ -517,7 +525,7 @@ export function bankDialog(item) {
         maxLength: 120,
         wide: true
       },
-      ...(item
+      ...(!identity
         ? []
         : [
             {
@@ -543,9 +551,9 @@ export function bankDialog(item) {
         type: 'text',
         required: true,
         maxLength: 120,
-        hint: item ? undefined : 'Filled in from the IFSC code; you can change it.',
+        hint: identity ? 'Filled in from the IFSC code; you can change it.' : undefined,
         // At once from the offline list, until typed in by hand; the IFSC lookup below may refine it
-        derive: item ? undefined : (v) => bankOfIfsc(v.ifscCode) ?? v.bankName
+        derive: identity ? (v) => bankOfIfsc(v.ifscCode) ?? v.bankName : undefined
       },
       {
         key: 'branchName',
@@ -553,22 +561,29 @@ export function bankDialog(item) {
         type: 'text',
         required: true,
         maxLength: 150,
-        hint: item ? undefined : 'Filled in from the IFSC code when it can be looked up; else type it in.'
+        hint: identity ? 'Filled in from the IFSC code when it can be looked up; else type it in.' : undefined
       }
     ],
     initial: {
       accountHolderName: text(item?.accountHolderName),
-      accountNumber: '',
-      ifscCode: '',
+      accountNumber: text(item?.accountNumber),
+      ifscCode: text(item?.ifscCode),
       bankName: text(item?.bankName),
       branchName: text(item?.branchName)
     },
     // A new account's bank and branch from its IFSC code (Razorpay's public IFSC service)
-    lookup: item ? null : { watch: 'ifscCode', run: lookupIfsc },
+    lookup: identity ? { watch: 'ifscCode', run: lookupIfsc } : null,
     // The first account becomes the primary one by itself (backend), so the form has no primary option
     body: (v) => ({
       accountHolderName: v.accountHolderName.trim(),
-      ...(item ? {} : { accountNumber: v.accountNumber.trim(), ifscCode: v.ifscCode.trim().toUpperCase() }),
+      ...(!item
+        ? { accountNumber: v.accountNumber.trim(), ifscCode: v.ifscCode.trim().toUpperCase() }
+        : identity
+          ? {
+              ...(v.accountNumber.trim() !== text(item.accountNumber) ? { accountNumber: v.accountNumber.trim() } : {}),
+              ...(v.ifscCode.trim().toUpperCase() !== text(item.ifscCode) ? { ifscCode: v.ifscCode.trim().toUpperCase() } : {})
+            }
+          : {}),
       bankName: v.bankName.trim(),
       branchName: v.branchName.trim()
     })

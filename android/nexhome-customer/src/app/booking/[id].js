@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,8 +10,11 @@ import { Button, Card, Empty, ErrorBox, Field, FormScroll, Header, Loading, Sect
 import { useAuth } from '../../context/AuthProvider';
 import useApi from '../../hooks/useApi';
 import { colors } from '../../theme';
-import { money, rangeLabel, serviceNameOf, whenLabel } from '../../utils/format';
-import { CANCELLABLE, UPCOMING, bookingStatus, paymentStatus } from '../../utils/status';
+import { minutesLabel, money, rangeLabel, serviceNameOf, whenLabel } from '../../utils/format';
+import { payOnline } from '../../utils/pay';
+import { needsCompletionConfirmation, promptCompletion, workBreakdown } from '../../utils/completion';
+import { promptRating } from '../../utils/rating';
+import { CANCELLABLE, UPCOMING, bookingStatus, isPaid, isPaymentDue, paymentStatus } from '../../utils/status';
 
 /** Who cancelled, as a tag: the customer (You), the partner, or NexHome support staff (Admin). */
 const CANCELLED_BY = {
@@ -48,6 +51,18 @@ function Stars({ value, onChange, label }) {
   );
 }
 
+
+/** A history row's dot: payment failed red, pending amber, cancelled grey, anything else green. */
+function historyDot(reason = '') {
+  if (reason?.startsWith('Payment failed')) return colors.red;
+  if (reason?.startsWith('Payment pending')) return '#e0a100';
+  if (reason?.startsWith('Payment cancelled')) return '#a8b6c6';
+  return colors.green;
+}
+
+/** Who made a history change, as the customer sees it (their own: nothing). */
+const HISTORY_BY = { PARTNER: 'by Partner', STAFF: 'by Admin', SYSTEM: 'by NexHome' };
+
 /**
  * One booking (GET /api/bookings/{id}): status and progress, what, when, where, the professional, the price,
  * payment (GET /api/payments/bookings/{id}), history; Cancel with a reason until the work starts, Rate once
@@ -56,7 +71,12 @@ function Stars({ value, onChange, label }) {
 export default function BookingScreen() {
   const { id, placed, rate } = useLocalSearchParams();
   const { authRequest } = useAuth();
-  const detail = useApi(`/api/bookings/${id}`);
+  // While the work is under way it reloads every 15 s (the professional's Finish work asks to confirm); else only
+  // when the screen opens
+  const detail = useApi(`/api/bookings/${id}`, {
+    pollMs: 15000,
+    pollWhile: (d) => ['IN_PROGRESS', 'PAUSED'].includes(d?.booking?.bookingStatus) && !d?.booking?.actualEndAt
+  });
   const payments = useApi(`/api/payments/bookings/${id}`);
   const review = useApi(`/api/reviews/bookings/${id}`);
   const contact = useApi('/api/settings/public');
@@ -64,8 +84,41 @@ export default function BookingScreen() {
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState('');
   const [rating, setRating] = useState(rate ? { service: 0, partner: 0, text: '' } : null);
+  // Completed and not reviewed (the review GET is 404): the rating screen opens (once a session; not if skipped)
+  const shown = detail.data?.booking;
+  const unrated = shown?.bookingStatus === 'COMPLETED' && isPaid(shown) && Boolean(shown?.partnerProfileId) && !review.loading && !review.data?.reviewId;
+  useEffect(() => {
+    if (unrated && !rate) promptRating(shown.bookingId);
+  }, [unrated, rate, shown?.bookingId]);
+  // The professional finished the work: confirm it is done (once per request)
+  const toConfirm = needsCompletionConfirmation(shown);
+  useEffect(() => {
+    if (toConfirm) promptCompletion(shown);
+  }, [toConfirm, shown]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  // An online payment left waiting for the bank (or paid after the payment screen closed): ask the gateway once
+  // per order when the booking opens, which records it if paid, then show the booking again
+  const checkedOrders = useRef(new Set());
+  const openOrder = (payments.data?.orders ?? []).find(
+    (order) => order.provider !== 'MANUAL' && ['CREATED', 'PENDING'].includes(order.paymentStatus)
+  );
+  const unpaidOnline = detail.data?.booking?.paymentMethod === 'ONLINE' && detail.data?.booking?.paymentStatus === 'PENDING';
+  useEffect(() => {
+    if (!openOrder || !unpaidOnline || checkedOrders.current.has(openOrder.paymentOrderId)) return;
+    checkedOrders.current.add(openOrder.paymentOrderId);
+    authRequest('/api/payments/orders/verify', { method: 'POST', body: { paymentOrderId: openOrder.paymentOrderId } })
+      .then((order) => {
+        if (order.paymentStatus === 'PAID') {
+          detail.reload();
+          payments.reload();
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openOrder?.paymentOrderId, unpaidOnline]);
 
   if (detail.loading) return <Loading />;
   const booking = detail.data?.booking;
@@ -78,7 +131,9 @@ export default function BookingScreen() {
     );
   }
 
-  const status = bookingStatus(booking.bookingStatus);
+  // Completed but not paid yet: shown as Payment pending (amber) until it is
+  const paymentDue = isPaymentDue(booking);
+  const status = paymentDue ? { label: 'Payment pending', fg: colors.amber, bg: colors.amberSoft } : bookingStatus(booking.bookingStatus);
   const pay = paymentStatus(booking.paymentStatus);
   const address = booking.address ?? {};
   const cash = payments.data?.cashCollection;
@@ -99,6 +154,15 @@ export default function BookingScreen() {
       setBusy(false);
     }
   };
+
+  // Online payment through the gateway's secure page; the backend records it once the gateway says it is paid
+  const payNow = () =>
+    run(async () => {
+      setNotice('');
+      // The payment, result and rating screens follow, then back here
+      const result = await payOnline(authRequest, booking.bookingId, { next: 'back' });
+      if (result === 'PAID') setNotice('Payment received. Thank you!');
+    });
 
   const cancel = () => {
     if (!reason.trim()) {
@@ -127,6 +191,37 @@ export default function BookingScreen() {
     <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.ground }}>
       <Header title={booking.publicId} />
       <FormScroll contentContainerStyle={{ padding: 16, gap: 12 }}>
+        {toConfirm ? (
+          <View style={{ backgroundColor: colors.blueTint, borderRadius: 16, padding: 14, gap: 10 }}>
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <Feather name="clipboard" size={22} color={colors.blue} />
+              <Text weight="bold" style={{ flex: 1, color: colors.navy }}>
+                Your professional says the job is done. Please confirm.
+              </Text>
+            </View>
+            <Button title="Confirm the job" icon="check" onPress={() => router.push({ pathname: '/confirm-completion/[id]', params: { id: String(booking.bookingId) } })} />
+          </View>
+        ) : null}
+        {paymentDue ? (
+          <View style={{ backgroundColor: colors.amberSoft, borderRadius: 16, padding: 14, gap: 10 }}>
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <Feather name="clock" size={22} color={colors.amber} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text weight="extrabold" style={{ color: colors.amber, fontSize: 15 }}>
+                  Payment pending
+                </Text>
+                <Text style={{ color: colors.amber, fontSize: 13 }}>
+                  {booking.paymentMethod === 'CASH'
+                    ? `The job is done. Please pay ${money(booking.totalAmount)} in cash to your professional.`
+                    : `The job is done. Please pay ${money(booking.totalAmount)} to complete your booking.`}
+                </Text>
+              </View>
+            </View>
+            {booking.paymentMethod === 'ONLINE' ? (
+              <Button title={`Pay ${money(booking.totalAmount)} now`} icon="credit-card" loading={busy} onPress={payNow} />
+            ) : null}
+          </View>
+        ) : null}
         {placed ? (
           <View style={{ backgroundColor: colors.greenSoft, borderRadius: 16, padding: 14, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
             <Feather name="check-circle" size={22} color={colors.green} />
@@ -285,20 +380,47 @@ export default function BookingScreen() {
 
         <Card style={{ gap: 10 }}>
           <SectionTitle>Price</SectionTitle>
+          {/* Priced for the time worked (the job was confirmed done): what the final amount is made of */}
+          {booking.pricing?.workedMinutes != null
+            ? (() => {
+                const parts = workBreakdown(booking, detail.data.items, detail.data.workedMinutes);
+                return (
+                  <>
+                    <Row label="Total time worked" value={minutesLabel(parts.worked)} />
+                    {parts.packageMinutes ? <Row label="Booked package" value={minutesLabel(parts.packageMinutes)} /> : null}
+                    {parts.extraMinutes ? <Row label="Extra time" value={minutesLabel(parts.extraMinutes)} color={colors.amber} /> : null}
+                    {parts.bookedAmount != null ? <Row label="Booked price" value={money(parts.bookedAmount)} /> : null}
+                    {parts.extraAmount > 0 ? <Row label="Extra amount" value={`+ ${money(parts.extraAmount)}`} color={colors.amber} /> : null}
+                    <View style={{ height: 1, backgroundColor: colors.line }} />
+                  </>
+                );
+              })()
+            : null}
           <Row label="Regular price" value={money(booking.subtotalAmount)} />
           {Number(booking.discountAmount) > 0 ? <Row label="Discount" value={`− ${money(booking.discountAmount)}`} color={colors.greenDark} /> : null}
           {Number(booking.transactionFeeAmount) > 0 ? <Row label="Online payment fee" value={`+ ${money(booking.transactionFeeAmount)}`} /> : null}
           <View style={{ height: 1, backgroundColor: colors.line }} />
           <Row label="Total" value={money(booking.totalAmount)} strong />
+          {/* Cashfree's gateway charges the customer paid on top (V69), not part of the booking's price */}
+          {Number(booking.gatewayServiceCharge ?? 0) + Number(booking.gatewayServiceTax ?? 0) > 0 ? (
+            <>
+              <Row label="Gateway charges (Cashfree)" value={`+ ${money(booking.gatewayServiceCharge)}`} />
+              <Row label="GST on gateway charges" value={`+ ${money(booking.gatewayServiceTax)}`} />
+              <Row label="You paid" value={money(Number(booking.totalAmount) + Number(booking.gatewayServiceCharge) + Number(booking.gatewayServiceTax))} strong />
+            </>
+          ) : null}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Text style={{ fontSize: 13, color: colors.muted }}>{booking.paymentMethod === 'ONLINE' ? 'Online payment' : 'Cash after service'}</Text>
             {pay ? <Tag label={pay.label} fg={pay.fg} bg={pay.bg} /> : null}
           </View>
-          {booking.paymentMethod === 'ONLINE' && booking.paymentStatus === 'PENDING' ? (
-            <Text style={{ fontSize: 12.5, color: colors.muted }}>
-              Online payment will open here once our payment gateway is live. Until then our team will contact you to collect it.
-            </Text>
+          {/* Paid once the work is done: finished (the customer confirmed it) or completed */}
+          {booking.paymentMethod === 'ONLINE' && ['PENDING', 'FAILED'].includes(booking.paymentStatus) && paymentDue ? (
+            <View style={{ gap: 6 }}>
+              <Button title={`Pay ${money(booking.totalAmount)} now`} icon="credit-card" loading={busy} onPress={payNow} />
+              <Text style={{ fontSize: 12, color: colors.muted, textAlign: 'center' }}>UPI, card or net banking through Cashfree’s secure page. Cashfree’s gateway charges and GST, if any, are added at payment.</Text>
+            </View>
           ) : null}
+          {notice ? <Text style={{ fontSize: 13, color: colors.greenDark, fontWeight: '700' }}>{notice}</Text> : null}
           {cash?.status === 'COLLECTED' && !cash.customerAcknowledgedAt ? (
             <Button
               title="I paid the professional"
@@ -336,12 +458,19 @@ export default function BookingScreen() {
               .filter((h) => h.oldStatus !== h.newStatus || h.reason)
               .map((h) => (
                 <View key={h.historyId} style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.green, marginTop: 5 }} />
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: historyDot(h.reason), marginTop: 5 }} />
                   <View style={{ flex: 1 }}>
                     <Text weight="semibold" style={{ fontSize: 13 }}>
                       {h.oldStatus === h.newStatus ? h.reason : bookingStatus(h.newStatus).label}
                     </Text>
-                    <Text style={{ fontSize: 12, color: colors.muted }}>{whenLabel(h.changedAt)}</Text>
+                    {/* A status change a payment brought (Confirmed by "Payment received · ₹…") shows the payment */}
+                    {h.oldStatus !== h.newStatus && h.reason?.startsWith('Payment') ? (
+                      <Text style={{ fontSize: 12, color: colors.ink }}>{h.reason}</Text>
+                    ) : null}
+                    <Text style={{ fontSize: 12, color: colors.muted }}>
+                      {whenLabel(h.changedAt)}
+                      {HISTORY_BY[h.changedByParty] ? ` · ${HISTORY_BY[h.changedByParty]}` : ''}
+                    </Text>
                   </View>
                 </View>
               ))}

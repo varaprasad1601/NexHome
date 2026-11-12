@@ -94,7 +94,7 @@ export function payoutStatus(code) {
   return PAYOUT[code] ?? { label: code ?? '', ...GREY };
 }
 
-/** A settlement (earnings record): a payout's status or the cash collection's. */
+/** A cash collection's status. */
 const CASH = {
   DUE: { label: 'Cash due', ...AMBER },
   COLLECTED: { label: 'Cash collected', ...GREEN },
@@ -102,11 +102,16 @@ const CASH = {
   WAIVED: { label: 'Waived', ...GREY }
 };
 
+/**
+ * A job in My earnings by whether the customer has paid: a cash job by its collection (Cash collected, green); an
+ * online job Paid (green) once the payment is received (a payout exists; partners are paid outside the app, V62, so its
+ * own status says nothing to them), Payment pending (amber) before, Refunded once its payout is cancelled.
+ */
 export function settlementStatus(settlement, code) {
   if (settlement === 'CASH') return CASH[code] ?? { label: code ?? 'Cash', ...GREY };
-  // An online job without a payout yet: the customer has not paid
   if (!code) return { label: 'Payment pending', ...AMBER };
-  return payoutStatus(code);
+  if (code === 'CANCELLED') return { label: 'Refunded', ...GREY };
+  return { label: 'Paid', ...GREEN };
 }
 
 const TICKET = {

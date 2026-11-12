@@ -88,10 +88,6 @@ public class NexHomeSettingsServiceImpl implements NexHomeSettingsService {
 			Definition.text(Keys.WORKING_HOURS, TEXT, "Working Hours", "The business hours the website shows.",
 					"Mon – Sun, 9:00 AM to 5:00 PM", 100),
 
-			Definition.number(Keys.TRANSACTION_FEE_PERCENTAGE, DECIMAL, "Online Payment Fee (%)",
-					"Added to online bookings' total for the payment gateway; not refunded, not paid to the partner. "
-							+ "0 turns it off. Applies to new bookings. Public: the customer app shows it at checkout.", "2",
-					0, 100).asPublic(),
 			Definition.number(Keys.OFFER_EXPIRY_MINUTES, NUMBER, "Offer Expiry (minutes)",
 					"How long a partner has to accept a booking offer when staff do not set a time.", "30", 1, 60),
 			Definition.number(Keys.UNASSIGNED_ALERT_HOURS, NUMBER, "No-Partner Warning (hours before)",

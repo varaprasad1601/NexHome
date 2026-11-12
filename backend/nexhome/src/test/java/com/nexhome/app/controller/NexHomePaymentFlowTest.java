@@ -104,15 +104,15 @@ class NexHomePaymentFlowTest {
 	void anOnlineBookingIsPaidCompletedAndThePartnerPaidOut() throws Exception {
 		setUp();
 		long bookingId = book("ONLINE", 10);
-		// Online bookings carry the 2% transaction fee (V35): 400 + 8
+		// No online payment fee any more (V68): the customer pays the price
 		perform(get("/api/bookings/" + bookingId), customer, null)
-				.andExpect(jsonPath("$.booking.transactionFeeAmount").value(8))
-				.andExpect(jsonPath("$.booking.totalAmount").value(408));
+				.andExpect(jsonPath("$.booking.transactionFeeAmount").value(0))
+				.andExpect(jsonPath("$.booking.totalAmount").value(400));
 		// The customer starts paying; asking again reuses the open order
 		JsonNode order = json(perform(post("/api/payments/orders/create"), customer,
 				"{\"bookingId\": %d}".formatted(bookingId))
 				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.amount").value(408))
+				.andExpect(jsonPath("$.amount").value(400))
 				.andExpect(jsonPath("$.paymentStatus").value("CREATED"))
 				.andExpect(jsonPath("$.provider").value("MANUAL")));
 		long orderId = order.get("paymentOrderId").asLong();
@@ -130,9 +130,30 @@ class NexHomePaymentFlowTest {
 		perform(get("/api/bookings/" + bookingId), staff, null)
 				.andExpect(jsonPath("$.booking.bookingStatus").value("CONFIRMED"))
 				.andExpect(jsonPath("$.booking.paymentStatus").value("PAID"))
-				.andExpect(jsonPath("$.history[1].reason").value("Payment received"));
+				.andExpect(jsonPath("$.history[1].reason").value(org.hamcrest.Matchers.startsWith("Payment received")));
+		// Payment orders are found by the booking id, the order id or the customer, with their bookings and attempt
+		String bookingPublicId = json(perform(get("/api/bookings/" + bookingId), staff, null)).get("booking")
+				.get("publicId").asString();
+		perform(get("/api/payments/orders?status=PAID&search=" + bookingPublicId), staff, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].paymentOrderId").value(orderId))
+				.andExpect(jsonPath("$.content[0].bookings[0].publicId").value(bookingPublicId));
+		perform(get("/api/payments/orders?search=" + order.get("publicId").asString()), staff, null)
+				.andExpect(jsonPath("$.content[0].paymentOrderId").value(orderId));
+		perform(get("/api/payments/orders?status=CREATED&search=" + bookingPublicId), staff, null)
+				.andExpect(jsonPath("$.totalElements").value(0));
+		perform(get("/api/payments/orders/" + orderId), staff, null)
+				.andExpect(jsonPath("$.attempts[0].attemptStatus").value("SUCCESS"))
+				.andExpect(jsonPath("$.attempts[0].providerPaymentId").value("UPI123" + orderId))
+				.andExpect(jsonPath("$.payments[0].paymentId").value(paymentId));
+		perform(get("/api/payments/cash-collections?search=" + bookingPublicId), staff, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.totalElements").value(0));
+		perform(get("/api/payments/cash-collections?status=DUE&search=nobody-matches-this"), staff, null)
+				.andExpect(jsonPath("$.totalElements").value(0));
 
-		// Done: the partner is owed 400 (the fee is the platform's) less the service's 15% platform commission
+		// Done: the partner is owed 400 less the service's 15% platform commission
 		finish(bookingId);
 		JsonNode payout = json(perform(get("/api/payments/bookings/" + bookingId), staff, null)
 				.andExpect(jsonPath("$.payout.grossAmount").value(400))
@@ -144,34 +165,13 @@ class NexHomePaymentFlowTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.payout").doesNotExist());
 
-		// A bonus, then paying needs a verified primary bank account
+		// A bonus or a deduction changes the partner's share (partners are paid outside the app, V62)
 		perform(put("/api/payouts/adjust"), staff, "{\"payoutId\": %d, \"adjustmentsAmount\": 25}".formatted(payoutId))
 				.andExpect(jsonPath("$.netAmount").value(365));
 		perform(put("/api/payouts/adjust"), staff, "{\"payoutId\": %d, \"adjustmentsAmount\": -400}".formatted(payoutId))
 				.andExpect(status().isBadRequest());
-		perform(put("/api/payouts/pay"), staff, "{\"payoutId\": %d}".formatted(payoutId))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.message").value("The partner needs a verified primary bank account before being paid."));
-		long accountId = json(perform(post("/api/partners/bank-accounts/add"), staff, """
-				{"partnerProfileId": %d, "accountHolderName": "Kiran Rao", "accountNumber": "123456784321",
-				 "ifscCode": "SBIN0001234", "bankName": "SBI", "branchName": "Madhapur"}""".formatted(partnerId))
-				.andExpect(status().isCreated())).get("partnerBankAccountId").asLong();
-		perform(put("/api/partners/bank-accounts/verify"), staff,
-				"{\"partnerBankAccountId\": %d, \"verificationStatus\": \"VERIFIED\"}".formatted(accountId))
-				.andExpect(status().isOk());
-		perform(put("/api/payouts/pay"), staff, "{\"payoutId\": %d}".formatted(payoutId))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.payoutStatus").value("PAID"))
-				.andExpect(jsonPath("$.paidAt").isNotEmpty())
-				.andExpect(jsonPath("$.providerTransferId").isNotEmpty());
 		perform(get("/api/payouts/me"), partner, null)
 				.andExpect(jsonPath("$.content[0].payoutId").value(payoutId));
-		// Once the partner is paid the booking is not refunded here
-		perform(post("/api/payments/refunds/create"), staff,
-				"{\"paymentId\": %d, \"amount\": 50, \"reason\": \"Late\"}".formatted(paymentId))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.message").value(
-						"The partner's payout for this booking is already PAID; the booking cannot be refunded here."));
 		perform(get("/api/payments/stats"), staff, null).andExpect(jsonPath("$.capturedCount").isNumber())
 				.andExpect(jsonPath("$.revenueAmount").isNumber())
 				.andExpect(jsonPath("$.revenueMonths.length()").value(10));
@@ -194,10 +194,10 @@ class NexHomePaymentFlowTest {
 				"{\"paymentId\": %d, \"amount\": 301, \"reason\": \"Too much\"}".formatted(paymentId))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value(
-						"Refunds cannot exceed the captured amount less the transaction fee; 300.00 can still be refunded."));
+						"Refunds cannot exceed the captured amount; 300.00 can still be refunded."));
 		perform(get("/api/bookings/" + bookingId), customer, null)
 				.andExpect(jsonPath("$.booking.paymentStatus").value("PARTIALLY_REFUNDED"));
-		// Cancelling refunds the rest, but not the transaction fee
+		// Cancelling refunds the rest
 		perform(put("/api/bookings/cancel"), customer,
 				"{\"bookingId\": %d, \"reason\": \"Not needed\"}".formatted(bookingId))
 				.andExpect(status().isOk())
@@ -208,6 +208,142 @@ class NexHomePaymentFlowTest {
 				.andExpect(jsonPath("$.refunds.length()").value(2))
 				.andExpect(jsonPath("$.refunds[0].amount").value(300))
 				.andExpect(jsonPath("$.payments[0].refundedAmount").value(400));
+	}
+
+	/**
+	 * An online job's Finish work asks the customer (V70): "not yet" keeps the work running, "done" stops it and
+	 * completes the booking with its payment pending, which the customer then pays.
+	 */
+	@Test
+	void theCustomerConfirmsAnOnlineJobIsDone() throws Exception {
+		setUp();
+		long bookingId = book("ONLINE", 11);
+		String body = "{\"bookingId\": %d}".formatted(bookingId);
+		perform(put("/api/bookings/status/update"), staff,
+				"{\"bookingId\": %d, \"bookingStatus\": \"CONFIRMED\"}".formatted(bookingId));
+		perform(post("/api/bookings/assignments/offer"), staff,
+				"{\"bookingId\": %d, \"partnerProfileId\": %d, \"direct\": true}".formatted(bookingId, partnerId))
+				.andExpect(status().isCreated());
+		startWithCode(partner, customer, bookingId);
+
+		// Nothing to confirm yet; only the partner (or staff) asks
+		perform(put("/api/bookings/completion/respond"), customer,
+				"{\"bookingId\": %d, \"completed\": true}".formatted(bookingId))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Your professional has not asked you to confirm this job."));
+		perform(put("/api/bookings/completion/request"), customer, body).andExpect(status().isForbidden());
+
+		perform(put("/api/bookings/completion/request"), partner, body)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.booking.bookingStatus").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.booking.completionRequestedAt").isNotEmpty());
+		// Not yet: the request goes, the work carries on
+		perform(put("/api/bookings/completion/respond"), customer,
+				"{\"bookingId\": %d, \"completed\": false}".formatted(bookingId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.booking.bookingStatus").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.booking.completionRequestedAt").doesNotExist());
+		// Asked again; the partner cannot answer for the customer
+		perform(put("/api/bookings/completion/request"), partner, body).andExpect(status().isOk());
+		perform(put("/api/bookings/completion/respond"), partner,
+				"{\"bookingId\": %d, \"completed\": true}".formatted(bookingId))
+				.andExpect(status().isForbidden());
+		// Done: the work stops (work finished), the booking stays IN_PROGRESS with the payment pending
+		perform(put("/api/bookings/completion/respond"), customer,
+				"{\"bookingId\": %d, \"completed\": true}".formatted(bookingId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.booking.bookingStatus").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.booking.paymentStatus").value("PENDING"))
+				.andExpect(jsonPath("$.booking.actualEndAt").isNotEmpty())
+				.andExpect(jsonPath("$.booking.completionConfirmedAt").isNotEmpty())
+				.andExpect(jsonPath("$.history[?(@.reason == 'Customer confirmed the work is done')]").exists())
+				.andExpect(jsonPath("$.history[?(@.reason == 'Work finished')]").exists());
+		// The customer pays now: the payment completes the booking
+		long orderId = json(perform(post("/api/payments/orders/create"), customer, body)
+				.andExpect(status().isCreated())).get("paymentOrderId").asLong();
+		perform(post("/api/payments/orders/capture"), staff, "{\"paymentOrderId\": %d}".formatted(orderId))
+				.andExpect(status().isOk());
+		perform(get("/api/bookings/" + bookingId), customer, null)
+				.andExpect(jsonPath("$.booking.paymentStatus").value("PAID"))
+				.andExpect(jsonPath("$.booking.bookingStatus").value("COMPLETED"));
+
+		// Another job, finished but not paid: NexHome completes it, the payment stays pending
+		long second = book("ONLINE", 14);
+		String secondBody = "{\"bookingId\": %d}".formatted(second);
+		perform(put("/api/bookings/status/update"), staff,
+				"{\"bookingId\": %d, \"bookingStatus\": \"CONFIRMED\"}".formatted(second));
+		perform(post("/api/bookings/assignments/offer"), staff,
+				"{\"bookingId\": %d, \"partnerProfileId\": %d, \"direct\": true, \"outsideWeeklyHours\": true}"
+						.formatted(second, partnerId))
+				.andExpect(status().isCreated());
+		startWithCode(partner, customer, second);
+		perform(put("/api/bookings/complete"), staff, secondBody)
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Only a job whose work is finished can be completed here."));
+		perform(put("/api/bookings/completion/request"), partner, secondBody).andExpect(status().isOk());
+		perform(put("/api/bookings/completion/respond"), customer,
+				"{\"bookingId\": %d, \"completed\": true}".formatted(second))
+				.andExpect(status().isOk());
+		perform(put("/api/bookings/complete"), partner, secondBody).andExpect(status().isForbidden());
+		perform(put("/api/bookings/complete"), staff, secondBody)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.booking.bookingStatus").value("COMPLETED"))
+				.andExpect(jsonPath("$.booking.paymentStatus").value("PENDING"))
+				.andExpect(jsonPath("$.history[?(@.reason == 'Completed by NexHome; payment pending')]").exists());
+	}
+
+	/**
+	 * An online job is finished but not paid: the partner checks the payment, then collects cash instead. The booking
+	 * becomes a cash booking with its cash collected, the open order is cancelled, and the history shows both.
+	 */
+	@Test
+	void thePartnerCollectsCashWhenTheOnlinePaymentDoesNotGoThrough() throws Exception {
+		setUp();
+		long bookingId = book("ONLINE", 10);
+		long orderId = json(perform(post("/api/payments/orders/create"), customer,
+				"{\"bookingId\": %d}".formatted(bookingId))).get("paymentOrderId").asLong();
+		String body = "{\"bookingId\": %d}".formatted(bookingId);
+		finish(bookingId);
+		// Finished without the online payment: completed, the payment still pending (the customer pays afterwards)
+		perform(get("/api/bookings/" + bookingId), customer, null)
+				.andExpect(jsonPath("$.booking.bookingStatus").value("COMPLETED"))
+				.andExpect(jsonPath("$.booking.paymentStatus").value("PENDING"))
+				.andExpect(jsonPath("$.booking.actualEndAt").isNotEmpty());
+
+		perform(post("/api/payments/bookings/check"), partner, body)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.paymentMethod").value("ONLINE"))
+				.andExpect(jsonPath("$.paymentStatus").value("PENDING"))
+				.andExpect(jsonPath("$.onlinePaymentOpen").value(true))
+				.andExpect(jsonPath("$.totalAmount").value(400));
+		// Only the partner (or staff) records cash; the customer cannot
+		perform(post("/api/payments/bookings/collect-cash"), customer, body).andExpect(status().isForbidden());
+
+		perform(post("/api/payments/bookings/collect-cash"), partner,
+				"{\"bookingId\": %d, \"notes\": \"UPI kept failing\"}".formatted(bookingId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.paymentMethod").value("CASH"))
+				.andExpect(jsonPath("$.paymentStatus").value("PAID"))
+				.andExpect(jsonPath("$.onlinePaymentOpen").value(false));
+		perform(get("/api/payments/bookings/" + bookingId), staff, null)
+				.andExpect(jsonPath("$.cashCollection.status").value("COLLECTED"))
+				.andExpect(jsonPath("$.cashCollection.amount").value(400))
+				.andExpect(jsonPath("$.cashCollection.notes").value("UPI kept failing"))
+				.andExpect(jsonPath("$.orders[0].paymentStatus").value("CANCELLED"))
+				.andExpect(jsonPath("$.payout").doesNotExist());
+		perform(get("/api/payments/orders/" + orderId), staff, null)
+				.andExpect(jsonPath("$.order.paymentStatus").value("CANCELLED"));
+		perform(get("/api/bookings/" + bookingId), customer, null)
+				.andExpect(jsonPath("$.booking.paymentMethod").value("CASH"))
+				.andExpect(jsonPath("$.booking.paymentStatus").value("PAID"))
+				.andExpect(jsonPath("$.booking.bookingStatus").value("COMPLETED"))
+				.andExpect(jsonPath("$.history[?(@.reason == 'Payment mode changed from online to cash')]").exists())
+				.andExpect(jsonPath("$.history[?(@.reason == 'Cash collected')]").exists());
+		// Once is enough
+		perform(post("/api/payments/bookings/collect-cash"), partner, body)
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(
+						"This booking is paid in cash already; mark its cash collected instead."));
 	}
 
 	@Test
@@ -292,11 +428,11 @@ class NexHomePaymentFlowTest {
 	}
 
 	/**
-	 * The wallet (V60): an online job (NexHome owes 400 - 60) and a cash job (the partner owes its 60 commission);
-	 * one wallet payout pays the difference and empties the wallet.
+	 * What NexHome owes a partner (V62): an online job and a cash job (the partner hands the cash over), each 400 less
+	 * the 15% commission, so 680; staff record payments made outside the app, which bring the balance down.
 	 */
 	@Test
-	void theWalletPaysOnlineEarningsLessTheCommissionOnCash() throws Exception {
+	void nexHomeOwesEveryJobLessCommissionAndRecordedPayoutsComeOff() throws Exception {
 		setUp();
 		long online = book("ONLINE", 10);
 		long orderId = json(perform(post("/api/payments/orders/create"), customer,
@@ -315,58 +451,170 @@ class NexHomePaymentFlowTest {
 		perform(get("/api/payouts/wallet/" + partnerId), customer, null).andExpect(status().isForbidden());
 		perform(get("/api/payouts/wallet/" + partnerId), partner, null)
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.since").doesNotExist())
 				.andExpect(jsonPath("$.cashJobs").value(1))
 				.andExpect(jsonPath("$.cashAmount").value(400))
 				.andExpect(jsonPath("$.cashCommission").value(60))
 				.andExpect(jsonPath("$.onlineJobs").value(1))
 				.andExpect(jsonPath("$.onlineAmount").value(400))
 				.andExpect(jsonPath("$.onlineCommission").value(60))
-				.andExpect(jsonPath("$.onlineEarnings").value(340))
-				.andExpect(jsonPath("$.balance").value(280))
-				.andExpect(jsonPath("$.items.length()").value(2));
+				.andExpect(jsonPath("$.totalAmount").value(800))
+				.andExpect(jsonPath("$.totalCommission").value(120))
+				.andExpect(jsonPath("$.totalEarned").value(680))
+				.andExpect(jsonPath("$.paidTotal").value(0))
+				.andExpect(jsonPath("$.balance").value(680))
+				.andExpect(jsonPath("$.lastPayout").doesNotExist())
+				.andExpect(jsonPath("$.items.length()").value(2))
+				.andExpect(jsonPath("$.items[0].effect").value(340));
+		String partnerPublicId = json(perform(get("/api/partners/profiles/" + partnerId), staff, null)).get("publicId")
+				.asString();
+		perform(get("/api/payouts/dues?search=" + partnerPublicId), staff, null)
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].jobs").value(2))
+				.andExpect(jsonPath("$.content[0].balance").value(680));
 
-		// Paying needs a verified primary bank account; the partner cannot pay themself out
-		perform(post("/api/payouts/wallet/settle"), staff, "{\"partnerProfileId\": %d}".formatted(partnerId))
+		// Recording a payment: checked, then it comes off what is owed
+		String body = """
+				{"partnerProfileId": %d, "amount": %s, "paymentMode": "%s", "transactionId": %s, "paidOn": "%s"}""";
+		String today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).toString();
+		perform(post("/api/payouts/manual/create"), partner, body.formatted(partnerId, "100", "PHONEPE", "\"T1\"", today))
+				.andExpect(status().isForbidden());
+		perform(post("/api/payouts/manual/create"), staff, body.formatted(partnerId, "100", "PHONEPE", "null", today))
 				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.message").value("The partner needs a verified primary bank account before being paid."));
+				.andExpect(jsonPath("$.message").value("Transaction ID is required unless the partner was paid in cash."));
+		perform(post("/api/payouts/manual/create"), staff, body.formatted(partnerId, "700", "PHONEPE", "\"T1\"", today))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("The amount is more than NexHome owes the partner (680.00)."));
+		perform(post("/api/payouts/manual/create"), staff,
+				body.formatted(partnerId, "100", "PHONEPE", "\"T1\"", java.time.LocalDate.parse(today).plusDays(2)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Payment date cannot be in the future."));
+		perform(post("/api/payouts/manual/create"), staff, body.formatted(partnerId, "100", "UPI_APP", "\"T1\"", today))
+				.andExpect(status().isBadRequest());
+		long payoutId = json(perform(post("/api/payouts/manual/create"), staff,
+				body.formatted(partnerId, "500", "GOOGLE_PAY", "\"4321UTR\"", today))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.publicId").value(org.hamcrest.Matchers.startsWith("NHPPAY")))
+				.andExpect(jsonPath("$.amount").value(500))
+				.andExpect(jsonPath("$.paymentMode").value("GOOGLE_PAY"))
+				.andExpect(jsonPath("$.transactionId").value("4321UTR"))
+				.andExpect(jsonPath("$.paidOn").value(today))
+				.andExpect(jsonPath("$.payoutStatus").value("RECORDED"))).get("payoutId").asLong();
+		perform(post("/api/payouts/manual/create"), staff, body.formatted(partnerId, "30", "CASH", "null", today))
+				.andExpect(status().isCreated());
+
+		perform(get("/api/payouts/wallet/" + partnerId), partner, null)
+				.andExpect(jsonPath("$.paidTotal").value(530))
+				.andExpect(jsonPath("$.payoutCount").value(2))
+				.andExpect(jsonPath("$.balance").value(150))
+				.andExpect(jsonPath("$.lastPayout.amount").isNumber());
+		perform(get("/api/payouts/manual?partnerProfileId=" + partnerId), partner, null)
+				.andExpect(jsonPath("$.totalElements").value(2));
+		perform(get("/api/payouts/manual/" + payoutId), partner, null).andExpect(status().isOk());
+		perform(get("/api/payouts/manual/" + payoutId), customer, null).andExpect(status().isForbidden());
+		perform(get("/api/payouts/manual"), partner, null).andExpect(status().isForbidden());
+		perform(get("/api/payouts/manual/stats"), staff, null)
+				.andExpect(jsonPath("$.paidTotal").isNumber())
+				.andExpect(jsonPath("$.totalDue").isNumber());
+
+		// A payout recorded by mistake is cancelled: it no longer counts
+		perform(put("/api/payouts/manual/cancel"), staff, "{\"payoutId\": %d, \"reason\": \"Recorded twice\"}"
+				.formatted(payoutId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.payoutStatus").value("CANCELLED"))
+				.andExpect(jsonPath("$.cancellationReason").value("Recorded twice"));
+		perform(put("/api/payouts/manual/cancel"), staff, "{\"payoutId\": %d, \"reason\": \"Again\"}"
+				.formatted(payoutId))
+				.andExpect(status().isBadRequest());
+		perform(get("/api/payouts/wallet/" + partnerId), staff, null)
+				.andExpect(jsonPath("$.paidTotal").value(30))
+				.andExpect(jsonPath("$.balance").value(650));
+
+		// Deductions (V63): NexHome keeps part of what it owes, with a reason; with a payout or on their own
+		String withDeduction = """
+				{"partnerProfileId": %d, "amount": %s, "paymentMode": "PHONEPE", "transactionId": "T9", "paidOn": "%s",
+				 "deductionAmount": %s, "deductionReason": "%s", "deductionNotes": %s}""";
+		perform(post("/api/payouts/manual/create"), staff,
+				withDeduction.formatted(partnerId, "600", today, "100", "PENALTY", "null"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(
+						"The payment and the deduction together are more than NexHome owes the partner (650.00)."));
+		perform(post("/api/payouts/manual/create"), staff,
+				withDeduction.formatted(partnerId, "300", today, "50", "OTHER", "null"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Add a note saying what the deduction is for."));
+		long withId = json(perform(post("/api/payouts/manual/create"), staff,
+				withDeduction.formatted(partnerId, "300", today, "50", "PENALTY", "\"Late for the booking\""))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.deduction.publicId").value(org.hamcrest.Matchers.startsWith("NHPDED")))
+				.andExpect(jsonPath("$.deduction.amount").value(50))
+				.andExpect(jsonPath("$.deduction.deductionReason").value("PENALTY"))
+				.andExpect(jsonPath("$.deduction.payoutPublicId").isNotEmpty())).get("deduction").get("deductionId")
+				.asLong();
+		String alone = """
+				{"partnerProfileId": %d, "amount": %s, "deductionReason": "DAMAGE", "notes": "Broken tap", "deductedOn": "%s"}""";
+		perform(post("/api/payouts/deductions/create"), staff, alone.formatted(partnerId, "400", today))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("The deduction is more than NexHome owes the partner (300.00)."));
+		perform(post("/api/payouts/deductions/create"), partner, alone.formatted(partnerId, "100", today))
+				.andExpect(status().isForbidden());
+		perform(post("/api/payouts/deductions/create"), staff, alone.formatted(partnerId, "100", today))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.payoutId").doesNotExist())
+				.andExpect(jsonPath("$.status").value("RECORDED"));
+		perform(get("/api/payouts/wallet/" + partnerId), partner, null)
+				.andExpect(jsonPath("$.paidTotal").value(330))
+				.andExpect(jsonPath("$.deductedTotal").value(150))
+				.andExpect(jsonPath("$.deductionCount").value(2))
+				.andExpect(jsonPath("$.balance").value(200));
+		perform(get("/api/payouts/deductions?partnerProfileId=" + partnerId), partner, null)
+				.andExpect(jsonPath("$.totalElements").value(2));
+		perform(get("/api/payouts/deductions"), partner, null).andExpect(status().isForbidden());
+		perform(get("/api/payouts/dues?search=" + partnerPublicId), staff, null)
+				.andExpect(jsonPath("$.content[0].deductedTotal").value(150))
+				.andExpect(jsonPath("$.content[0].balance").value(200));
+		// A deduction recorded by mistake is cancelled: it no longer counts
+		perform(put("/api/payouts/deductions/cancel"), staff,
+				"{\"deductionId\": %d, \"reason\": \"Not late after all\"}".formatted(withId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("CANCELLED"));
+		perform(get("/api/payouts/wallet/" + partnerId), staff, null)
+				.andExpect(jsonPath("$.deductedTotal").value(100))
+				.andExpect(jsonPath("$.balance").value(250));
+
+		// An approved partner's bank accounts are locked for the partner (staff still add them)
+		perform(post("/api/partners/bank-accounts/add"), partner, """
+				{"partnerProfileId": %d, "accountHolderName": "Kiran Rao", "accountNumber": "123456789012",
+				 "ifscCode": "SBIN0001234", "bankName": "SBI", "branchName": "Madhapur"}""".formatted(partnerId))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(
+						"Your bank account details are locked after approval. Contact NexHome support to change them."));
 		long accountId = json(perform(post("/api/partners/bank-accounts/add"), staff, """
 				{"partnerProfileId": %d, "accountHolderName": "Kiran Rao", "accountNumber": "123456784321",
 				 "ifscCode": "SBIN0001234", "bankName": "SBI", "branchName": "Madhapur"}""".formatted(partnerId))
 				.andExpect(status().isCreated())).get("partnerBankAccountId").asLong();
-		perform(put("/api/partners/bank-accounts/verify"), staff,
-				"{\"partnerBankAccountId\": %d, \"verificationStatus\": \"VERIFIED\"}".formatted(accountId))
-				.andExpect(status().isOk());
-		perform(post("/api/payouts/wallet/settle"), partner, "{\"partnerProfileId\": %d}".formatted(partnerId))
-				.andExpect(status().isForbidden());
-		long settlementId = json(perform(post("/api/payouts/wallet/settle"), staff,
-				"{\"partnerProfileId\": %d}".formatted(partnerId))
-				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.settlementStatus").value("PAID"))
-				.andExpect(jsonPath("$.netAmount").value(280))
-				.andExpect(jsonPath("$.bankAccountLast4").value("4321"))
-				.andExpect(jsonPath("$.items.length()").value(2))).get("settlementId").asLong();
-
-		// The wallet starts again at 0; the payout keeps its jobs
-		perform(get("/api/payouts/wallet/" + partnerId), partner, null)
-				.andExpect(jsonPath("$.since").isNotEmpty())
-				.andExpect(jsonPath("$.balance").value(0))
-				.andExpect(jsonPath("$.items.length()").value(0))
-				.andExpect(jsonPath("$.paidTotal").value(280))
-				.andExpect(jsonPath("$.cashKeptTotal").value(400))
-				.andExpect(jsonPath("$.lastSettlement.settlementId").value(settlementId));
-		perform(post("/api/payouts/wallet/settle"), staff, "{\"partnerProfileId\": %d}".formatted(partnerId))
+		// Once the profile was sent for review the number and IFSC are fixed, for staff too
+		perform(put("/api/partners/bank-accounts/update"), staff,
+				"{\"partnerBankAccountId\": %d, \"accountNumber\": \"999999999\"}".formatted(accountId))
 				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.message").value("The wallet is empty; there is nothing to pay out."));
-		perform(get("/api/payouts/settlements?partnerProfileId=" + partnerId), partner, null)
-				.andExpect(jsonPath("$.totalElements").value(1))
-				.andExpect(jsonPath("$.content[0].onlineEarnings").value(340));
-		perform(get("/api/payouts/settlements/" + settlementId), partner, null)
-				.andExpect(jsonPath("$.cashCommission").value(60))
-				.andExpect(jsonPath("$.items.length()").value(2));
-		perform(get("/api/payouts/settlements/" + settlementId), customer, null).andExpect(status().isForbidden());
-		perform(get("/api/payments/bookings/" + online), staff, null)
-				.andExpect(jsonPath("$.payout.payoutStatus").value("PAID"));
+				.andExpect(jsonPath("$.message").value("The account number and IFSC cannot be changed after the profile "
+						+ "is sent for review; add a new bank account instead."));
+	}
+
+	/** An approved partner may still change their working hours and areas, but nothing else of the profile. */
+	@Test
+	void anApprovedPartnerChangesOnlyWorkingHoursAndAreas() throws Exception {
+		setUp();
+		perform(put("/api/partners/profiles/update"), partner,
+				"{\"partnerProfileId\": %d, \"maxTravelKm\": 25, \"serviceAreas\": [\"Madhapur\", \"Kondapur\"]}"
+						.formatted(partnerId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.maxTravelKm").value(25))
+				.andExpect(jsonPath("$.serviceAreas.length()").value(2))
+				.andExpect(jsonPath("$.onboardingStatus").value("APPROVED"));
+		perform(put("/api/partners/profiles/update"), partner,
+				"{\"partnerProfileId\": %d, \"firstName\": \"Ravi\", \"maxTravelKm\": 20}".formatted(partnerId))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("The profile is APPROVED and cannot be changed now. Contact support to update it."));
 	}
 
 	/** A partner who went offline is online again once they start the work. */

@@ -68,6 +68,10 @@ public class NexHomePaymentOrder {
 	@Column(name = "payment_status", nullable = false, length = 60)
 	private String paymentStatus;
 
+	/** The token the gateway's checkout opens with (V66; Cashfree's payment_session_id), null for MANUAL. */
+	@Column(name = "checkout_token", updatable = false, columnDefinition = "text")
+	private String checkoutToken;
+
 	@Column(name = "idempotency_key", nullable = false, updatable = false, length = 100)
 	private String idempotencyKey;
 

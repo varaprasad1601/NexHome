@@ -54,6 +54,10 @@ public class NexHomePayment {
 	@Column(name = "payment_method", nullable = false, length = 60)
 	private String paymentMethod;
 
+	/** How it was paid (V66): the gateway's payment group, e.g. upi, credit_card; null for MANUAL. */
+	@Column(name = "payment_mode", length = 40)
+	private String paymentMode;
+
 	@Column(name = "amount", nullable = false, precision = 12, scale = 2)
 	private BigDecimal amount;
 
@@ -73,6 +77,14 @@ public class NexHomePayment {
 
 	@Column(name = "captured_at")
 	private Instant capturedAt;
+
+	/** What the customer paid the gateway on top for this booking (V69: surcharge + GST), null when none. */
+	@Column(name = "customer_charges_amount", precision = 12, scale = 2)
+	private BigDecimal customerChargesAmount;
+
+	/** This booking's share of the gateway's charges on the order (charge + tax, V68), null until known. */
+	@Column(name = "gateway_charges_amount", precision = 12, scale = 2)
+	private BigDecimal gatewayChargesAmount;
 
 	@CreationTimestamp
 	@Column(name = "creation_date", nullable = false, updatable = false)

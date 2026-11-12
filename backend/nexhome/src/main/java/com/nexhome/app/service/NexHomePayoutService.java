@@ -2,7 +2,6 @@ package com.nexhome.app.service;
 
 import com.nexhome.app.dto.NexHomePageResponse;
 import com.nexhome.app.dto.NexHomePayoutAdjustRequest;
-import com.nexhome.app.dto.NexHomePayoutPayRequest;
 import com.nexhome.app.dto.NexHomePayoutResponse;
 import com.nexhome.app.dto.NexHomePayoutStatsResponse;
 import com.nexhome.app.dto.NexHomePayoutStatusUpdateRequest;
@@ -28,26 +27,51 @@ public interface NexHomePayoutService {
 
 	NexHomePayoutStatsResponse getPayoutStats();
 
-	/** Sends the payout to the partner's verified primary bank account. */
-	NexHomePayoutResponse pay(NexHomePayoutPayRequest request);
-
 	NexHomePayoutResponse updateStatus(NexHomePayoutStatusUpdateRequest request);
 
 	NexHomePayoutResponse adjust(NexHomePayoutAdjustRequest request);
 
 	NexHomePageResponse<NexHomeTransferResponse> getTransfers(Integer page, Integer size);
 
-	/** A partner's wallet (V60): the partner themself, or PAYOUT_MANAGE read. */
+	/** What NexHome owes a partner (V62), since joining: the partner themself, or PAYOUT_MANAGE read. */
 	com.nexhome.app.dto.NexHomePartnerWalletResponse getWallet(Long partnerProfileId);
 
-	/** Pays out the wallet in one transfer to the verified primary bank account (PAYOUT_MANAGE write). */
-	com.nexhome.app.dto.NexHomePartnerSettlementResponse settleWallet(
-			com.nexhome.app.dto.NexHomeWalletSettleRequest request);
+	/** Records a payment made to a partner outside the app (PAYOUT_MANAGE write). */
+	com.nexhome.app.dto.NexHomeManualPayoutResponse recordManualPayout(
+			com.nexhome.app.dto.NexHomeManualPayoutCreateRequest request);
 
-	/** A partner's wallet payouts, newest first: the partner themself, or PAYOUT_MANAGE read. */
-	NexHomePageResponse<com.nexhome.app.dto.NexHomePartnerSettlementResponse> getSettlements(Long partnerProfileId,
+	/** Cancels a payout recorded by mistake (PAYOUT_MANAGE write). */
+	com.nexhome.app.dto.NexHomeManualPayoutResponse cancelManualPayout(
+			com.nexhome.app.dto.NexHomeManualPayoutCancelRequest request);
+
+	/**
+	 * Recorded payouts, newest first: one partner's (the partner themself, or PAYOUT_MANAGE read), or every partner's
+	 * without {@code partnerProfileId} (PAYOUT_MANAGE read).
+	 */
+	NexHomePageResponse<com.nexhome.app.dto.NexHomeManualPayoutResponse> getManualPayouts(Long partnerProfileId,
 			Integer page, Integer size);
 
-	/** One wallet payout with its jobs: its partner, or PAYOUT_MANAGE read. */
-	com.nexhome.app.dto.NexHomePartnerSettlementResponse getSettlement(Long settlementId);
+	/** One recorded payout: its partner, or PAYOUT_MANAGE read. */
+	com.nexhome.app.dto.NexHomeManualPayoutResponse getManualPayout(Long payoutId);
+
+	/**
+	 * What NexHome owes each partner (PAYOUT_MANAGE read): partners with jobs or payouts, the largest balance first;
+	 * {@code search} on name, partner id and mobile number; {@code dueOnly} only those still owed something.
+	 */
+	NexHomePageResponse<com.nexhome.app.dto.NexHomePartnerDueResponse> getPartnerDues(Integer page, Integer size,
+			String search, Boolean dueOnly);
+
+	com.nexhome.app.dto.NexHomeManualPayoutStatsResponse getManualPayoutStats();
+
+	/** Records a deduction on its own (PAYOUT_MANAGE write; V63). */
+	com.nexhome.app.dto.NexHomePartnerDeductionResponse recordDeduction(
+			com.nexhome.app.dto.NexHomePartnerDeductionCreateRequest request);
+
+	/** Cancels a deduction recorded by mistake (PAYOUT_MANAGE write). */
+	com.nexhome.app.dto.NexHomePartnerDeductionResponse cancelDeduction(
+			com.nexhome.app.dto.NexHomePartnerDeductionCancelRequest request);
+
+	/** Deductions, newest first: one partner's (the partner or PAYOUT_MANAGE read), or all (PAYOUT_MANAGE read). */
+	NexHomePageResponse<com.nexhome.app.dto.NexHomePartnerDeductionResponse> getDeductions(Long partnerProfileId,
+			Integer page, Integer size);
 }

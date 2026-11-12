@@ -232,7 +232,7 @@ class NexHomeBookingFlowTest {
 		perform(put("/api/bookings/cancel"), customer,
 				"{\"bookingId\": %d, \"reason\": \"Changed my mind\"}".formatted(bookingId))
 				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.message").value("A booking that is IN_PROGRESS cannot be cancelled."));
+				.andExpect(jsonPath("$.message").value("The work on this booking has started, so it can no longer be cancelled."));
 		// A cash job: Finish work ends the timer, but the job stays IN_PROGRESS until the cash is collected
 		perform(post("/api/bookings/timer"), partner, "{\"bookingId\": %d, \"eventType\": \"STOP\"}".formatted(bookingId))
 				.andExpect(status().isCreated())
@@ -242,7 +242,7 @@ class NexHomeBookingFlowTest {
 				.andExpect(jsonPath("$.assignments[0].assignmentStatus").value("STARTED"));
 		perform(post("/api/bookings/timer"), partner, "{\"bookingId\": %d, \"eventType\": \"PAUSE\"}".formatted(bookingId))
 				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.message").value("The work is finished; collect the cash to complete the job."));
+				.andExpect(jsonPath("$.message").value("The work is finished; the job completes once it is paid."));
 		long cashId = json(perform(get("/api/payments/bookings/" + bookingId), partner, null))
 				.get("cashCollection").get("cashCollectionId").asLong();
 		perform(put("/api/payments/cash-collections/update"), partner,

@@ -59,11 +59,17 @@ public class NexHomePartnerDocumentMapper {
 	}
 
 	public NexHomePartnerDocumentResponse toPartnerDocumentDto(NexHomePartnerDocument document) {
+		return toPartnerDocumentDto(document, false);
+	}
+
+	/** With {@code forOwner} the full number too (only for the partner who owns the document). */
+	public NexHomePartnerDocumentResponse toPartnerDocumentDto(NexHomePartnerDocument document, boolean forOwner) {
+		String number = encryptor.decrypt(document.getDocumentNumberEncrypted());
 		return new NexHomePartnerDocumentResponse(
 				document.getId(),
 				document.getPartner().getId(),
 				document.getDocumentType(),
-				NexHomeFieldEncryptor.mask(encryptor.decrypt(document.getDocumentNumberEncrypted())),
+				NexHomeFieldEncryptor.mask(number),
 				document.getFile() == null ? null : document.getFile().getId(),
 				document.getFile() == null ? null : document.getFile().getOriginalName(),
 				document.getFile() == null ? null : document.getFile().getContentType(),
@@ -75,6 +81,7 @@ public class NexHomePartnerDocumentMapper {
 				document.getRejectionReason(),
 				document.getCreationDate(),
 				document.getIdType(),
-				document.getDocumentName());
+				document.getDocumentName(),
+				forOwner ? number : null);
 	}
 }

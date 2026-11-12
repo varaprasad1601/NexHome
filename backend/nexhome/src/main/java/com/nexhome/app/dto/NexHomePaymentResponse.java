@@ -21,8 +21,14 @@ public record NexHomePaymentResponse(
 		String provider,
 		String providerPaymentId,
 		String paymentMethod,
+		/** How it was paid (V66): the gateway's payment group, e.g. upi, credit_card; null for MANUAL. */
+		String paymentMode,
 		BigDecimal amount,
 		BigDecimal refundedAmount,
+		/** This booking's share of the gateway's charges (charge + tax, V68); null until the gateway reports them. */
+		BigDecimal gatewayChargesAmount,
+		/** What the customer paid the gateway on top for this booking (V69: surcharge + GST); null without. */
+		BigDecimal customerChargesAmount,
 		String currency,
 		String status,
 		String failureCode,

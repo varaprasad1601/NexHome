@@ -39,13 +39,15 @@ export default function WeeklyGrid({ value, onChange }) {
   return (
     <View style={{ gap: 6 }}>
       <View style={{ flexDirection: 'row', gap: 4 }}>
-        <View style={{ width: 40 }} />
+        <View style={{ width: 34 }} />
         {slots.options.map((slot) => (
           <View key={slot.value} style={{ flex: 1, alignItems: 'center' }}>
-            <Text weight="bold" style={{ fontSize: 10.5, textAlign: 'center', color: colors.navy }} numberOfLines={2}>
+            {/* One line of a fixed height: a long name (Early Morning) shrinks to fit its column, and every time below
+                starts at the same height */}
+            <Text weight="bold" style={{ height: 15, lineHeight: 15, fontSize: 10.5, textAlign: 'center', textAlignVertical: 'center', color: colors.navy }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               {slotName(slot.label)}
             </Text>
-            <Text style={{ fontSize: 9.5, textAlign: 'center', color: colors.muted }} numberOfLines={2}>
+            <Text style={{ marginTop: 4, fontSize: 9.5, lineHeight: 12, textAlign: 'center', color: colors.muted }} numberOfLines={2}>
               {slotTime(slot)}
             </Text>
           </View>
@@ -53,7 +55,7 @@ export default function WeeklyGrid({ value, onChange }) {
       </View>
       {DAYS.map((day) => (
         <View key={day} style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
-          <Text weight="bold" style={{ width: 40, fontSize: 13 }}>
+          <Text weight="bold" style={{ width: 34, fontSize: 13 }}>
             {DAY_SHORT[day]}
           </Text>
           {slots.options.map((slot) => {

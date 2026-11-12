@@ -20,6 +20,7 @@ public class NexHomeScheduledJobs {
 
 	private final NexHomeBookingService bookingService;
 	private final NexHomeFileService fileService;
+	private final com.nexhome.app.service.NexHomePaymentService paymentService;
 
 	/** Booking offers that ran out become EXPIRED (every minute by default; nexhome.slots.expire-interval-ms). */
 	@Scheduled(fixedDelayString = "${nexhome.slots.expire-interval-ms:60000}", initialDelay = 35000)
@@ -37,5 +38,14 @@ public class NexHomeScheduledJobs {
 	@Scheduled(fixedDelayString = "${nexhome.files.cleanup-interval-ms:3600000}", initialDelay = 120000)
 	public void removeUnattachedUploads() {
 		fileService.removeUnattachedUploads();
+	}
+
+	/**
+	 * The payment gateway's charges and settlements of recent paid orders still without them (V68; every hour,
+	 * nexhome.payments.charges-interval-ms). Cashfree also sends the charges by webhook; this catches the rest.
+	 */
+	@Scheduled(fixedDelayString = "${nexhome.payments.charges-interval-ms:3600000}", initialDelay = 180000)
+	public void refreshGatewayCharges() {
+		paymentService.refreshGatewayCharges();
 	}
 }

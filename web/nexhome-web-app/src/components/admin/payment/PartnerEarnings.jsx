@@ -1,9 +1,11 @@
+import { CircleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
+import InfoTip from '../common/InfoTip';
 import Pagination from '../common/Pagination';
 import PartnerWalletCard from './PartnerWalletCard';
-import { MoneyBadge } from './moneyParts';
+import { paidOnLabel, payoutModeLabel } from './payoutParts';
 import { headClass, linkClass } from '../system/systemStyles';
 import { useAdminAuth } from '../../../context/adminAuth';
 import { formatAmount, serviceNameOf } from '../../../data/bookingOptions';
@@ -18,6 +20,7 @@ const PERIODS = [
   { key: 'ALL', label: 'Overall', phrase: 'overall' }
 ];
 const PAGE_SIZE = 5;
+const LOOKUPS = [...PAYMENT_LOOKUPS, 'PAYOUT_MODE', 'DEDUCTION_REASON'];
 const EMPTY_PAGE = { content: [], page: 0, size: PAGE_SIZE, totalElements: 0, totalPages: 0 };
 
 /** "08 Oct 2026, 02:29 PM", or a dash. */
@@ -46,24 +49,41 @@ function usePage(path) {
  * The partner profile's Earnings tab (PAYOUT_MANAGE read), the period switcher of
  * Admin Sreens/earnings-samples/partner-earnings-period-switcher.html: Today (default), This Week, This Month or
  * Overall picks the period (IST, by when the job was completed; GET /api/payouts/earnings/{id}?period=): the earnings
- * in large type with the job count, the jobs, total amount, commission and partner earnings, then the details in two
+ * received (paid by the customers) in large type with the job count and, in small text, what customers have not paid
+ * yet (pendingEarnings / pendingJobs, as the partner app shows it), then the jobs, commission and partner earnings
+ * (no total amount), then the details in two
  * parts: the period's jobs (booking id, payment method, total, commission, partner earnings; 5 to a page) and the
- * partner's payouts (GET /api/payouts?partnerProfileId=, the most recent 5 to a page). Above it all the partner's
- * wallet (PartnerWalletCard) with Pay Out Wallet.
+ * payouts and deductions recorded for the partner (GET /api/payouts/manual and /api/payouts/deductions
+ * ?partnerProfileId=, merged newest first, 5 to a page). Above it
+ * all what NexHome owes the partner (PartnerWalletCard) with Record Payout.
  */
-export default function PartnerEarnings({ partnerProfileId }) {
-  const { label } = useLookupLabels(PAYMENT_LOOKUPS);
+export default function PartnerEarnings({ partnerProfileId, partnerPublicId, partnerName }) {
+  const { label } = useLookupLabels(LOOKUPS);
   const [period, setPeriod] = useState('TODAY');
   const [recordsPage, setRecordsPage] = useState(0);
   const [payoutsPage, setPayoutsPage] = useState(0);
-  // Bumped after a wallet payout, so the payouts list loads again
+  // Bumped after a payout is recorded, so the payouts list loads again
   const [paidCount, setPaidCount] = useState(0);
   const earnings = usePage(`/api/payouts/earnings/${partnerProfileId}?period=${period}&page=${recordsPage}&size=${PAGE_SIZE}`);
-  const payouts = usePage(`/api/payouts?partnerProfileId=${partnerProfileId}&page=${payoutsPage}&size=${PAGE_SIZE}&v=${paidCount}`);
+  // Payouts and deductions together, newest first (a partner's are few: the latest 100 of each, paged here)
+  const payouts = usePage(`/api/payouts/manual?partnerProfileId=${partnerProfileId}&size=100&v=${paidCount}`);
+  const deductions = usePage(`/api/payouts/deductions?partnerProfileId=${partnerProfileId}&size=100&v=${paidCount}`);
   const summary = earnings.data;
   const phrase = PERIODS.find((item) => item.key === period).phrase;
   const records = summary?.records ?? EMPTY_PAGE;
-  const payoutPage = payouts.data ?? EMPTY_PAGE;
+  const entries = [
+    ...(payouts.data?.content ?? []).map((item) => ({ kind: 'PAYOUT', key: `p${item.payoutId}`, day: item.paidOn, item })),
+    ...(deductions.data?.content ?? []).map((item) => ({ kind: 'DEDUCTION', key: `d${item.deductionId}`, day: item.deductedOn, item }))
+  ].sort((a, b) => (b.day ?? '').localeCompare(a.day ?? '') || (b.item.creationDate ?? '').localeCompare(a.item.creationDate ?? ''));
+  const historyLoading = payouts.loading || deductions.loading;
+  const historyError = payouts.error || deductions.error;
+  const payoutPage = {
+    content: entries.slice(payoutsPage * PAGE_SIZE, (payoutsPage + 1) * PAGE_SIZE),
+    page: payoutsPage,
+    size: PAGE_SIZE,
+    totalElements: entries.length,
+    totalPages: Math.ceil(entries.length / PAGE_SIZE)
+  };
 
   const choose = (key) => {
     setPeriod(key);
@@ -72,15 +92,28 @@ export default function PartnerEarnings({ partnerProfileId }) {
 
   return (
     <div className="space-y-5 pt-3">
-      <PartnerWalletCard partnerProfileId={partnerProfileId} onPaid={() => setPaidCount((count) => count + 1)} />
+      <PartnerWalletCard
+        partnerProfileId={partnerProfileId}
+        partnerPublicId={partnerPublicId}
+        partnerName={partnerName}
+        onPaid={() => setPaidCount((count) => count + 1)}
+      />
+      {/* The wallet (since joining) apart from the period's earnings below */}
+      <hr className="!my-12 border-0 border-t border-[var(--line)]" />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="text-[2.5rem] font-black leading-none text-[var(--navy)]">
-            {summary ? formatAmount(summary.earnings) : <span className="block h-10 w-40 animate-pulse rounded-lg bg-[var(--light)]" />}
+            {summary ? formatAmount(summary.receivedEarnings) : <span className="block h-10 w-40 animate-pulse rounded-lg bg-[var(--light)]" />}
           </div>
           <div className="mt-1.5 text-[0.8125rem] font-bold text-[var(--muted)]">
-            {summary ? `earned ${phrase} · ${summary.jobs} job${summary.jobs === 1 ? '' : 's'}` : ' '}
+            {summary ? `received ${phrase} · ${summary.jobs} job${summary.jobs === 1 ? '' : 's'}` : ' '}
           </div>
+          {summary && Number(summary.pendingJobs) > 0 && (
+            <div className="mt-1 text-[0.75rem] font-semibold text-[#B7860B]">
+              + {formatAmount(summary.pendingEarnings)} pending · {summary.pendingJobs} job{summary.pendingJobs === 1 ? '' : 's'} not paid by the
+              customer yet
+            </div>
+          )}
         </div>
         <div className="inline-flex rounded-xl bg-[var(--light)] p-1" role="tablist" aria-label="Period">
           {PERIODS.map((item) => (
@@ -100,10 +133,9 @@ export default function PartnerEarnings({ partnerProfileId }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-[var(--line)] md:grid-cols-4">
+      <div className="grid grid-cols-3 overflow-hidden rounded-xl border border-[var(--line)]">
         {[
           { label: 'Jobs Completed', value: summary?.jobs, className: 'text-[var(--ink)]' },
-          { label: 'Total Amount', value: summary && formatAmount(summary.totalAmount), className: 'text-[var(--ink)]' },
           { label: 'Commission', value: summary && `− ${formatAmount(summary.commission)}`, className: 'text-[var(--muted)]' },
           { label: 'Partner Earnings', value: summary && formatAmount(summary.earnings), className: 'text-[var(--green-2)]' }
         ].map((figure, i) => (
@@ -175,6 +207,16 @@ export default function PartnerEarnings({ partnerProfileId }) {
                         >
                           {label('PAYMENT_METHOD', record.paymentMethod)}
                         </span>
+                        {/* An online job the customer has not paid yet (no payout): its share is still pending */}
+                        {!record.settlement && (
+                          <span className="ml-1.5">
+                            <InfoTip
+                              text="Customer has not paid yet"
+                              icon={CircleAlert}
+                              iconClassName="text-[#D69E2E] hover:text-[#B7860B] focus-visible:text-[#B7860B]"
+                            />
+                          </span>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 text-right">{formatAmount(record.totalAmount)}</td>
                       <td className="whitespace-nowrap px-3 py-3 text-right text-[var(--muted)]">− {formatAmount(record.commission)}</td>
@@ -199,41 +241,58 @@ export default function PartnerEarnings({ partnerProfileId }) {
             Payout Details
             <span className="text-xs font-bold text-[var(--muted)]">Most recent first</span>
           </h3>
-          {payouts.error ? (
+          {historyError ? (
             <div role="alert" className="rounded-xl border border-[#F5C2C2] bg-[#FDECEC] px-4 py-3 text-sm font-bold text-[#C53030]">
-              {payouts.error}
+              {historyError}
             </div>
-          ) : payouts.loading ? (
+          ) : historyLoading ? (
             <div className="h-40 animate-pulse rounded-xl bg-[var(--light)]" />
           ) : payoutPage.content.length === 0 ? (
             <p className="mb-0 rounded-xl border border-[var(--line)] px-4 py-8 text-center text-sm text-[var(--muted)]">
-              No payouts yet: they come with completed, paid online jobs.
+              No payouts or deductions recorded yet.
             </p>
           ) : (
             <ul className="m-0 list-none divide-y divide-[var(--line)] rounded-xl border border-[var(--line)] p-0">
-              {payoutPage.content.map((payout) => (
-                <li key={payout.payoutId} className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 px-4 py-3">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="font-black text-[var(--ink)]">{payout.publicId}</span>
-                    <MoneyBadge status={payout.payoutStatus} label={label('PAYOUT_STATUS', payout.payoutStatus)} />
-                  </span>
-                  <span className="text-right text-base font-black text-[var(--green-2)]">{formatAmount(payout.netAmount)}</span>
-                  <span className="text-xs text-[var(--muted)]">
-                    Booking{' '}
-                    <Link to={`/admin/bookings/${payout.bookingId}`} className={linkClass}>
-                      {payout.bookingPublicId}
-                    </Link>
-                  </span>
-                  <span className="text-right text-xs text-[var(--muted)]">
-                    {payout.paidAt ? `Paid ${when(payout.paidAt)}` : when(payout.creationDate)}
-                  </span>
-                </li>
-              ))}
+              {payoutPage.content.map(({ kind, key, item }) => {
+                const deduction = kind === 'DEDUCTION';
+                const cancelled = (deduction ? item.status : item.payoutStatus) === 'CANCELLED';
+                return (
+                  <li key={key} className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 px-4 py-3">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-black text-[var(--ink)]">{item.publicId}</span>
+                      {deduction && (
+                        <span className="rounded-full bg-[#FDECEC] px-2 py-0.5 text-[0.6875rem] font-bold text-[#C53030]">Deduction</span>
+                      )}
+                      {cancelled && (
+                        <span title={item.cancellationReason} className="rounded-full bg-[#F1F4F8] px-2 py-0.5 text-[0.6875rem] font-bold text-[var(--muted)]">
+                          Cancelled
+                        </span>
+                      )}
+                    </span>
+                    <span
+                      className={`text-right text-base font-black ${
+                        cancelled ? 'text-[var(--muted)] line-through' : deduction ? 'text-[#C53030]' : 'text-[var(--green-2)]'
+                      }`}
+                    >
+                      {deduction ? '− ' : ''}
+                      {formatAmount(item.amount)}
+                    </span>
+                    <span className="min-w-0 truncate text-xs text-[var(--muted)]" title={deduction ? item.notes ?? '' : item.transactionId ?? ''}>
+                      {deduction
+                        ? `${label('DEDUCTION_REASON', item.deductionReason)}${item.notes ? ` · ${item.notes}` : ''}`
+                        : `${payoutModeLabel(label, item.paymentMode)}${item.transactionId ? ` · ${item.transactionId}` : ''}`}
+                    </span>
+                    <span className="whitespace-nowrap text-right text-xs text-[var(--muted)]">
+                      {deduction ? 'Deducted' : 'Paid'} {paidOnLabel(item.paidOn ?? item.deductedOn)}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           )}
-          {!payouts.loading && !payouts.error && (
+          {!historyLoading && !historyError && (
             <div className="mt-auto min-h-[3.25rem]">
-              <Pagination pageData={payoutPage} noun="payouts" onPageChange={setPayoutsPage} />
+              <Pagination pageData={payoutPage} noun="entries" onPageChange={setPayoutsPage} />
             </div>
           )}
         </section>

@@ -43,15 +43,15 @@ public class NexHomePartnerBankAccount {
 	@Column(name = "account_holder_name", nullable = false, length = 150)
 	private String accountHolderName;
 
-	// The account number and IFSC identify the account and are fixed once it is added; the number is encrypted with
-	// NexHomeFieldEncryptor and never logged or returned
-	@Column(name = "account_number_encrypted", nullable = false, updatable = false, columnDefinition = "text")
+	// The account number and IFSC can be corrected until the partner profile is submitted (the service checks it);
+	// the number is encrypted with NexHomeFieldEncryptor and never logged (returned in full only to its partner)
+	@Column(name = "account_number_encrypted", nullable = false, columnDefinition = "text")
 	private String accountNumberEncrypted;
 
-	@Column(name = "account_number_last4", nullable = false, updatable = false, length = 4)
+	@Column(name = "account_number_last4", nullable = false, length = 4)
 	private String accountNumberLast4;
 
-	@Column(name = "ifsc_code", nullable = false, updatable = false, length = 11)
+	@Column(name = "ifsc_code", nullable = false, length = 11)
 	private String ifscCode;
 
 	@Column(name = "bank_name", length = 150)

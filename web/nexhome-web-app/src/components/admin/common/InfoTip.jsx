@@ -3,9 +3,10 @@ import { useRef, useState } from 'react';
 
 /**
  * An info icon after a field's label; hovering or focusing it shows `text` in a small tooltip above it. The tooltip
- * is fixed to the window, so a scrolling dialog cannot clip it.
+ * is fixed to the window, so a scrolling dialog cannot clip it. `icon` (a lucide icon) and `iconClassName` replace the
+ * info icon and its grey, e.g. an amber warning circle.
  */
-export default function InfoTip({ text }) {
+export default function InfoTip({ text, icon: Icon = Info, iconClassName = 'text-[#8A9AAD] hover:text-[var(--blue)] focus-visible:text-[var(--blue)]' }) {
   const ref = useRef(null);
   const [position, setPosition] = useState(null);
   const show = () => {
@@ -24,9 +25,9 @@ export default function InfoTip({ text }) {
         onMouseLeave={hide}
         onFocus={show}
         onBlur={hide}
-        className="flex h-4 w-4 items-center justify-center rounded-full text-[#8A9AAD] outline-none hover:text-[var(--blue)] focus-visible:text-[var(--blue)]"
+        className={`flex h-4 w-4 items-center justify-center rounded-full outline-none ${iconClassName}`}
       >
-        <Info size={14} strokeWidth={2.2} />
+        <Icon size={14} strokeWidth={2.2} />
       </button>
       {position && (
         <span

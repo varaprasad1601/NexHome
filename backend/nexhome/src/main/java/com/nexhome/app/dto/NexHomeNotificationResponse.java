@@ -19,7 +19,7 @@ public record NexHomeNotificationResponse(
 		String message,
 		String referenceType,
 		Long referenceId,
-		/** NORMAL or HIGH (V45). */
+		/** HIGH, MEDIUM or LOW (V45, V64). */
 		String priority,
 		/** The app it belongs to (V54): CUSTOMER, PARTNER, STAFF or ALL. */
 		String audience,

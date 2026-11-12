@@ -29,7 +29,20 @@ public class NexHomePaymentMapper {
 				order.getCustomer().getId(),
 				NexHomeBookingMapper.nameOf(order.getCustomer().getFirstName(), order.getCustomer().getLastName()),
 				order.getProvider(), order.getProviderOrderId(), order.getAmount(), order.getCurrency(),
-				order.getPaymentStatus(), order.getExpiresAt(), order.getCreationDate());
+				order.getPaymentStatus(), order.getCheckoutToken(), order.getExpiresAt(), order.getCreationDate(), null, null, null, null);
+	}
+
+	public com.nexhome.app.dto.NexHomePaymentAttemptResponse toAttemptDto(
+			com.nexhome.app.model.NexHomePaymentAttempt attempt) {
+		return new com.nexhome.app.dto.NexHomePaymentAttemptResponse(attempt.getId(), attempt.getPaymentOrder().getId(),
+				attempt.getProvider(), attempt.getProviderPaymentId(), attempt.getAttemptStatus(),
+				attempt.getPaymentMode(), attempt.getPaymentMethodDetail(), attempt.getAmount(), attempt.getCurrency(),
+				attempt.getBankReference(), attempt.getErrorCode(), attempt.getMessage(), attempt.getSurchargeAmount(),
+				attempt.getSurchargeTax(), attempt.getGatewayCharge(),
+				attempt.getGatewayTax(), attempt.getSettlementAmount(), attempt.getSettlementCurrency(),
+				attempt.getSettlementId(), attempt.getSettlementUtr(), attempt.getSettledAt(),
+				attempt.getChargesRecordedAt(), attempt.getAttemptedAt(),
+				attempt.getCompletedAt(), attempt.getUpdatedDate());
 	}
 
 	public NexHomePaymentResponse toPaymentDto(NexHomePayment payment, BigDecimal refundedAmount) {
@@ -39,8 +52,9 @@ public class NexHomePaymentMapper {
 				booking.getCustomer().getId(),
 				NexHomeBookingMapper.nameOf(booking.getCustomer().getFirstName(), booking.getCustomer().getLastName()),
 				booking.getTotalAmount(), payment.getProvider(), payment.getProviderPaymentId(), payment.getPaymentMethod(),
-				payment.getAmount(),
-				refundedAmount, payment.getCurrency(), payment.getStatus(), payment.getFailureCode(),
+				payment.getPaymentMode(), payment.getAmount(),
+				refundedAmount, payment.getGatewayChargesAmount(), payment.getCustomerChargesAmount(),
+				payment.getCurrency(), payment.getStatus(), payment.getFailureCode(),
 				payment.getFailureMessage(), payment.getCapturedAt(), payment.getCreationDate());
 	}
 

@@ -4,6 +4,8 @@ import { router } from 'expo-router';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text as RNText, TextInput, View } from 'react-native';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { colors, fonts, placeholderGradient, radius } from '../theme';
 
 /** Text in DM Sans; `weight` regular | medium | semibold | bold | extrabold. */
@@ -179,11 +181,11 @@ export function FormScroll({ children, contentContainerStyle, onScroll, ...props
 }
 
 /** A screen's top bar: back arrow (when `back`), title, optional right element. */
-export function Header({ title, back = true, right }) {
+export function Header({ title, back = true, right, onBack }) {
   return (
     <View style={styles.header}>
       {back ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} style={styles.iconBox}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onBack ?? (() => router.back())} style={styles.iconBox}>
           <Feather name="chevron-left" size={24} color={colors.navy} />
         </Pressable>
       ) : null}
@@ -252,13 +254,65 @@ export function Empty({ icon = 'inbox', title, text, action }) {
   );
 }
 
+// Error messages float over the top of the screen (FloatingError, rendered once by the root layout), wherever
+// a screen shows them: a screen still renders <ErrorBox message={error} />, which hands the message over.
+const errorListeners = new Set();
+
+/** Shows a message in the floating error popup (also usable outside React screens). */
+export function showError(message) {
+  if (!message) return;
+  const item = { message: String(message), id: Date.now() + Math.random() };
+  errorListeners.forEach((listener) => listener(item));
+}
+
+/** A screen's error: shown in the floating popup at the top of the screen, not in the page. */
 export function ErrorBox({ message }) {
-  if (!message) return null;
+  useEffect(() => {
+    if (message) showError(message);
+  }, [message]);
+  return null;
+}
+
+/** The floating error popup over the top of every screen: red, tap or wait 5 s to close. Rendered once in _layout. */
+export function FloatingError() {
+  const [item, setItem] = useState(null);
+  const insets = useSafeAreaInsets();
+  useEffect(() => {
+    const listener = (next) => setItem(next);
+    errorListeners.add(listener);
+    return () => errorListeners.delete(listener);
+  }, []);
+  useEffect(() => {
+    if (!item) return undefined;
+    const timer = setTimeout(() => setItem(null), 5000);
+    return () => clearTimeout(timer);
+  }, [item]);
+  if (!item) return null;
   return (
-    <View accessibilityRole="alert" style={{ backgroundColor: colors.redSoft, borderColor: colors.redLine, borderWidth: 1, borderRadius: 12, padding: 12 }}>
-      <Text weight="bold" style={{ color: colors.red, fontSize: 13 }}>
-        {message}
-      </Text>
+    <View pointerEvents="box-none" style={{ position: 'absolute', top: insets.top + 8, left: 12, right: 12, zIndex: 1000, elevation: 12 }}>
+      <Pressable
+        accessibilityRole="alert"
+        onPress={() => setItem(null)}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+          paddingVertical: 12,
+          paddingHorizontal: 14,
+          borderRadius: 14,
+          backgroundColor: colors.red,
+          shadowColor: '#000',
+          shadowOpacity: 0.2,
+          shadowRadius: 10,
+          shadowOffset: { width: 0, height: 4 }
+        }}
+      >
+        <Feather name="alert-circle" size={18} color={colors.white} />
+        <Text weight="bold" style={{ flex: 1, color: colors.white, fontSize: 13.5 }}>
+          {item.message}
+        </Text>
+        <Feather name="x" size={16} color={colors.white} />
+      </Pressable>
     </View>
   );
 }

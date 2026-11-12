@@ -541,6 +541,13 @@ class NexHomeProfileFlowTest {
 						.value("Document file is required: upload a scan or photo of the document"));
 		perform(get("/api/partners/profiles/documents/" + profileId), otherPartner, null)
 				.andExpect(status().isForbidden());
+		// The owner sees the full number (the app's edit form); staff only the masked one
+		perform(get("/api/partners/profiles/documents/" + profileId), partnerToken, null)
+				.andExpect(jsonPath("$[0].documentNumber").value("XXXXXX234F"))
+				.andExpect(jsonPath("$[0].fullDocumentNumber").value("ABCDE1234F"));
+		perform(get("/api/partners/profiles/documents/" + profileId), admin, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].fullDocumentNumber").doesNotExist());
 
 		perform(put("/api/partners/documents/verify"), partnerToken,
 				"{\"partnerDocumentId\": %d, \"verificationStatus\": \"VERIFIED\"}".formatted(documentId))
@@ -569,14 +576,21 @@ class NexHomeProfileFlowTest {
 				.andExpect(jsonPath("$.accountNumberLast4").value("4321"))
 				.andExpect(jsonPath("$.ifscCode").value("SBIN0001234"))
 				.andExpect(jsonPath("$.accountHolderName").value("Suresh Babu"))
-				.andExpect(jsonPath("$.accountNumber").doesNotExist()));
+				// The partner adding their own account gets its number back (staff never do; still stored encrypted)
+				.andExpect(jsonPath("$.accountNumber").value("123456784321")));
 		long firstId = first.get("partnerBankAccountId").asLong();
 		String storedNumber = (String) entityManager.createNativeQuery(
 				"select account_number_encrypted from nexhome_partner_bank_accounts where id = :id")
 				.setParameter("id", firstId).getSingleResult();
 		assertThat(storedNumber).doesNotContain("123456784321");
 
+		// A partner keeps one bank account; staff may add more (but not the same one twice)
 		perform(post("/api/partners/bank-accounts/add"), partnerToken, """
+				{"partnerProfileId": %d, "accountHolderName": "Suresh", "accountNumber": "555566667777",
+				 "ifscCode": "SBIN0001234"}""".formatted(profileId))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("You can have only one bank account. Remove the current one to add another."));
+		perform(post("/api/partners/bank-accounts/add"), admin, """
 				{"partnerProfileId": %d, "accountHolderName": "Suresh", "accountNumber": "123456784321",
 				 "ifscCode": "SBIN0001234"}""".formatted(profileId))
 				.andExpect(status().isConflict());
@@ -585,18 +599,33 @@ class NexHomeProfileFlowTest {
 				 "ifscCode": "HDFC0000001"}""".formatted(profileId))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("Account number must be 9 to 18 digits"));
-		long secondId = json(perform(post("/api/partners/bank-accounts/add"), partnerToken, """
+		long secondId = json(perform(post("/api/partners/bank-accounts/add"), admin, """
 				{"partnerProfileId": %d, "accountHolderName": "Suresh", "accountNumber": "998877665",
 				 "ifscCode": "HDFC0000001", "isPrimary": true}""".formatted(profileId))
 				.andExpect(status().isCreated())).get("partnerBankAccountId").asLong();
 		perform(get("/api/partners/profiles/bank-accounts/" + profileId), partnerToken, null)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].partnerBankAccountId").value(secondId))
-				.andExpect(jsonPath("$[1].isPrimary").value(false));
+				.andExpect(jsonPath("$[1].isPrimary").value(false))
+				// The partner sees the full account number and IFSC, and so do staff
+				.andExpect(jsonPath("$[0].accountNumber").value("998877665"))
+				.andExpect(jsonPath("$[0].ifscCode").value("HDFC0000001"));
+		perform(get("/api/partners/profiles/bank-accounts/" + profileId), admin, null)
+				.andExpect(jsonPath("$[0].accountNumberLast4").value("7665"))
+				.andExpect(jsonPath("$[0].accountNumber").value("998877665"));
 
+		// Before the profile is sent for review the partner may correct the number and IFSC (back to PENDING), but not
+		// to another of their accounts
+		perform(put("/api/partners/bank-accounts/update"), partnerToken,
+				"{\"partnerBankAccountId\": %d, \"accountNumber\": \"998877665\", \"ifscCode\": \"hdfc0000001\"}"
+						.formatted(firstId))
+				.andExpect(status().isConflict());
 		perform(put("/api/partners/bank-accounts/update"), partnerToken,
 				"{\"partnerBankAccountId\": %d, \"accountNumber\": \"111111111\"}".formatted(firstId))
-				.andExpect(status().isBadRequest());
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.accountNumberLast4").value("1111"))
+				.andExpect(jsonPath("$.accountNumber").value("111111111"))
+				.andExpect(jsonPath("$.verificationStatus").value("PENDING"));
 		perform(put("/api/partners/bank-accounts/verify"), admin,
 				"{\"partnerBankAccountId\": %d, \"verificationStatus\": \"VERIFIED\"}".formatted(firstId))
 				.andExpect(status().isOk())

@@ -9,8 +9,9 @@ import jakarta.validation.constraints.Size;
  * Updates a bank account. A null (or missing) field keeps its current value; the holder name cannot be blanked and an
  * empty bank name clears it. Changing the holder name sends the account back to PENDING verification.
  * {@code isPrimary: true} makes this the primary account (replacing the current one); {@code false} leaves the partner
- * without one. The partner, account number and IFSC identify the account and cannot be changed (add a new account):
- * they are only declared here so that a request containing them is rejected with a clear message.
+ * without one. {@code accountNumber} / {@code ifscCode} may be changed only while the partner profile is not submitted
+ * yet (NOT_STARTED, DRAFT, CHANGES_REQUESTED); a change sends the account back to PENDING. The partner cannot be
+ * changed: it is declared only so that a request containing it is rejected with a clear message.
  */
 public record NexHomePartnerBankAccountUpdateRequest(
 		@NotNull(message = "Partner bank account ID is required")
@@ -19,10 +20,11 @@ public record NexHomePartnerBankAccountUpdateRequest(
 		@Null(message = "Partner profile cannot be updated")
 		Long partnerProfileId,
 
-		@Null(message = "Account number cannot be updated; add a new bank account instead")
+		@Pattern(regexp = "^[0-9]{9,18}$", message = "Account number must be 9 to 18 digits")
 		String accountNumber,
 
-		@Null(message = "IFSC code cannot be updated; add a new bank account instead")
+		@Pattern(regexp = "^[A-Za-z]{4}0[A-Za-z0-9]{6}$",
+				message = "IFSC code must be 4 letters, a zero and 6 letters or digits")
 		String ifscCode,
 
 		@Pattern(regexp = "(?s).*\\S.*", message = "Account holder name cannot be blank")

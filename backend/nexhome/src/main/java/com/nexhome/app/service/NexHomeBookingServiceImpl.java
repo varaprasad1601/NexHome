@@ -437,8 +437,10 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 			throw new AccessDeniedException("Only the customer and staff can cancel a booking.");
 		}
 		if (!CANCELLABLE.contains(booking.getBookingStatus())) {
-			throw new InvalidRequestException("A booking that is " + booking.getBookingStatus()
-					+ " cannot be cancelled.");
+			// Once the work has started (in progress, paused, finished or completed) it is not cancelled
+			throw new InvalidRequestException(BookingStatus.CANCELLED.equals(booking.getBookingStatus())
+					? "This booking is already cancelled."
+					: "The work on this booking has started, so it can no longer be cancelled.");
 		}
 		String reason = NexHomeText.trimToNull(request.reason());
 
@@ -734,6 +736,151 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 	// Timer and location
 	// ------------------------------------------------------------------------------------------------------------
 
+	/** History reasons of the customer's confirmation (V70). */
+	static final String COMPLETION_REQUESTED = "Partner finished the work; waiting for the customer to confirm";
+	static final String COMPLETION_DECLINED = "Customer says the work is not finished yet";
+	static final String COMPLETION_CONFIRMED = "Customer confirmed the work is done";
+
+	@Override
+	@Transactional
+	public NexHomeBookingDetailResponse requestCompletion(Long bookingId) {
+		Long actingUserId = permissionService.currentUserId();
+		NexHomeBooking booking = findBooking(bookingId);
+		if (!isAssignedPartner(booking) && !permissionService.can(BOOKING_MANAGE, NexHomeAccess.WRITE.name())) {
+			throw new AccessDeniedException("Only the booking's partner, or staff, can finish its work.");
+		}
+		if (!PaymentMethod.ONLINE.equals(booking.getPaymentMethod())) {
+			throw new InvalidRequestException("Only an online job is confirmed by the customer; collect the cash instead.");
+		}
+		if (!Set.of(BookingStatus.IN_PROGRESS, BookingStatus.PAUSED).contains(booking.getBookingStatus())
+				|| booking.getActualEndAt() != null) {
+			throw new InvalidRequestException("Only work under way can be finished.");
+		}
+		if (booking.getCompletionRequestedAt() == null) {
+			booking.setCompletionRequestedAt(Instant.now());
+			booking.setUpdatedBy(actingUserId);
+			String status = booking.getBookingStatus();
+			bookingCreator.recordStatus(booking, status, status, COMPLETION_REQUESTED, actingUserId);
+			tell(customerUserOf(booking), "Is your job done? " + booking.getPublicId(),
+					"Your professional finished " + booking.getServiceNameSnapshot()
+							+ ". Confirm in the app to see the final amount and pay.",
+					booking, actingUserId);
+			log.info("Booking {}: completion asked of the customer", booking.getPublicId());
+		}
+		return detailOf(booking);
+	}
+
+	@Override
+	@Transactional
+	public NexHomeBookingDetailResponse answerCompletion(Long bookingId, boolean completed) {
+		Long actingUserId = permissionService.currentUserId();
+		NexHomeBooking booking = findBooking(bookingId);
+		if (!isCustomer(booking)) {
+			throw new AccessDeniedException("Only the booking's customer can confirm its work.");
+		}
+		if (booking.getCompletionRequestedAt() == null
+				|| !Set.of(BookingStatus.IN_PROGRESS, BookingStatus.PAUSED).contains(booking.getBookingStatus())
+				|| booking.getActualEndAt() != null) {
+			throw new InvalidRequestException("Your professional has not asked you to confirm this job.");
+		}
+		String status = booking.getBookingStatus();
+		if (!completed) {
+			booking.setCompletionRequestedAt(null);
+			booking.setUpdatedBy(actingUserId);
+			bookingCreator.recordStatus(booking, status, status, COMPLETION_DECLINED, actingUserId);
+			if (booking.getPartner() != null) {
+				tell(booking.getPartner().getUser().getId(), "Not finished yet: " + booking.getPublicId(),
+						"The customer says " + booking.getServiceNameSnapshot() + " is not finished yet. Carry on.",
+						booking, actingUserId);
+			}
+			log.info("Booking {}: the customer says the work is not finished", booking.getPublicId());
+			return detailOf(booking);
+		}
+		booking.setCompletionConfirmedAt(Instant.now());
+		bookingCreator.recordStatus(booking, status, status, COMPLETION_CONFIRMED, actingUserId);
+		stopOnlineWork(booking, actingUserId);
+		if (booking.getPartner() != null) {
+			tell(booking.getPartner().getUser().getId(), "Job done: " + booking.getPublicId(),
+					"The customer confirmed the work. They pay " + booking.getTotalAmount().toPlainString()
+							+ " online now.",
+					booking, actingUserId);
+		}
+		return detailOf(booking);
+	}
+
+	/**
+	 * The customer confirmed an online job's work: the timer stops (STOP), an HOURLY job is priced for the minutes
+	 * worked, the assignment and the booking are COMPLETED with the payment still PENDING (the customer pays now).
+	 */
+	private void stopOnlineWork(NexHomeBooking booking, Long actingUserId) {
+		Instant now = Instant.now();
+		NexHomeBookingTimeLog timeLog = new NexHomeBookingTimeLog();
+		timeLog.setBooking(booking);
+		timeLog.setEventType(BookingTimerEvent.STOP);
+		timeLog.setEventAt(now);
+		timeLog.setRecordedBy(actingUserId);
+		timeLog.setNotes("Confirmed by the customer");
+		timeLog.setCreatedBy(actingUserId);
+		timeLog.setUpdatedBy(actingUserId);
+		timeLogRepository.save(timeLog);
+		booking.setActualEndAt(now);
+		// Work finished, not completed: an HOURLY job priced for the minutes worked; the booking stays IN_PROGRESS
+		// until it is paid (NexHomeSettlement.completeAfterCash: the payment captured or cash collected instead) or
+		// NexHome staff complete it (completeJob)
+		reprice(booking, actingUserId);
+		String current = booking.getBookingStatus();
+		if (BookingStatus.PAUSED.equals(current)) {
+			changeStatus(booking, BookingStatus.IN_PROGRESS, NexHomeSettlement.WORK_FINISHED, actingUserId);
+		}
+		else {
+			bookingCreator.recordStatus(booking, current, current, NexHomeSettlement.WORK_FINISHED, actingUserId);
+		}
+		booking.setUpdatedBy(actingUserId);
+		tell(customerUserOf(booking), "Work finished on " + booking.getPublicId(),
+				"Please pay " + booking.getTotalAmount().toPlainString() + " for " + booking.getServiceNameSnapshot()
+						+ " in the app.",
+				booking, actingUserId);
+		log.info("Booking {} work finished on the customer's confirmation; {} to pay", booking.getPublicId(),
+				booking.getTotalAmount());
+	}
+
+	/** History reason when staff complete a finished job whose payment is still pending. */
+	static final String COMPLETED_BY_STAFF = "Completed by NexHome; payment pending";
+
+	@Override
+	@Transactional
+	public NexHomeBookingDetailResponse completeJob(Long bookingId) {
+		Long actingUserId = permissionService.currentUserId();
+		NexHomeBooking booking = findBooking(bookingId);
+		if (!BookingStatus.IN_PROGRESS.equals(booking.getBookingStatus()) || booking.getActualEndAt() == null) {
+			throw new InvalidRequestException("Only a job whose work is finished can be completed here.");
+		}
+		if (Set.of(BookingPaymentStatus.PAID, BookingPaymentStatus.PARTIALLY_REFUNDED, BookingPaymentStatus.REFUNDED)
+				.contains(booking.getPaymentStatus())) {
+			throw new InvalidRequestException("This job is paid; it is completed already.");
+		}
+		assignmentRepository.findFirstByBookingIdAndAssignmentStatusIn(booking.getId(),
+				List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.ACCEPTED, AssignmentStatus.STARTED))
+				.ifPresent(assignment -> {
+					assignment.setAssignmentStatus(AssignmentStatus.COMPLETED);
+					assignment.setUpdatedBy(actingUserId);
+				});
+		changeStatus(booking, BookingStatus.COMPLETED, COMPLETED_BY_STAFF, actingUserId);
+		auditRecorder.record("BOOKING_COMPLETED", "BOOKING", booking.getPublicId(),
+				Map.of("bookingStatus", BookingStatus.IN_PROGRESS),
+				Map.of("bookingStatus", BookingStatus.COMPLETED, "paymentStatus", booking.getPaymentStatus()), actingUserId);
+		tell(customerUserOf(booking), "Booking " + booking.getPublicId() + " completed",
+				"Please pay " + booking.getTotalAmount().toPlainString() + " for " + booking.getServiceNameSnapshot()
+						+ " in the app.",
+				booking, actingUserId);
+		if (booking.getPartner() != null) {
+			tell(booking.getPartner().getUser().getId(), "Job completed: " + booking.getPublicId(),
+					"NexHome completed the job. The customer will pay online.", booking, actingUserId);
+		}
+		log.info("Booking {} completed by staff, payment pending", booking.getPublicId());
+		return detailOf(booking);
+	}
+
 	@Override
 	@Transactional(noRollbackFor = InvalidRequestException.class)
 	public NexHomeBookingDetailResponse recordTimerEvent(NexHomeBookingTimerRequest request) {
@@ -747,9 +894,9 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		if (!TIMER_FROM.getOrDefault(event, Set.of()).contains(current)) {
 			throw new InvalidRequestException("The timer cannot " + event + " a booking that is " + current + ".");
 		}
-		// A cash job whose work is finished waits for its cash: the timer is done
+		// A job whose work is finished waits for its payment (cash or online): the timer is done
 		if (booking.getActualEndAt() != null) {
-			throw new InvalidRequestException("The work is finished; collect the cash to complete the job.");
+			throw new InvalidRequestException("The work is finished; the job completes once it is paid.");
 		}
 		// One job at a time: the partner finishes (and, for cash, collects) the job under way before starting another
 		if (BookingTimerEvent.START.equals(event) && booking.getPartner() != null) {
@@ -801,10 +948,13 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		}
 		if (BookingTimerEvent.STOP.equals(event)) {
 			booking.setActualEndAt(now);
-			// Cash still to collect: the work is finished but the booking stays IN_PROGRESS until the cash is
-			// collected (or waived), which completes it (NexHomeSettlement.completeAfterCash)
-			if (PaymentMethod.CASH.equals(booking.getPaymentMethod())
-					&& !BookingPaymentStatus.PAID.equals(booking.getPaymentStatus())) {
+			// Cash not collected yet: the work is finished but the booking stays IN_PROGRESS until the cash is collected
+			// (or waived), which completes it (NexHomeSettlement.completeAfterCash). An unpaid ONLINE job is completed
+			// with its payment PENDING (staff finishing it; the partner app stops an online job only once it is paid):
+			// the customer pays afterwards
+			boolean cash = PaymentMethod.CASH.equals(booking.getPaymentMethod());
+			if (cash && !java.util.Set.of(BookingPaymentStatus.PAID, BookingPaymentStatus.PARTIALLY_REFUNDED,
+					BookingPaymentStatus.REFUNDED).contains(booking.getPaymentStatus())) {
 				reprice(booking, actingUserId);
 				settlement.onBookingCompleted(booking, actingUserId);
 				if (BookingStatus.PAUSED.equals(current)) {
@@ -814,9 +964,10 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 					bookingCreator.recordStatus(booking, current, current, NexHomeSettlement.WORK_FINISHED, actingUserId);
 				}
 				tell(customerUserOf(booking), "Work finished on " + booking.getPublicId(),
-						"Please pay " + booking.getTotalAmount().toPlainString() + " in cash to your professional.", booking,
-						actingUserId);
-				log.info("Booking {} work finished; cash to collect", booking.getPublicId());
+						"Please pay " + booking.getTotalAmount().toPlainString()
+								+ (cash ? " in cash to your professional." : " in the NexHome app: open the booking and tap Pay."),
+						booking, actingUserId);
+				log.info("Booking {} work finished; {} payment awaited", booking.getPublicId(), cash ? "cash" : "online");
 				return detailOf(booking);
 			}
 			finish(booking, actingUserId);
@@ -844,7 +995,12 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 					assignment.setAssignmentStatus(AssignmentStatus.COMPLETED);
 					assignment.setUpdatedBy(actingUserId);
 				});
-		reprice(booking, actingUserId);
+		// Paid while the work was running (the partner app stops the work once the online payment is in): the amount
+		// paid stands, so an hourly job is not priced again
+		if (!java.util.Set.of(BookingPaymentStatus.PAID, BookingPaymentStatus.PARTIALLY_REFUNDED,
+				BookingPaymentStatus.REFUNDED).contains(booking.getPaymentStatus())) {
+			reprice(booking, actingUserId);
+		}
 	}
 
 	/** An HOURLY job priced again for the time worked (rounded and raised as the catalogue's quote does). */
@@ -1061,17 +1217,29 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 						row.getCreationDate() != null ? row.getCreationDate() : Instant.now(), row.getChangedBy()))
 				.toList();
 		List<NexHomeAuditEntry> who = auditUsers.entries(lines);
+		List<NexHomeBookingAssignment> assignments = assignmentRepository
+				.findByBookingIdOrderByOfferedAtDescIdDesc(bookingId);
+		// Who made each change for this booking: its customer, a partner it was offered or assigned to, NexHome's
+		// system account (user 1: payments, scheduled jobs) or staff
+		Long customerUserId = booking.getCustomer().getUser().getId();
+		Set<Long> partnerUserIds = new java.util.HashSet<>();
+		if (booking.getPartner() != null) {
+			partnerUserIds.add(booking.getPartner().getUser().getId());
+		}
+		assignments.forEach(a -> partnerUserIds.add(a.getPartner().getUser().getId()));
 		List<NexHomeBookingHistoryResponse> historyDtos = new ArrayList<>();
 		for (int i = 0; i < history.size(); i++) {
 			NexHomeBookingStatusHistory row = history.get(i);
+			Long by = row.getChangedBy();
+			String party = by == null ? null
+					: by.equals(customerUserId) ? "CUSTOMER"
+							: partnerUserIds.contains(by) ? "PARTNER" : by == 1L ? "SYSTEM" : "STAFF";
 			historyDtos.add(new NexHomeBookingHistoryResponse(row.getId(), row.getOldStatus(), row.getNewStatus(),
-					row.getChangedBy(), who.get(i).byName(), who.get(i).byRole(), row.getReason(),
+					row.getChangedBy(), who.get(i).byName(), who.get(i).byRole(), party, row.getReason(),
 					lines.get(i).at()));
 		}
 		List<NexHomeBookingTimeLog> logs = timeLogRepository.findByBookingIdOrderByEventAtAscIdAsc(bookingId);
 		// Who assigned each partner, by name and role (one query for all, as for the history)
-		List<NexHomeBookingAssignment> assignments = assignmentRepository
-				.findByBookingIdOrderByOfferedAtDescIdDesc(bookingId);
 		List<NexHomeAuditEntry> assignedBy = auditUsers.entries(assignments.stream()
 				.map(row -> new NexHomeAuditUsers.Line(row.getAssignmentStatus(), null,
 						row.getOfferedAt() != null ? row.getOfferedAt() : Instant.now(), row.getAssignedBy()))

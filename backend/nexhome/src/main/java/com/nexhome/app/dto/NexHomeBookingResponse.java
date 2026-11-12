@@ -48,6 +48,9 @@ public record NexHomeBookingResponse(
 		BigDecimal taxAmount,
 		BigDecimal transactionFeeAmount,
 		BigDecimal totalAmount,
+		/** Cashfree's service charge and GST the customer paid on top of the total (V69); 0 without. */
+		BigDecimal gatewayServiceCharge,
+		BigDecimal gatewayServiceTax,
 		String currency,
 		String cancellationReason,
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
@@ -72,5 +75,15 @@ public record NexHomeBookingResponse(
 		 * The start code (V59), only for the booking's own customer while the partner has accepted and the work has not
 		 * started: they share it with the partner, who enters it to start. Null for everyone else.
 		 */
-		String startOtp) {
+		String startOtp,
+
+		/** When the partner asked the customer to confirm the work is done (V70); null when not asked (or declined). */
+		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
+				timezone = "Asia/Kolkata")
+		Instant completionRequestedAt,
+
+		/** When the customer confirmed it (V70): the work stopped then. */
+		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
+				timezone = "Asia/Kolkata")
+		Instant completionConfirmedAt) {
 }

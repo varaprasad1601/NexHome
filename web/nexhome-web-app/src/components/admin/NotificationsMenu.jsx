@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 
 import { useAdminAuth } from '../../context/adminAuth';
-import { notificationLink, notificationStyle, timeAgo } from '../../data/supportOptions';
+import { notificationLink, notificationPriority, notificationStyle, timeAgo } from '../../data/supportOptions';
 import useLookupLabels from '../../hooks/useLookupLabels';
 import {
   loadAlertPrefs,
@@ -19,8 +19,10 @@ import {
 const TYPE_LOOKUP = ['NOTIFICATION_TYPE'];
 /** The panel lists this many of the newest; the rest are on the notifications page. */
 const PANEL_SIZE = 30;
-/** How often new notifications are looked for while the console is open (the badge, popups and sound). */
-const REFRESH_MS = 20000;
+/** How often new notifications are looked for while the console is on screen (the badge, popups and sound); one small request a look. */
+const REFRESH_MS = 10000;
+/** The same in a background tab (desktop alerts still arrive). */
+const HIDDEN_REFRESH_MS = 30000;
 /** At most this many alert cards on screen at once: a newer one makes the oldest slide out. */
 const MAX_POPUPS = 5;
 /** Several arrivals at once are announced one after another, this far apart (card, popup and sound each). */
@@ -37,6 +39,16 @@ const TEST_ALERT = {
   message: 'Popups and sound are working.',
   priority: 'NORMAL'
 };
+
+/** A notification's priority as a small tag: High (red), Medium (amber) or Low (grey). */
+export function PriorityTag({ priority, className = '' }) {
+  const level = notificationPriority(priority);
+  return (
+    <span className={`shrink-0 rounded-full px-2 py-px text-[0.625rem] font-black uppercase tracking-wide ${level.tag} ${className}`}>
+      {level.label}
+    </span>
+  );
+}
 
 /**
  * One notification as a list row (sample 12): icon, title (with a red High tag for HIGH priority), message, time and
@@ -61,11 +73,7 @@ export function NotificationItem({ notification, typeLabel, onOpen, onRead, onRe
             <span className={`text-sm ${unread ? 'font-black text-[var(--navy)]' : 'font-bold text-[var(--ink)]'}`}>
               {notification.title}
             </span>
-            {notification.priority === 'HIGH' && (
-              <span className="rounded-full bg-[#FDECEC] px-2 py-px text-[0.625rem] font-black uppercase tracking-wide text-[#C53030]">
-                High
-              </span>
-            )}
+            <PriorityTag priority={notification.priority} />
           </span>
           <span className="mt-0.5 line-clamp-2 block text-[0.8125rem] leading-snug text-[var(--muted)]">
             {notification.message}
@@ -139,6 +147,8 @@ export default function NotificationsMenu() {
   // The newest notification id already known: anything newer that arrives is announced (null until the first look,
   // so what was there at sign-in is not)
   const lastSeenRef = useRef(null);
+  // The notifications total last looked at: the unread list is fetched only when it changes
+  const lastTotalRef = useRef(null);
   const prefsRef = useRef(prefs);
   const openFromPopupRef = useRef(() => {});
   // The console's own alert cards (bottom right): shown for every arrival, whatever the browser allows
@@ -190,11 +200,20 @@ export default function NotificationsMenu() {
   // The badge stays current while the console is open, and new arrivals pop up (system notification) and chime
   useEffect(() => {
     let cancelled = false;
+    let timer = null;
+    // One small request a check (the counts); the unread list only when the total changed (something arrived)
     const check = () => {
-      loadSummary();
-      authRequest('/api/notifications/me?size=10&unread=true&app=STAFF')
+      clearTimeout(timer);
+      authRequest('/api/notifications/me/summary?app=STAFF')
+        .then((counts) => {
+          if (cancelled) return null;
+          setSummary(counts);
+          if (lastTotalRef.current !== null && counts.total === lastTotalRef.current) return null;
+          lastTotalRef.current = counts.total;
+          return authRequest('/api/notifications/me?size=10&unread=true&app=STAFF');
+        })
         .then((page) => {
-          if (cancelled) return;
+          if (cancelled || !page) return;
           const newestId = page.content.reduce((max, item) => Math.max(max, item.notificationId), 0);
           if (lastSeenRef.current === null) {
             lastSeenRef.current = newestId;
@@ -213,10 +232,16 @@ export default function NotificationsMenu() {
             }, index * ANNOUNCE_GAP_MS)
           );
         })
-        .catch(() => {});
+        .catch(() => {})
+        // Every 10 s while the console is on screen, every 30 s in a background tab (desktop alerts still arrive)
+        .finally(() => {
+          if (!cancelled) timer = setTimeout(check, document.visibilityState === 'visible' ? REFRESH_MS : HIDDEN_REFRESH_MS);
+        });
     };
     check();
-    const timer = setInterval(check, REFRESH_MS);
+    // Back on the console: look at once
+    const onVisible = () => document.visibilityState === 'visible' && check();
+    document.addEventListener('visibilitychange', onVisible);
     const stopUnlock = unlockAudioOnFirstGesture();
     // Browsers only ask for permission from a click: the first click anywhere in the console asks, while popups are on
     const askOnClick = () => {
@@ -229,7 +254,8 @@ export default function NotificationsMenu() {
     document.addEventListener('visibilitychange', refreshPermission);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
       stopUnlock();
       window.removeEventListener('click', askOnClick);
       document.removeEventListener('visibilitychange', refreshPermission);
@@ -561,11 +587,7 @@ export default function NotificationsMenu() {
                 </span>
                 <button type="button" onClick={() => openCard(card)} className="min-w-0 flex-1 text-left">
                   <span className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-[var(--ink)]" title={card.title}>
-                    {card.priority === 'HIGH' && (
-                      <span className="shrink-0 rounded-full bg-[#FDECEC] px-1.5 py-0.5 text-[0.625rem] font-black uppercase text-[#C53030]">
-                        High
-                      </span>
-                    )}
+                    <PriorityTag priority={card.priority} />
                     <span className="min-w-0 truncate">{card.title}</span>
                   </span>
                   {/* One line each: longer text ends in "…" (the full text on hover) */}

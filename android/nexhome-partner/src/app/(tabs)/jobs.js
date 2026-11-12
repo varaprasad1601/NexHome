@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FlatList, RefreshControl, View } from 'react-native';
+import { FlatList, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import JobCard from '../../components/JobCard';
@@ -11,7 +11,7 @@ import useTabReset from '../../hooks/useTabReset';
 
 /**
  * My jobs (GET /api/bookings/partner/me): Upcoming (still to do), Pending payment (done, not paid yet: cash to collect
- * or an online payment to come) and Completed (paid, or cancelled).
+ * or an online payment to come), Completed (paid) and Cancelled; the tab row scrolls sideways on narrow phones.
  */
 export default function Jobs() {
   const [tab, setTab] = useState('upcoming');
@@ -19,7 +19,14 @@ export default function Jobs() {
   // Opening the tab shows Upcoming again
   useTabReset(() => setTab('upcoming'), jobs.refresh);
   const all = jobs.data?.content ?? [];
-  const groupOf = (job) => (isPaymentPending(job) ? 'pending' : UPCOMING.includes(job.bookingStatus) ? 'upcoming' : 'completed');
+  const groupOf = (job) =>
+    job.bookingStatus === 'CANCELLED'
+      ? 'cancelled'
+      : isPaymentPending(job)
+        ? 'pending'
+        : UPCOMING.includes(job.bookingStatus)
+          ? 'upcoming'
+          : 'completed';
   const list = all.filter((job) => groupOf(job) === tab);
   const count = (key) => all.filter((job) => groupOf(job) === key).length;
 
@@ -29,15 +36,18 @@ export default function Jobs() {
         <Text weight="extrabold" style={{ fontSize: 22, color: colors.navy }}>
           My jobs
         </Text>
-        <Tabs
-          tabs={[
-            ['upcoming', 'Upcoming', count('upcoming')],
-            ['pending', 'Pending payment', count('pending')],
-            ['completed', 'Completed', count('completed')]
-          ]}
-          value={tab}
-          onChange={setTab}
-        />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <Tabs
+            tabs={[
+              ['upcoming', 'Upcoming', count('upcoming')],
+              ['pending', 'Pending payment', count('pending')],
+              ['completed', 'Completed', count('completed')],
+              ['cancelled', 'Cancelled', count('cancelled')]
+            ]}
+            value={tab}
+            onChange={setTab}
+          />
+        </ScrollView>
       </View>
       {jobs.loading ? (
         <Loading />
@@ -50,8 +60,8 @@ export default function Jobs() {
           ListHeaderComponent={<ErrorBox message={jobs.error} />}
           ListEmptyComponent={
             <Empty
-              icon={tab === 'pending' ? 'check-circle' : 'briefcase'}
-              title={{ upcoming: 'No upcoming jobs', pending: 'No payments pending', completed: 'No completed jobs yet' }[tab]}
+              icon={tab === 'pending' ? 'check-circle' : tab === 'cancelled' ? 'x-circle' : 'briefcase'}
+              title={{ upcoming: 'No upcoming jobs', pending: 'No payments pending', completed: 'No completed jobs yet', cancelled: 'No cancelled jobs' }[tab]}
               text={
                 tab === 'upcoming'
                   ? 'Jobs you accept show here. Stay online to get offers.'

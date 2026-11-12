@@ -53,4 +53,11 @@ public interface NexHomeAuthService {
 
 	/** Verifies the PHONE_CHANGE OTP and moves the signed-in user's account to the new number. */
 	NexHomeAuthOtpResponse verifyPhoneChangeOtp(NexHomeAuthPhoneChangeVerifyRequest request);
+
+	/**
+	 * The Login OTPs screen (LOGIN_OTP_VIEW read; temporary until OTPs are sent by SMS): customers' and partners'
+	 * login / sign-up OTPs, newest first, the code while it can still be used; {@code search} on the mobile number.
+	 */
+	com.nexhome.app.dto.NexHomePageResponse<com.nexhome.app.dto.NexHomeLoginOtpResponse> getLoginOtps(Integer page,
+			Integer size, String search);
 }

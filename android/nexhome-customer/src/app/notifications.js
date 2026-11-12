@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { FlatList, Pressable, RefreshControl, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Empty, ErrorBox, Header, Loading, Text } from '../components/ui';
+import { Empty, ErrorBox, Header, Loading, Tag, Text } from '../components/ui';
 import { useAuth } from '../context/AuthProvider';
 import useApi from '../hooks/useApi';
 import { colors } from '../theme';
@@ -16,10 +16,18 @@ function linkOf(item) {
   return null;
 }
 
-/** The customer's notifications (GET /api/notifications/me): unread bold with a dot; opening one marks it read. */
+/** A notification's priority (V64) as a tag: High red, Medium amber, Low grey. */
+function priorityTag(priority) {
+  if (priority === 'HIGH') return { label: 'High', fg: colors.red, bg: colors.redSoft };
+  if (priority === 'LOW') return { label: 'Low', fg: colors.muted, bg: colors.ground };
+  return { label: 'Medium', fg: colors.amber, bg: colors.amberSoft };
+}
+
+/** The customer's notifications (GET /api/notifications/me): unread bold with a dot, each with its priority
+ * tag (High red, with an alert icon; Medium amber; Low grey); opening one marks it read. */
 export default function Notifications() {
   const { authRequest } = useAuth();
-  const list = useApi('/api/notifications/me?size=50&app=CUSTOMER', { pollMs: 15000 });
+  const list = useApi('/api/notifications/me?size=50&app=CUSTOMER', { pollMs: 60000 });
   const items = list.data?.content ?? [];
   const unread = items.some((n) => !n.isRead);
 
@@ -63,10 +71,14 @@ export default function Notifications() {
             <Pressable
               accessibilityRole="button"
               onPress={() => open(item)}
-              style={{ flexDirection: 'row', gap: 12, backgroundColor: colors.white, borderRadius: 16, borderWidth: 1, borderColor: item.isRead ? colors.line : '#cfe2f6', padding: 14 }}
+              style={{ flexDirection: 'row', gap: 12, backgroundColor: colors.white, borderRadius: 16, borderWidth: 1, borderColor: item.priority === 'HIGH' ? '#f5c2c2' : item.isRead ? colors.line : '#cfe2f6', padding: 14 }}
             >
-              <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: colors.blueTint, alignItems: 'center', justifyContent: 'center' }}>
-                <Feather name={item.referenceType === 'SUPPORT_TICKET' ? 'message-circle' : item.referenceType === 'BOOKING' ? 'calendar' : 'bell'} size={17} color={colors.blue} />
+              <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: item.priority === 'HIGH' ? colors.redSoft : colors.blueTint, alignItems: 'center', justifyContent: 'center' }}>
+                <Feather
+                  name={item.priority === 'HIGH' ? 'alert-circle' : item.referenceType === 'SUPPORT_TICKET' ? 'message-circle' : item.referenceType === 'BOOKING' ? 'calendar' : 'bell'}
+                  size={17}
+                  color={item.priority === 'HIGH' ? colors.red : colors.blue}
+                />
               </View>
               <View style={{ flex: 1, gap: 2 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -74,6 +86,7 @@ export default function Notifications() {
                   <Text weight={item.isRead ? 'semibold' : 'extrabold'} style={{ flex: 1 }} numberOfLines={1}>
                     {item.title}
                   </Text>
+                  <Tag {...priorityTag(item.priority)} style={{ paddingHorizontal: 8, paddingVertical: 2 }} />
                 </View>
                 <Text style={{ fontSize: 13, color: colors.muted }} numberOfLines={3}>
                   {item.message}

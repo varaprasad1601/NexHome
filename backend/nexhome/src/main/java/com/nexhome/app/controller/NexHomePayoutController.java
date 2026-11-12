@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.nexhome.app.dto.NexHomePageResponse;
 import com.nexhome.app.dto.NexHomePayoutAdjustRequest;
-import com.nexhome.app.dto.NexHomePayoutPayRequest;
 import com.nexhome.app.dto.NexHomePayoutResponse;
 import com.nexhome.app.dto.NexHomePayoutStatsResponse;
 import com.nexhome.app.dto.NexHomePayoutStatusUpdateRequest;
@@ -60,12 +59,6 @@ public class NexHomePayoutController {
 		return payoutService.getPayoutStats();
 	}
 
-	@PutMapping("/pay")
-	@PreAuthorize("@permissions.can('PAYOUT_MANAGE', 'WRITE')")
-	public NexHomePayoutResponse pay(@Valid @RequestBody NexHomePayoutPayRequest request) {
-		return payoutService.pay(request);
-	}
-
 	@PutMapping("/status/update")
 	@PreAuthorize("@permissions.can('PAYOUT_MANAGE', 'WRITE')")
 	public NexHomePayoutResponse updateStatus(@Valid @RequestBody NexHomePayoutStatusUpdateRequest request) {
@@ -85,26 +78,71 @@ public class NexHomePayoutController {
 		return payoutService.getWallet(partnerProfileId);
 	}
 
-	@org.springframework.web.bind.annotation.PostMapping("/wallet/settle")
+	@org.springframework.web.bind.annotation.PostMapping("/manual/create")
 	@org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.CREATED)
 	@PreAuthorize("@permissions.can('PAYOUT_MANAGE', 'WRITE')")
-	public com.nexhome.app.dto.NexHomePartnerSettlementResponse settleWallet(
-			@Valid @RequestBody com.nexhome.app.dto.NexHomeWalletSettleRequest request) {
-		return payoutService.settleWallet(request);
+	public com.nexhome.app.dto.NexHomeManualPayoutResponse recordManualPayout(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomeManualPayoutCreateRequest request) {
+		return payoutService.recordManualPayout(request);
 	}
 
-	/** The partner themself or PAYOUT_MANAGE read (checked in the service). */
-	@GetMapping("/settlements")
-	public NexHomePageResponse<com.nexhome.app.dto.NexHomePartnerSettlementResponse> getSettlements(
-			@RequestParam Long partnerProfileId, @RequestParam(required = false) Integer page,
+	@PutMapping("/manual/cancel")
+	@PreAuthorize("@permissions.can('PAYOUT_MANAGE', 'WRITE')")
+	public com.nexhome.app.dto.NexHomeManualPayoutResponse cancelManualPayout(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomeManualPayoutCancelRequest request) {
+		return payoutService.cancelManualPayout(request);
+	}
+
+	/** One partner's (the partner themself or PAYOUT_MANAGE read), or every partner's (PAYOUT_MANAGE read). */
+	@GetMapping("/manual")
+	public NexHomePageResponse<com.nexhome.app.dto.NexHomeManualPayoutResponse> getManualPayouts(
+			@RequestParam(required = false) Long partnerProfileId, @RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size) {
-		return payoutService.getSettlements(partnerProfileId, page, size);
+		return payoutService.getManualPayouts(partnerProfileId, page, size);
 	}
 
-	@GetMapping("/settlements/{settlementId}")
-	public com.nexhome.app.dto.NexHomePartnerSettlementResponse getSettlement(
-			@org.springframework.web.bind.annotation.PathVariable Long settlementId) {
-		return payoutService.getSettlement(settlementId);
+	@GetMapping("/manual/stats")
+	@PreAuthorize("@permissions.can('PAYOUT_MANAGE', 'READ')")
+	public com.nexhome.app.dto.NexHomeManualPayoutStatsResponse getManualPayoutStats() {
+		return payoutService.getManualPayoutStats();
+	}
+
+	/** Its partner, or PAYOUT_MANAGE read (checked in the service). */
+	@GetMapping("/manual/{payoutId}")
+	public com.nexhome.app.dto.NexHomeManualPayoutResponse getManualPayout(
+			@org.springframework.web.bind.annotation.PathVariable Long payoutId) {
+		return payoutService.getManualPayout(payoutId);
+	}
+
+	@org.springframework.web.bind.annotation.PostMapping("/deductions/create")
+	@org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.CREATED)
+	@PreAuthorize("@permissions.can('PAYOUT_MANAGE', 'WRITE')")
+	public com.nexhome.app.dto.NexHomePartnerDeductionResponse recordDeduction(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomePartnerDeductionCreateRequest request) {
+		return payoutService.recordDeduction(request);
+	}
+
+	@PutMapping("/deductions/cancel")
+	@PreAuthorize("@permissions.can('PAYOUT_MANAGE', 'WRITE')")
+	public com.nexhome.app.dto.NexHomePartnerDeductionResponse cancelDeduction(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomePartnerDeductionCancelRequest request) {
+		return payoutService.cancelDeduction(request);
+	}
+
+	/** One partner's (the partner themself or PAYOUT_MANAGE read), or every partner's (PAYOUT_MANAGE read). */
+	@GetMapping("/deductions")
+	public NexHomePageResponse<com.nexhome.app.dto.NexHomePartnerDeductionResponse> getDeductions(
+			@RequestParam(required = false) Long partnerProfileId, @RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return payoutService.getDeductions(partnerProfileId, page, size);
+	}
+
+	@GetMapping("/dues")
+	@PreAuthorize("@permissions.can('PAYOUT_MANAGE', 'READ')")
+	public NexHomePageResponse<com.nexhome.app.dto.NexHomePartnerDueResponse> getPartnerDues(
+			@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String search, @RequestParam(required = false) Boolean dueOnly) {
+		return payoutService.getPartnerDues(page, size, search, dueOnly);
 	}
 
 	@GetMapping("/transfers")

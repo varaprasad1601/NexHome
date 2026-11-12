@@ -6,8 +6,10 @@ import java.time.LocalDate;
 import com.fasterxml.jackson.annotation.JsonFormat;
 
 /**
- * A partner document. The document number is masked ({@code XXXXXX1234}). The file (when one was uploaded) opens
- * through {@code GET /api/files/download-url/{fileId}}.
+ * A partner document. The document number is masked ({@code XXXXXX1234}); {@code fullDocumentNumber} is the number
+ * itself, filled only for the partner who owns the document (their own documents list, so the app's edit form shows
+ * it), null for staff and everywhere else. The file (when one was uploaded) opens through
+ * {@code GET /api/files/download-url/{fileId}}.
  */
 public record NexHomePartnerDocumentResponse(
 		Long partnerDocumentId,
@@ -31,5 +33,7 @@ public record NexHomePartnerDocumentResponse(
 
 		String idType,
 
-		String documentName) {
+		String documentName,
+
+		String fullDocumentNumber) {
 }

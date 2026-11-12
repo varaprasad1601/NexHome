@@ -5,7 +5,8 @@ import java.time.Instant;
 import com.fasterxml.jackson.annotation.JsonFormat;
 
 /**
- * A partner bank account. Only the last four digits of the account number are ever returned. {@code updatedBy} /
+ * A partner bank account, with the account number in full ({@code accountNumber}) and its last four digits, for
+ * those who may see it: the partner and staff with PARTNER_ONBOARDING_MANAGE read. {@code updatedBy} /
  * {@code updatedDate} are the last change; after a verification decision, who made it and when.
  */
 public record NexHomePartnerBankAccountResponse(
@@ -25,5 +26,7 @@ public record NexHomePartnerBankAccountResponse(
 		Long updatedBy,
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
 				timezone = "Asia/Kolkata")
-		Instant updatedDate) {
+		Instant updatedDate,
+
+		String accountNumber) {
 }

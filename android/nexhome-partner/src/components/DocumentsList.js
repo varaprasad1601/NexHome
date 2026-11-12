@@ -1,9 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
-import { Linking, View } from 'react-native';
+import { View } from 'react-native';
 
-import { fileUrl } from '../api/client';
-import { useAuth } from '../context/AuthProvider';
 import useLookup from '../hooks/useLookup';
 import { colors } from '../theme';
 import { localDateLabel } from '../utils/format';
@@ -12,11 +10,10 @@ import { Button, Card, SectionTitle, Tag, Text } from './ui';
 
 /**
  * The partner's documents in two groups, Government ID and Skill certificates, each with Add; a document shows its
- * ID type or name, masked number, expiry, file (View opens a short-lived link: GET /api/files/download-url/{id}),
+ * ID type or name, number (in full for the owner), expiry, file (View document: the in-app viewer, documents/view),
  * status and a rejection reason; Edit unless verified (the partner cannot change a verified document).
  */
 export default function DocumentsList({ documents, canChange }) {
-  const { authRequest } = useAuth();
   const idTypes = useLookup('GOVERNMENT_ID_TYPE');
   const list = documents ?? [];
   const groups = [
@@ -26,14 +23,9 @@ export default function DocumentsList({ documents, canChange }) {
   const others = list.filter((d) => d.documentType !== 'GOVERNMENT_ID' && d.documentType !== 'CERTIFICATION');
   if (others.length) groups.push({ kind: null, title: 'Other documents', items: others });
 
-  const view = async (doc) => {
-    try {
-      const link = await authRequest(`/api/files/download-url/${doc.fileId}`);
-      await Linking.openURL(fileUrl(link.url));
-    } catch {
-      // Nothing to open
-    }
-  };
+  // The file in the app's viewer (documents/view): a photo shown there, a PDF in the phone's viewer
+  const view = (doc, title) =>
+    router.push({ pathname: '/documents/view', params: { fileId: String(doc.fileId), title, contentType: doc.fileContentType ?? '' } });
 
   return groups.map((group) => (
     <View key={group.title} style={{ gap: 10 }}>
@@ -58,7 +50,7 @@ export default function DocumentsList({ documents, canChange }) {
               <View style={{ flex: 1, gap: 2 }}>
                 <Text weight="bold">{title}</Text>
                 <Text style={{ fontSize: 12, color: colors.muted }}>
-                  {[doc.documentNumber, doc.expiryDate ? `Valid till ${localDateLabel(doc.expiryDate)}` : null].filter(Boolean).join(' · ') || 'No number'}
+                  {[doc.fullDocumentNumber ?? doc.documentNumber, doc.expiryDate ? `Valid till ${localDateLabel(doc.expiryDate)}` : null].filter(Boolean).join(' · ') || 'No number'}
                 </Text>
               </View>
               <Tag label={status.label} fg={status.fg} bg={status.bg} />
@@ -67,7 +59,7 @@ export default function DocumentsList({ documents, canChange }) {
               <Text style={{ color: colors.red, fontSize: 12.5 }}>Rejected: {doc.rejectionReason}</Text>
             ) : null}
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              {doc.fileId ? <Button title="View file" variant="secondary" icon="eye" onPress={() => view(doc)} style={{ flex: 1, minHeight: 44 }} /> : null}
+              {doc.fileId ? <Button title="View document" variant="secondary" icon="eye" onPress={() => view(doc, title)} style={{ flex: 1, minHeight: 44 }} /> : null}
               {canChange && doc.verificationStatus !== 'VERIFIED' && group.kind ? (
                 <Button
                   title="Edit"

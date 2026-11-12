@@ -11,7 +11,35 @@ import org.springframework.stereotype.Repository;
 import com.nexhome.app.model.NexHomeCashCollection;
 
 @Repository
-public interface NexHomeCashCollectionRepository extends JpaRepository<NexHomeCashCollection, Long> {
+public interface NexHomeCashCollectionRepository extends JpaRepository<NexHomeCashCollection, Long>,
+		org.springframework.data.jpa.repository.JpaSpecificationExecutor<NexHomeCashCollection> {
+
+	/** A page of a filtered list, with the bookings, customers and partners. */
+	@Override
+	@EntityGraph(attributePaths = { "booking", "booking.customer", "booking.partner" })
+	Page<NexHomeCashCollection> findAll(org.springframework.data.jpa.domain.Specification<NexHomeCashCollection> spec,
+			Pageable pageable);
+
+	/** Only the filters given: the status, and a search on the booking id, the customer or the partner (name or id). */
+	static org.springframework.data.jpa.domain.Specification<NexHomeCashCollection> cashSpec(String status,
+			String search) {
+		org.springframework.data.jpa.domain.Specification<NexHomeCashCollection> spec = (cash, query, cb) -> cb
+				.conjunction();
+		if (status != null) {
+			spec = spec.and((cash, query, cb) -> cb.equal(cash.get("status"), status));
+		}
+		if (search != null) {
+			String pattern = NexHomeSearch.containsPattern(search);
+			spec = spec.and((cash, query, cb) -> {
+				var booking = cash.join("booking");
+				var partner = booking.join("partner", jakarta.persistence.criteria.JoinType.LEFT);
+				return cb.or(cb.like(cb.lower(booking.get("publicId")), pattern, '\\'),
+						NexHomeSearch.personMatches(cb, booking.get("customer"), pattern),
+						NexHomeSearch.personMatches(cb, partner, pattern));
+			});
+		}
+		return spec;
+	}
 
 	Optional<NexHomeCashCollection> findByBookingId(Long bookingId);
 
@@ -33,6 +61,11 @@ public interface NexHomeCashCollectionRepository extends JpaRepository<NexHomeCa
 			+ "join fetch b.service where b.partner.id = :partnerId and c.status = 'COLLECTED'")
 	java.util.List<NexHomeCashCollection> findCollectedByPartnerWithService(
 			@org.springframework.data.repository.query.Param("partnerId") Long partnerId);
+
+	/** Every COLLECTED cash with its booking (and partner) and service, for what NexHome owes each partner. */
+	@org.springframework.data.jpa.repository.Query("select c from NexHomeCashCollection c join fetch c.booking b "
+			+ "join fetch b.service where b.partner is not null and c.status = 'COLLECTED'")
+	java.util.List<NexHomeCashCollection> findAllCollectedWithService();
 
 	/** A partner's COLLECTED cash that no wallet payout has settled (its commission is owed), with the services. */
 	@org.springframework.data.jpa.repository.Query("select c from NexHomeCashCollection c join fetch c.booking b "

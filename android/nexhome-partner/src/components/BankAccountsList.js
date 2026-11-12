@@ -6,7 +6,10 @@ import { colors } from '../theme';
 import { verificationStatus } from '../utils/status';
 import { Button, Card, Tag, Text } from './ui';
 
-/** The partner's bank accounts: bank, branch, holder, last 4 digits, IFSC, status (and why it was rejected), Edit. */
+/**
+ * The partner's bank account: bank, branch, holder, number, IFSC, status (and why it was rejected), Edit. A partner
+ * keeps one account, so Add shows only while there is none.
+ */
 export default function BankAccountsList({ accounts, canChange }) {
   const list = accounts ?? [];
   return (
@@ -22,7 +25,7 @@ export default function BankAccountsList({ accounts, canChange }) {
               <View style={{ flex: 1, gap: 2 }}>
                 <Text weight="bold">{[account.bankName, account.branchName].filter(Boolean).join(' · ') || 'Bank account'}</Text>
                 <Text style={{ fontSize: 12, color: colors.muted }}>
-                  {account.accountHolderName} · ••••{account.accountNumberLast4} · {account.ifscCode}
+                  {account.accountHolderName} · A/c {account.accountNumber ?? `••••${account.accountNumberLast4}`} · IFSC {account.ifscCode}
                 </Text>
                 {account.isPrimary && list.length > 1 ? <Text style={{ fontSize: 12, color: colors.greenDark }}>Payouts go here</Text> : null}
               </View>
@@ -43,7 +46,8 @@ export default function BankAccountsList({ accounts, canChange }) {
           </Card>
         );
       })}
-      {canChange ? <Button title="Add bank account" variant="blue" icon="plus" onPress={() => router.push('/bank/form')} /> : null}
+      {/* One bank account per partner: Add only while there is none (it comes back once the account is removed) */}
+      {canChange && list.length === 0 ? <Button title="Add bank account" variant="blue" icon="plus" onPress={() => router.push('/bank/form')} /> : null}
     </View>
   );
 }

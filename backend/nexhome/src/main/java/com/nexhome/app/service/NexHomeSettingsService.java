@@ -24,7 +24,6 @@ public interface NexHomeSettingsService {
 		public static final String WORKING_HOURS = "WORKING_HOURS";
 
 		// Booking rules
-		public static final String TRANSACTION_FEE_PERCENTAGE = "TRANSACTION_FEE_PERCENTAGE";
 		public static final String OFFER_EXPIRY_MINUTES = "OFFER_EXPIRY_MINUTES";
 		public static final String UNASSIGNED_ALERT_HOURS = "UNASSIGNED_ALERT_HOURS";
 		public static final String MAX_DAYS_AHEAD = "MAX_DAYS_AHEAD";

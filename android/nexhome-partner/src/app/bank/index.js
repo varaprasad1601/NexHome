@@ -7,11 +7,15 @@ import { useAuth } from '../../context/AuthProvider';
 import useApi from '../../hooks/useApi';
 import { colors } from '../../theme';
 
-/** My bank accounts (from Profile). An approved partner's change sends the profile for verification again. */
+/**
+ * My bank accounts (from Profile). Once approved (APPROVED or UPDATE_REQUESTED) they are read only: no Edit (which
+ * holds Delete) and no Add; the backend refuses the partner's changes too. Staff can still change them.
+ */
 export default function MyBankAccounts() {
   const { profile } = useAuth();
   const accounts = useApi(`/api/partners/profiles/bank-accounts/${profile?.partnerProfileId}`);
   const status = profile?.onboardingStatus;
+  const locked = status === 'APPROVED' || status === 'UPDATE_REQUESTED';
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.ground }}>
       <Header title="Bank accounts" />
@@ -19,11 +23,11 @@ export default function MyBankAccounts() {
         <Loading />
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }} refreshControl={<RefreshControl refreshing={accounts.refreshing} onRefresh={accounts.refresh} />}>
-          {status === 'APPROVED' ? (
-            <Banner tone="info" text="Adding a bank account or changing the holder's name sends your profile for verification again. You cannot take jobs until NexHome approves it." />
+          {locked ? (
+            <Banner tone="info" text="Your bank account is locked after approval. To change it, contact NexHome support from Help & support." />
           ) : null}
           <ErrorBox message={accounts.error} />
-          <BankAccountsList accounts={accounts.data} canChange={status !== 'REJECTED'} />
+          <BankAccountsList accounts={accounts.data} canChange={!locked && status !== 'REJECTED'} />
         </ScrollView>
       )}
     </SafeAreaView>

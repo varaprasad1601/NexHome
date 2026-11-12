@@ -182,7 +182,10 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		NexHomeUser owner = profile.getUser();
 		requireCanChange(profile, NexHomeAccess.WRITE);
 		if (owner.getId().equals(actingUserId)) {
-			if (!EDITABLE_BY_PARTNER.contains(profile.getOnboardingStatus())) {
+			// After submitting, a partner may still change their working hours and areas (not REJECTED)
+			boolean workAreasOnly = onlyWorkAreaFields(request)
+					&& !PartnerOnboardingStatus.REJECTED.equals(profile.getOnboardingStatus());
+			if (!EDITABLE_BY_PARTNER.contains(profile.getOnboardingStatus()) && !workAreasOnly) {
 				throw new InvalidRequestException("The profile is " + profile.getOnboardingStatus()
 						+ " and cannot be changed now. Contact support to update it.");
 			}
@@ -200,6 +203,29 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 
 		log.info("Partner profile {} updated", profile.getPublicId());
 		return toProfileDto(profile);
+	}
+
+	/** What a partner may change themself at any time after submitting: working hours and service areas. */
+	private static final Set<String> WORK_AREA_FIELDS = Set.of("partnerProfileId", "serviceAreas", "maxTravelKm",
+			"weeklyAvailability", "weekendAvailability");
+
+	/** Whether the request sends nothing but working hours and service areas (every other field null). */
+	private static boolean onlyWorkAreaFields(NexHomePartnerProfileUpdateRequest request) {
+		for (java.lang.reflect.RecordComponent component : NexHomePartnerProfileUpdateRequest.class
+				.getRecordComponents()) {
+			if (WORK_AREA_FIELDS.contains(component.getName())) {
+				continue;
+			}
+			try {
+				if (component.getAccessor().invoke(request) != null) {
+					return false;
+				}
+			}
+			catch (ReflectiveOperationException ex) {
+				throw new IllegalStateException(ex);
+			}
+		}
+		return true;
 	}
 
 	@Override
@@ -658,8 +684,10 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	public List<NexHomePartnerDocumentResponse> getPartnerDocuments(Long partnerProfileId) {
 		NexHomePartnerProfile partner = findPartnerProfile(partnerProfileId);
 		requireSelfOrCan(partner.getUser().getId(), NexHomeAccess.READ);
+		// The partner sees their own documents' full numbers (to edit them); staff only the masked ones
+		boolean owner = partner.getUser().getId().equals(permissionService.currentUserId());
 		return partnerDocumentRepository.findByPartnerIdOrderByCreationDateDescIdDesc(partnerProfileId).stream()
-				.map(partnerDocumentMapper::toPartnerDocumentDto)
+				.map(document -> partnerDocumentMapper.toPartnerDocumentDto(document, owner))
 				.toList();
 	}
 
@@ -673,11 +701,17 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		Long actingUserId = permissionService.currentUserId();
 		NexHomePartnerProfile partner = findPartnerProfile(request.partnerProfileId());
 		requireCanChange(partner, NexHomeAccess.WRITE);
+		requireBankAccountsOpen(partner);
 
 		NexHomePartnerBankAccount account = partnerBankAccountMapper.toPartnerBankAccountEntity(request, partner,
 				actingUserId);
 		List<NexHomePartnerBankAccount> existing = partnerBankAccountRepository
 				.findByPartnerIdOrderByPrimaryDescCreationDateDescIdDesc(partner.getId());
+		// A partner keeps one bank account: to use another, they remove it first (staff may add more)
+		if (isOwner(partner) && !existing.isEmpty()) {
+			throw new InvalidRequestException(
+					"You can have only one bank account. Remove the current one to add another.");
+		}
 		// Numbers are encrypted with a random IV, so duplicates are found by decrypting the partner's few accounts
 		String accountNumber = request.accountNumber().trim();
 		boolean duplicate = existing.stream().anyMatch(other -> other.getIfscCode().equals(account.getIfscCode())
@@ -697,7 +731,8 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		requestUpdate(partner, "added a bank account", false, actingUserId);
 		needsVerifying(partner, "added a bank account", actingUserId);
 		log.info("Bank account {} added to partner profile {}", saved.getId(), partner.getPublicId());
-		return partnerBankAccountMapper.toPartnerBankAccountDto(saved);
+		// The full number to whoever may see the account (the partner, staff with partner onboarding access)
+		return partnerBankAccountMapper.toPartnerBankAccountDto(saved, true);
 	}
 
 	@Override
@@ -707,8 +742,36 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		Long actingUserId = permissionService.currentUserId();
 		NexHomePartnerBankAccount account = findPartnerBankAccount(request.partnerBankAccountId());
 		requireCanChange(account.getPartner(), NexHomeAccess.WRITE);
+		requireBankAccountsOpen(account.getPartner());
+
+		// A new account number / IFSC: only before the profile is sent for review, and not another account's
+		// (checked before anything changes)
+		String newNumber = request.accountNumber() == null ? null : request.accountNumber().trim();
+		String newIfsc = request.ifscCode() == null ? null : com.nexhome.app.mapper.NexHomeText.upperCase(request.ifscCode());
+		boolean numberChanges = newNumber != null
+				&& !newNumber.equals(partnerBankAccountMapper.accountNumber(account));
+		boolean ifscChanges = newIfsc != null && !newIfsc.equals(account.getIfscCode());
+		if (numberChanges || ifscChanges) {
+			if (!EDITABLE_BY_PARTNER.contains(account.getPartner().getOnboardingStatus())) {
+				throw new InvalidRequestException("The account number and IFSC cannot be changed after the profile "
+						+ "is sent for review; add a new bank account instead.");
+			}
+			String number = numberChanges ? newNumber : partnerBankAccountMapper.accountNumber(account);
+			String ifsc = ifscChanges ? newIfsc : account.getIfscCode();
+			boolean duplicate = partnerBankAccountRepository
+					.findByPartnerIdOrderByPrimaryDescCreationDateDescIdDesc(account.getPartner().getId()).stream()
+					.anyMatch(other -> !other.getId().equals(account.getId()) && other.getIfscCode().equals(ifsc)
+							&& partnerBankAccountMapper.accountNumber(other).equals(number));
+			if (duplicate) {
+				throw new DuplicateResourceException("This bank account has already been added.");
+			}
+		}
 
 		partnerBankAccountMapper.updatePartnerBankAccountEntity(account, request, actingUserId);
+		if (numberChanges || ifscChanges) {
+			partnerBankAccountMapper.changeAccountIdentity(account, numberChanges ? newNumber : null,
+					ifscChanges ? newIfsc : null, actingUserId);
+		}
 		if (Boolean.TRUE.equals(request.isPrimary()) && !account.isPrimary()) {
 			clearCurrentPrimary(account.getPartner().getId(), actingUserId);
 			account.setPrimary(true);
@@ -723,7 +786,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 			needsVerifying(account.getPartner(), "changed a bank account", actingUserId);
 		}
 		log.info("Bank account {} updated", account.getId());
-		return partnerBankAccountMapper.toPartnerBankAccountDto(account);
+		return partnerBankAccountMapper.toPartnerBankAccountDto(account, true);
 	}
 
 	@Override
@@ -763,6 +826,7 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 	public void deletePartnerBankAccount(Long partnerBankAccountId) {
 		NexHomePartnerBankAccount account = findPartnerBankAccount(partnerBankAccountId);
 		requireCanChange(account.getPartner(), NexHomeAccess.DELETE);
+		requireBankAccountsOpen(account.getPartner());
 		partnerBankAccountRepository.delete(account);
 		log.info("Bank account {} deleted", partnerBankAccountId);
 	}
@@ -774,8 +838,13 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 		requireSelfOrCan(partner.getUser().getId(), NexHomeAccess.READ);
 		return partnerBankAccountRepository.findByPartnerIdOrderByPrimaryDescCreationDateDescIdDesc(partnerProfileId)
 				.stream()
-				.map(partnerBankAccountMapper::toPartnerBankAccountDto)
+				.map(account -> partnerBankAccountMapper.toPartnerBankAccountDto(account, true))
 				.toList();
+	}
+
+	/** Whether the signed-in user is this partner (who keeps one bank account). */
+	private boolean isOwner(NexHomePartnerProfile partner) {
+		return partner.getUser().getId().equals(permissionService.currentUserId());
 	}
 
 	// ------------------------------------------------------------------------------------------------------------
@@ -1078,6 +1147,19 @@ public class NexHomePartnerOnboardingServiceImpl implements NexHomePartnerOnboar
 				&& !permissionService.can(PARTNER_APPROVED_EDIT, NexHomeAccess.WRITE.name())) {
 			throw new AccessDeniedException("Changing an approved partner needs " + PARTNER_APPROVED_EDIT
 					+ " write access.");
+		}
+	}
+
+	/**
+	 * Once approved (APPROVED, or UPDATE_REQUESTED after a change) a partner's bank accounts are locked for the
+	 * partner: no adding, changing or deleting them (staff still may, with their own access).
+	 */
+	private void requireBankAccountsOpen(NexHomePartnerProfile partner) {
+		boolean approved = PartnerOnboardingStatus.APPROVED.equals(partner.getOnboardingStatus())
+				|| PartnerOnboardingStatus.UPDATE_REQUESTED.equals(partner.getOnboardingStatus());
+		if (approved && partner.getUser().getId().equals(permissionService.currentUserId())) {
+			throw new InvalidRequestException(
+					"Your bank account details are locked after approval. Contact NexHome support to change them.");
 		}
 	}
 

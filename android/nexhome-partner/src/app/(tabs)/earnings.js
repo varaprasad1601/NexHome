@@ -6,12 +6,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { Banner, Card, Empty, ErrorBox, Loading, Pick, SectionTitle, Tabs, Tag, Text } from '../../components/ui';
-import { CashOnlineCards, HowWorkedOut, PayHero, WalletJobs } from '../../components/WalletParts';
+import { Card, Empty, ErrorBox, Loading, Pick, SectionTitle, Tabs, Tag, Text } from '../../components/ui';
+import { CashOnlineCards, HowWorkedOut, PayHero } from '../../components/WalletParts';
 import { useAuth } from '../../context/AuthProvider';
 import useApi from '../../hooks/useApi';
+import useLookup from '../../hooks/useLookup';
 import { colors } from '../../theme';
-import { dayLabel, money, serviceNameOf } from '../../utils/format';
+import { dayLabel, localDateLabel, money, parseApiDate, serviceNameOf } from '../../utils/format';
 import { settlementStatus } from '../../utils/status';
 import useTabReset from '../../hooks/useTabReset';
 
@@ -34,12 +35,13 @@ function Figure({ label, value }) {
 }
 
 /**
- * Earnings, three tabs. Wallet (GET /api/payouts/wallet/{id}): what is not paid out yet, with no period: "NexHome
- * pays you" (online earnings less the commission on cash jobs; back to 0 after each payout), the cash and online
- * cards, how it is worked out and the jobs. My earnings: the period switcher (Today, This week, This month, Overall) over GET /api/payouts/earnings/{id}?period=
+ * Earnings, three tabs. Wallet (GET /api/payouts/wallet/{id}): what NexHome still owes, since joining: "NexHome
+ * owes you" (every job, cash and online, less commission, less what NexHome has paid; partners hand cash to NexHome),
+ * the cash and online cards and how it is worked out. My earnings: the period switcher (Today, This week, This month, Overall) over GET /api/payouts/earnings/{id}?period=
  * with the jobs, total, commission and earnings and each job's record; and the payouts to the bank account
- * (unchanged). Payouts: what was earned since joining and the wallet payouts (GET /api/payouts/settlements), each
- * opening its page (payout/[id]).
+ * (unchanged). Payouts: what NexHome has paid (recorded by staff: PhonePe, Google Pay, ...; GET /api/payouts/manual),
+ * each opening its page (payout/[id]), and what NexHome deducted (penalties, damage, ...; GET /api/payouts/deductions),
+ * in one list by date.
  */
 export default function Earnings() {
   const { profile } = useAuth();
@@ -47,11 +49,12 @@ export default function Earnings() {
   const [period, setPeriod] = useState('TODAY');
   const earnings = useApi(profile ? `/api/payouts/earnings/${profile.partnerProfileId}?period=${period}&size=100` : null);
   const wallet = useApi(profile ? `/api/payouts/wallet/${profile.partnerProfileId}` : null);
-  const settlements = useApi(profile ? `/api/payouts/settlements?partnerProfileId=${profile.partnerProfileId}&size=50` : null);
+  const payouts = useApi(profile ? `/api/payouts/manual?partnerProfileId=${profile.partnerProfileId}&size=50` : null);
+  const deductions = useApi(profile ? `/api/payouts/deductions?partnerProfileId=${profile.partnerProfileId}&size=50` : null);
   const data = earnings.data;
   const records = data?.records?.content ?? [];
-  const refresh = () => Promise.all([earnings.refresh(), wallet.refresh(), settlements.refresh()]);
-  const refreshing = earnings.refreshing || wallet.refreshing || settlements.refreshing;
+  const refresh = () => Promise.all([earnings.refresh(), wallet.refresh(), payouts.refresh(), deductions.refresh()]);
+  const refreshing = earnings.refreshing || wallet.refreshing || payouts.refreshing || deductions.refreshing;
   // Opening the tab shows the Wallet (and Today under My earnings) again
   useTabReset(() => {
     setTab('wallet');
@@ -136,52 +139,50 @@ export default function Earnings() {
             })}
           </>
         ) : (
-          <PayoutsTab settlements={settlements} wallet={wallet} />
+          <PayoutsTab payouts={payouts} deductions={deductions} wallet={wallet} />
         )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-/** Wallet: what NexHome pays at the next payout (or what the partner owes), with no period. */
+/** Wallet: what NexHome still owes the partner, since joining (no period). */
 function WalletTab({ wallet }) {
+  const { labelOf } = useLookup('PAYOUT_MODE');
   const data = wallet.data;
   if (wallet.loading) return <Loading />;
   if (!data) return <ErrorBox message={wallet.error} />;
   const balance = Number(data.balance);
-  const owe = balance < 0;
+  const advance = balance < 0;
+  const settled = balance === 0;
   const empty = !data.items?.length;
-  const last = data.lastSettlement;
-  let footer = 'No payouts yet';
-  if (data.since) footer = `${empty ? 'Last payout' : 'Since your last payout'}${last ? ` of ${money(last.netAmount)}` : ''} on ${dayLabel(data.since)}`;
-  let note = 'Not paid yet · it goes to your bank account';
-  if (owe) note = 'The commission on your cash jobs is more than your online earnings; it comes off your next online jobs.';
-  else if (empty) note = 'All settled · nothing waiting';
+  const last = data.lastPayout;
+  const footer = last ? `Last paid ${money(last.amount)} on ${localDateLabel(last.paidOn)} via ${labelOf(last.paymentMode)}` : 'No payouts yet';
+  let label = 'NexHome owes you';
+  let note = 'Your share of every job, less what NexHome has paid you';
+  if (advance) {
+    label = 'Paid in advance';
+    note = 'NexHome has paid you more than your jobs so far; it comes off your next jobs.';
+  } else if (settled) {
+    label = 'All settled';
+    note = 'NexHome has paid you for every job';
+  }
   return (
     <>
       <ErrorBox message={wallet.error} />
-      <PayHero owe={owe} label={owe ? 'You owe NexHome' : 'NexHome pays you'} amount={Math.abs(balance)} note={note} footer={footer} />
-      {data.onHoldJobs ? (
-        <Banner
-          tone="warning"
-          icon="pause-circle"
-          title={`${money(data.onHoldAmount)} on hold`}
-          text={`${data.onHoldJobs} online ${data.onHoldJobs === 1 ? 'job is' : 'jobs are'} on hold and not in this amount. Ask NexHome support why.`}
-        />
-      ) : null}
+      <PayHero owe={advance} label={label} amount={Math.abs(balance)} note={note} footer={footer} />
       {empty ? (
         <Card style={{ alignItems: 'center', gap: 6, paddingVertical: 22 }}>
-          <Feather name="check-circle" size={28} color={colors.green} />
+          <Feather name="briefcase" size={28} color={colors.green} />
           <Text weight="extrabold" style={{ color: colors.navy, fontSize: 15 }}>
-            You are all settled
+            No jobs yet
           </Text>
-          <Text style={{ color: colors.muted, fontSize: 12.5, textAlign: 'center' }}>New jobs show here until your next payout.</Text>
+          <Text style={{ color: colors.muted, fontSize: 12.5, textAlign: 'center' }}>Your completed jobs show here with your share.</Text>
         </Card>
       ) : (
         <>
           <CashOnlineCards data={data} />
-          <HowWorkedOut data={data} total={balance} label={owe ? 'You owe NexHome' : 'NexHome pays you'} />
-          <WalletJobs items={data.items} title="Jobs in this amount" />
+          <HowWorkedOut data={data} />
         </>
       )}
     </>
@@ -189,57 +190,89 @@ function WalletTab({ wallet }) {
 }
 
 /**
- * Payouts: only money the partner has in hand: the cash they collected plus what NexHome has paid them (a payout adds
- * to it once it is paid; jobs not paid yet are left out), then the same two figures and what is waiting to be paid
- * out (the wallet balance), then every wallet payout.
+ * Payouts: what NexHome has paid (staff record each payment made through PhonePe, Google Pay, Paytm, a bank transfer
+ * or cash), what was earned and what is still to be paid, then every payout and deduction (penalties, damage, ...) by date.
  */
-function PayoutsTab({ settlements, wallet }) {
-  const list = settlements.data?.content ?? [];
-  const received = wallet.data ? Number(wallet.data.cashKeptTotal) + Number(wallet.data.paidTotal) : null;
+function PayoutsTab({ payouts, deductions, wallet }) {
+  const { labelOf } = useLookup('PAYOUT_MODE');
+  const reasons = useLookup('DEDUCTION_REASON');
+  const data = wallet.data;
+  const deducted = Number(data?.deductedTotal || 0);
+  // Payouts and deductions in one list: the newest day first, then the latest recorded
+  const list = [
+    ...(payouts.data?.content ?? []).map((p) => ({ kind: 'payout', key: `p${p.payoutId}`, day: p.paidOn, item: p })),
+    ...(deductions.data?.content ?? []).map((d) => ({ kind: 'deduction', key: `d${d.deductionId}`, day: d.deductedOn, item: d }))
+  ].sort((x, y) => (y.day ?? '').localeCompare(x.day ?? '') || (parseApiDate(y.item.creationDate) ?? 0) - (parseApiDate(x.item.creationDate) ?? 0));
+  const loading = payouts.loading || deductions.loading;
   return (
     <>
       <LinearGradient colors={[colors.green, '#1ea36a']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: 20, padding: 18, gap: 2 }}>
-        <Text style={{ color: colors.white, opacity: 0.9, fontSize: 12.5 }}>You earned since joining</Text>
+        <Text style={{ color: colors.white, opacity: 0.9, fontSize: 12.5 }}>Paid by NexHome</Text>
         <Text weight="extrabold" style={{ color: colors.white, fontSize: 30 }}>
-          {received === null ? '—' : money(received)}
+          {data ? money(data.paidTotal) : '—'}
         </Text>
-        <Text style={{ color: colors.white, opacity: 0.9, fontSize: 12.5 }}>Cash you collected + paid by NexHome</Text>
+        <Text style={{ color: colors.white, opacity: 0.9, fontSize: 12.5 }}>
+          {data ? `${data.payoutCount} ${data.payoutCount === 1 ? 'payout' : 'payouts'} since you joined` : ' '}
+        </Text>
       </LinearGradient>
       <View style={{ flexDirection: 'row', gap: 8 }}>
         {[
-          ['Cash collected', wallet.data?.cashKeptTotal],
-          ['Paid by NexHome', wallet.data?.paidTotal],
-          ['Waiting', wallet.data ? Math.max(0, Number(wallet.data.balance)) : null]
+          ['You earned', data?.totalEarned],
+          ['Paid', data?.paidTotal],
+          ['Still to be paid', data ? Math.max(0, Number(data.balance)) : null]
         ].map(([label, value]) => (
           <Card key={label} style={{ flex: 1, gap: 2, padding: 11 }}>
             <Text weight="extrabold" style={{ fontSize: 14, color: colors.navy }}>
-              {money(value)}
+              {value === null || value === undefined ? '—' : money(value)}
             </Text>
             <Text style={{ fontSize: 11.5, color: colors.muted }}>{label}</Text>
           </Card>
         ))}
       </View>
-      <SectionTitle>Payouts</SectionTitle>
-      <ErrorBox message={settlements.error} />
-      {settlements.loading ? <Loading /> : null}
-      {!settlements.loading && !list.length ? <Empty icon="credit-card" title="No payouts yet" text="NexHome pays your wallet to your bank account." /> : null}
-      {list.map((s) => {
-        const paid = s.settlementStatus === 'PAID';
-        const bank = s.bankAccountLast4 ? ` · ${s.bankName || 'Bank'} •••• ${s.bankAccountLast4}` : '';
+      {deducted > 0 ? (
+        <Text weight="semibold" style={{ fontSize: 12.5, color: colors.red, opacity: 0.85 }}>
+          {`${money(deducted)} deducted by NexHome`}
+        </Text>
+      ) : null}
+      <SectionTitle>Payouts & deductions</SectionTitle>
+      <ErrorBox message={payouts.error || deductions.error} />
+      {loading ? <Loading /> : null}
+      {!loading && !list.length ? <Empty icon="credit-card" title="No payouts yet" text="When NexHome pays you, the payment shows here." /> : null}
+      {list.map(({ kind, key, item }) => {
+        const cancelled = (kind === 'payout' ? item.payoutStatus : item.status) === 'CANCELLED';
+        if (kind === 'deduction') {
+          const line = [localDateLabel(item.deductedOn), reasons.labelOf(item.deductionReason), item.notes].filter(Boolean).join(' · ');
+          return (
+            <Card key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 11, opacity: cancelled ? 0.6 : 1 }}>
+              <View style={{ width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: cancelled ? colors.ground : colors.redSoft }}>
+                <Feather name="minus-circle" size={16} color={cancelled ? colors.muted : colors.red} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text weight="extrabold" style={{ fontSize: 15, color: cancelled ? colors.muted : colors.red, textDecorationLine: cancelled ? 'line-through' : 'none' }}>
+                  {`− ${money(item.amount)}`}
+                </Text>
+                <Text style={{ fontSize: 12, color: colors.muted }} numberOfLines={2}>
+                  {line}
+                </Text>
+              </View>
+              {cancelled ? <Tag label="Cancelled" fg={colors.muted} bg={colors.ground} /> : <Tag label="Deduction" fg={colors.red} bg={colors.redSoft} />}
+            </Card>
+          );
+        }
         return (
-          <Card key={s.settlementId} onPress={() => router.push(`/payout/${s.settlementId}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
-            <View style={{ width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: paid ? colors.greenSoft : colors.redSoft }}>
-              <Feather name="briefcase" size={16} color={paid ? colors.green : colors.red} />
+          <Card key={key} onPress={() => router.push(`/payout/${item.payoutId}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 11, opacity: cancelled ? 0.6 : 1 }}>
+            <View style={{ width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: cancelled ? colors.ground : colors.greenSoft }}>
+              <Feather name="send" size={16} color={cancelled ? colors.muted : colors.green} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text weight="extrabold" style={{ fontSize: 15, color: colors.navy }}>
-                {money(s.netAmount)}
+              <Text weight="extrabold" style={{ fontSize: 15, color: cancelled ? colors.muted : colors.navy, textDecorationLine: cancelled ? 'line-through' : 'none' }}>
+                {money(item.amount)}
               </Text>
               <Text style={{ fontSize: 12, color: colors.muted }} numberOfLines={1}>
-                {`${dayLabel(s.paidAt || s.creationDate)} · ${s.cashJobs + s.onlineJobs} jobs${bank}`}
+                {`${localDateLabel(item.paidOn)} · ${labelOf(item.paymentMode)}${item.transactionId ? ` · ${item.transactionId}` : ''}`}
               </Text>
             </View>
-            <Tag label={paid ? 'Paid' : 'Failed'} fg={paid ? colors.green : colors.red} bg={paid ? colors.greenSoft : colors.redSoft} />
+            {cancelled ? <Tag label="Cancelled" fg={colors.muted} bg={colors.ground} /> : null}
             <Feather name="chevron-right" size={18} color={colors.muted} />
           </Card>
         );

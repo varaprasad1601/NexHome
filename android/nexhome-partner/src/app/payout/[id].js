@@ -2,11 +2,12 @@ import { useLocalSearchParams } from 'expo-router';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { CashOnlineCards, HowWorkedOut, PayHero, WalletJobs } from '../../components/WalletParts';
-import { Card, Empty, Header, Loading, Text } from '../../components/ui';
+import { PayHero } from '../../components/WalletParts';
+import { Banner, Card, Empty, Header, Loading, Text } from '../../components/ui';
 import useApi from '../../hooks/useApi';
+import useLookup from '../../hooks/useLookup';
 import { colors } from '../../theme';
-import { whenLabel } from '../../utils/format';
+import { localDateLabel, whenLabel } from '../../utils/format';
 
 function Detail({ label, value }) {
   return (
@@ -20,13 +21,15 @@ function Detail({ label, value }) {
 }
 
 /**
- * One wallet payout (GET /api/payouts/settlements/{id}): "NexHome paid you" first, then the cash and online cards
- * with each one's commission, how the amount was worked out, the bank account and reference, and its jobs.
+ * One payment NexHome made to the partner (GET /api/payouts/manual/{id}), recorded by staff: the amount, how it was
+ * paid (PhonePe, Google Pay, ...), the transaction id, the day, notes. A cancelled one (recorded by mistake) shows why.
  */
 export default function Payout() {
   const { id } = useLocalSearchParams();
-  const payout = useApi(`/api/payouts/settlements/${id}`);
+  const payout = useApi(`/api/payouts/manual/${id}`);
+  const { labelOf } = useLookup('PAYOUT_MODE');
   const data = payout.data;
+  const cancelled = data?.payoutStatus === 'CANCELLED';
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.ground }}>
@@ -35,21 +38,32 @@ export default function Payout() {
       {!payout.loading && !data ? <Empty icon="alert-circle" title="Payout not found" text={payout.error || undefined} /> : null}
       {data ? (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} refreshControl={<RefreshControl refreshing={payout.refreshing} onRefresh={payout.refresh} />}>
+          {cancelled ? (
+            <Banner tone="danger" icon="x-circle" title="This payout was cancelled" text={data.cancellationReason || 'It was recorded by mistake and does not count as paid.'} />
+          ) : null}
           <PayHero
-            owe={data.settlementStatus !== 'PAID'}
-            label={data.settlementStatus === 'PAID' ? 'NexHome paid you' : 'This payout failed'}
-            amount={data.netAmount}
-            note={data.settlementStatus === 'PAID' ? `Paid ${whenLabel(data.paidAt)}` : 'Nothing was sent; the jobs stay in your wallet.'}
-            footer={`${data.cashJobs + data.onlineJobs} jobs · ${data.publicId}`}
+            owe={cancelled}
+            label={cancelled ? 'Cancelled payout' : 'NexHome paid you'}
+            amount={data.amount}
+            note={`${localDateLabel(data.paidOn)} · ${labelOf(data.paymentMode)}`}
+            footer={data.publicId}
           />
-          <CashOnlineCards data={data} paid />
-          <HowWorkedOut data={data} total={data.netAmount} label={data.settlementStatus === 'PAID' ? 'NexHome paid you' : 'To pay'} />
           <Card style={{ gap: 9 }}>
-            <Detail label="Bank account" value={data.bankAccountLast4 ? `${data.bankName || 'Bank'} •••• ${data.bankAccountLast4}` : '—'} />
-            <Detail label="Reference" value={data.providerTransferId || '—'} />
-            <Detail label="Status" value={data.settlementStatus === 'PAID' ? 'Paid' : 'Failed'} />
+            <Detail label="Paid through" value={labelOf(data.paymentMode)} />
+            <Detail label="Transaction ID" value={data.transactionId || '—'} />
+            <Detail label="Date paid" value={localDateLabel(data.paidOn)} />
+            <Detail label="Payout ID" value={data.publicId} />
+            <Detail label="Recorded on" value={whenLabel(data.creationDate)} />
+            {cancelled && data.cancelledAt ? <Detail label="Cancelled on" value={whenLabel(data.cancelledAt)} /> : null}
           </Card>
-          <WalletJobs items={data.items} title="Jobs in this payout" />
+          {data.notes ? (
+            <Card style={{ gap: 4 }}>
+              <Text weight="extrabold" style={{ color: colors.navy, fontSize: 14 }}>
+                Notes
+              </Text>
+              <Text style={{ color: colors.ink, fontSize: 13 }}>{data.notes}</Text>
+            </Card>
+          ) : null}
         </ScrollView>
       ) : null}
     </SafeAreaView>

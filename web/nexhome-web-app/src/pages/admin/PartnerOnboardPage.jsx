@@ -660,7 +660,7 @@ export default function PartnerOnboardPage() {
                   <Banknote size={18} className="text-[var(--blue)]" />
                   <div className="min-w-0 flex-1">
                     <div className="font-bold text-[var(--ink)]">
-                      {bank.bankName ?? 'Bank account'} · XXXX{bank.accountNumberLast4}
+                      {bank.bankName ?? 'Bank account'} · {bank.accountNumber ?? `XXXX${bank.accountNumberLast4}`}
                     </div>
                     <div className="text-sm text-[var(--muted)]">
                       {bank.accountHolderName} · IFSC {bank.ifscCode}

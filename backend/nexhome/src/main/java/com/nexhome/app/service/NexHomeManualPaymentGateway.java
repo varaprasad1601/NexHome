@@ -22,6 +22,8 @@ import org.springframework.stereotype.Component;
  * them). Webhook signatures are the hex HMAC-SHA256 of the request body.
  */
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "nexhome.payments.provider",
+		havingValue = "manual", matchIfMissing = true)
 public class NexHomeManualPaymentGateway implements NexHomePaymentGateway {
 
 	public static final String PROVIDER = "MANUAL";
@@ -39,14 +41,20 @@ public class NexHomeManualPaymentGateway implements NexHomePaymentGateway {
 	}
 
 	@Override
-	public String createOrder(String idempotencyKey, BigDecimal amount, String currency) {
-		// Stable for the key, as a real gateway's idempotent order creation would be
-		return "manual_order_" + UUID.nameUUIDFromBytes(idempotencyKey.getBytes(StandardCharsets.UTF_8))
-				.toString().replace("-", "").substring(0, 20);
+	public Order createOrder(String reference, BigDecimal amount, String currency, Customer customer) {
+		// Stable for the reference, as a real gateway's idempotent order creation would be; no online checkout
+		return new Order("manual_order_" + UUID.nameUUIDFromBytes(reference.getBytes(StandardCharsets.UTF_8))
+				.toString().replace("-", "").substring(0, 20), null);
 	}
 
 	@Override
-	public String refund(String providerPaymentId, BigDecimal amount) {
+	public OrderStatus fetchOrder(String providerOrderId) {
+		// Staff record MANUAL payments; there is nobody to ask
+		return null;
+	}
+
+	@Override
+	public String refund(String providerOrderId, String providerPaymentId, String reference, BigDecimal amount) {
 		return "manual_refund_" + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
 	}
 
@@ -63,7 +71,33 @@ public class NexHomeManualPaymentGateway implements NexHomePaymentGateway {
 	}
 
 	@Override
-	public boolean verifySignature(String payload, String signature) {
+	public boolean verifyWebhook(String payload, Map<String, String> headers) {
+		return verifySignature(payload, headers.get("x-nexhome-signature"));
+	}
+
+	/** {@code {"id", "type": "payment.captured" | "payment.failed", "data": {"orderId", "paymentId", ...}}}. */
+	@Override
+	public WebhookEvent parseWebhook(tools.jackson.databind.JsonNode body) {
+		tools.jackson.databind.JsonNode data = body.path("data");
+		return new WebhookEvent(text(body, "id"), text(body, "type"), text(data, "orderId"), text(data, "paymentId"),
+				null, text(data, "errorCode"), text(data, "errorMessage"));
+	}
+
+	@Override
+	public String checkoutMode() {
+		return null;
+	}
+
+	private static String text(tools.jackson.databind.JsonNode node, String field) {
+		tools.jackson.databind.JsonNode value = node.path(field);
+		if (value.isMissingNode() || value.isNull()) {
+			return null;
+		}
+		String text = value.asString();
+		return text == null || text.isBlank() ? null : text.trim();
+	}
+
+	boolean verifySignature(String payload, String signature) {
 		// Without a key nothing is signed, so nothing is trusted
 		if (webhookSecret.length == 0 || payload == null || signature == null) {
 			return false;

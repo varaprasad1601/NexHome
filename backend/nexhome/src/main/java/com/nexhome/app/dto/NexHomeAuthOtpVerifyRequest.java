@@ -4,7 +4,9 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
 /**
- * Verifies the pending OTP sent to a mobile number for a purpose.
+ * Verifies the pending OTP sent to a mobile number for a purpose. {@code roleCode} (CUSTOMER or PARTNER, optional):
+ * signing up in that app; a REGISTRATION OTP then gives an existing account that role (it never held it), so one
+ * account can be both a customer and a partner.
  */
 public record NexHomeAuthOtpVerifyRequest(
 		@NotBlank(message = "Country code is required")
@@ -20,12 +22,19 @@ public record NexHomeAuthOtpVerifyRequest(
 
 		@NotBlank(message = "OTP is required")
 		@Pattern(regexp = "^[0-9]{4,8}$", message = "OTP must be 4 to 8 digits")
-		String otp) {
+		String otp,
+
+		String roleCode) {
+
+	/** Without an app role. */
+	public NexHomeAuthOtpVerifyRequest(String countryCode, String mobileNumber, String purpose, String otp) {
+		this(countryCode, mobileNumber, purpose, otp, null);
+	}
 
 	/** Never print the OTP, e.g. when the request is logged. */
 	@Override
 	public String toString() {
 		return "NexHomeAuthOtpVerifyRequest[countryCode=" + countryCode + ", mobileNumber=" + mobileNumber
-				+ ", purpose=" + purpose + ", otp=****]";
+				+ ", purpose=" + purpose + ", otp=****, roleCode=" + roleCode + "]";
 	}
 }

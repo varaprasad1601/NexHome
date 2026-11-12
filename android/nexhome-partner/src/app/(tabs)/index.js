@@ -48,9 +48,10 @@ export default function Home() {
     }, [])
   );
   const id = profile?.partnerProfileId;
-  const offers = useApi('/api/bookings/offers/me?size=20', { pollMs: 20000 });
-  const jobs = useApi('/api/bookings/partner/me?size=100', { pollMs: 20000 });
-  const summary = useApi('/api/notifications/me/summary?app=PARTNER', { pollMs: 10000 });
+  // Kept light: offers and the bell every 30 s (a rising unread count also reloads offers and jobs), jobs every minute
+  const offers = useApi('/api/bookings/offers/me?size=20', { pollMs: 30000 });
+  const jobs = useApi('/api/bookings/partner/me?size=100', { pollMs: 60000 });
+  const summary = useApi('/api/notifications/me/summary?app=PARTNER', { pollMs: 30000 });
   const rating = useApi(id ? `/api/reviews/summary?partnerProfileId=${id}` : null);
   const stats = useApi(id ? `/api/bookings/partner-stats/${id}` : null);
   const [switching, setSwitching] = useState(false);
@@ -90,6 +91,9 @@ export default function Home() {
       (j.bookingStatus === 'COMPLETED' && (isoDayOf(j.actualEndAt) === today || !isPaid(j))) ||
       (['PENDING', 'CONFIRMED'].includes(j.bookingStatus) && isoDayOf(j.scheduledStartAt) === today)
   );
+  // The most recent first, whatever its status (by when it finished, else started, else its scheduled start)
+  const recentOf = (job) => parseApiDate(job.actualEndAt ?? job.actualStartAt ?? job.scheduledStartAt)?.date.getTime() ?? 0;
+  todays.sort((a, b) => recentOf(b) - recentOf(a));
 
   const refresh = async () => {
     setRefreshing(true);

@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Size;
 /**
  * Staff (NOTIFICATION_MANAGE write) send a notification. {@code audience}: USER (then {@code userId}), CUSTOMERS,
  * PARTNERS or STAFF (every active account currently holding those roles). {@code notificationType}:
- * NOTIFICATION_TYPE (default ANNOUNCEMENT).
+ * NOTIFICATION_TYPE (default ANNOUNCEMENT). {@code priority}: HIGH, MEDIUM (default) or LOW (V64).
  */
 public record NexHomeNotificationSendRequest(
 		@NotBlank(message = "Audience is required")
@@ -18,5 +18,6 @@ public record NexHomeNotificationSendRequest(
 		String title,
 		@NotBlank(message = "Message is required")
 		@Size(max = 2000, message = "Message must be at most 2000 characters")
-		String message) {
+		String message,
+		String priority) {
 }

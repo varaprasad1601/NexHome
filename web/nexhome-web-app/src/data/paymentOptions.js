@@ -1,4 +1,21 @@
 /** The lookups payment screens show names of (Module 7). */
+/** How a gateway payment was made (V66: Cashfree's payment group), as shown; null for recorded (MANUAL) payments. */
+const PAYMENT_MODES = {
+  upi: 'UPI',
+  credit_card: 'Credit Card',
+  debit_card: 'Debit Card',
+  prepaid_card: 'Prepaid Card',
+  net_banking: 'Net Banking',
+  wallet: 'Wallet',
+  pay_later: 'Pay Later',
+  cardless_emi: 'Cardless EMI',
+  credit_card_emi: 'Card EMI',
+  debit_card_emi: 'Card EMI',
+  bank_transfer: 'Bank Transfer'
+};
+export const paymentModeLabel = (payment) =>
+  payment?.paymentMode ? PAYMENT_MODES[payment.paymentMode] ?? payment.paymentMode.replace(/_/g, ' ') : payment?.provider === 'MANUAL' ? 'Recorded' : '—';
+
 export const PAYMENT_LOOKUPS = [
   'PAYMENT_ORDER_STATUS',
   'PAYMENT_STATUS',

@@ -145,6 +145,28 @@ public class NexHomeBookingController {
 		return bookingService.recordTimerEvent(request);
 	}
 
+	/** The partner's Finish work on an online job: asks the customer to confirm the work is done. */
+	@org.springframework.web.bind.annotation.PutMapping("/completion/request")
+	public NexHomeBookingDetailResponse requestCompletion(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomeBookingCompletionRequest request) {
+		return bookingService.requestCompletion(request.bookingId());
+	}
+
+	/** Staff: complete a job whose work is finished but not paid (the payment stays pending). */
+	@org.springframework.web.bind.annotation.PutMapping("/complete")
+	@org.springframework.security.access.prepost.PreAuthorize("@permissions.can('BOOKING_MANAGE', 'WRITE')")
+	public NexHomeBookingDetailResponse completeJob(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomeBookingCompletionRequest request) {
+		return bookingService.completeJob(request.bookingId());
+	}
+
+	/** The customer: is the work done? Done stops the work and prices it (work finished, the payment pending). */
+	@org.springframework.web.bind.annotation.PutMapping("/completion/respond")
+	public NexHomeBookingDetailResponse answerCompletion(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomeBookingCompletionAnswerRequest request) {
+		return bookingService.answerCompletion(request.bookingId(), request.completed());
+	}
+
 	@PostMapping("/location")
 	@ResponseStatus(HttpStatus.CREATED)
 	public NexHomePartnerLocationResponse updateLocation(

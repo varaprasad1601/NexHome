@@ -59,8 +59,8 @@ const PARTS = [
 /**
  * Design A checkout, one page: the cart's services (remove), the service address (the default chosen; change or
  * add), when (as soon as possible, or a day and a half-hour slot), and cash or online; Confirm books every service
- * (POST /api/cart/checkout, one booking each). An online booking gets its payment order right away
- * (POST /api/payments/orders/create).
+ * (POST /api/cart/checkout, one booking each). Online: the customer pays right away on the gateway's secure page
+ * (utils/pay: Cashfree checkout); closed or failed, the booking page offers Pay now again.
  */
 export default function Cart() {
   const { authRequest } = useAuth();
@@ -97,7 +97,6 @@ export default function Cart() {
   const errorFor = (field) => (error?.field === field ? error.message : null);
 
   const items = useMemo(() => cart.data?.items ?? [], [cart.data]);
-  const settings = useApi('/api/settings/public');
 
   // Each item's regular price (before its discount) from the public quote, for the price details
   const [regulars, setRegulars] = useState({});
@@ -124,11 +123,9 @@ export default function Cart() {
   const prices = useMemo(() => {
     const charged = items.reduce((sum, i) => sum + Number(i.estimatedUnitPrice ?? 0), 0);
     const regular = items.reduce((sum, i) => sum + Math.max(Number(regulars[i.cartItemId] ?? i.estimatedUnitPrice ?? 0), Number(i.estimatedUnitPrice ?? 0)), 0);
-    const feeRate = Number(settings.data?.TRANSACTION_FEE_PERCENTAGE ?? 0);
-    // The backend rounds the fee half-up to the paisa (NexHomeBookingCreator.feeOf)
-    const fee = payment === 'ONLINE' ? Math.round(charged * feeRate) / 100 : 0;
-    return { regular, discount: Math.max(0, regular - charged), feeRate, fee, total: charged + fee };
-  }, [items, regulars, settings.data, payment]);
+    // No online payment fee: online and cash cost the same
+    return { regular, discount: Math.max(0, regular - charged), total: charged };
+  }, [items, regulars]);
   const list = addresses.data ?? [];
   const address = list.find((a) => a.addressId === addressId) ?? list.find((a) => a.isDefault) ?? list[0];
 
@@ -171,11 +168,9 @@ export default function Cart() {
         }
       });
       const first = result.bookings[0];
-      if (payment === 'ONLINE' && first) {
-        await authRequest('/api/payments/orders/create', { method: 'POST', body: { bookingId: first.bookingId } }).catch(() => {});
-      }
-      if (result.bookings.length === 1) router.replace(`/booking/${first.bookingId}?placed=1`);
-      else router.replace('/(tabs)/bookings');
+      const after = result.bookings.length === 1 ? `/booking/${first.bookingId}?placed=1` : '/(tabs)/bookings';
+      // Online or cash, nothing is paid now: the customer pays once the work is done (the booking page's Pay now)
+      router.replace(after);
     } catch (err) {
       setError(err.message, fieldOf(err.message));
     } finally {
@@ -352,7 +347,7 @@ export default function Cart() {
           <SectionTitle>Pay with</SectionTitle>
           {[
             { code: 'CASH', label: 'Cash after service', note: 'Pay the professional when the job is done' },
-            { code: 'ONLINE', label: 'Pay online', note: 'UPI, card or net banking; a small gateway fee is added' }
+            { code: 'ONLINE', label: 'Pay online after service', note: 'UPI, card or net banking in the app once the job is done' }
           ].map((option) => {
             const on = payment === option.code;
             return (
@@ -375,9 +370,6 @@ export default function Cart() {
           <View style={{ height: 1, backgroundColor: colors.line }} />
           <PriceRow label={`Item total${items.length > 1 ? ` (${items.length} services)` : ''}`} value={money(prices.regular)} />
           {prices.discount > 0 ? <PriceRow label="Discount" value={`− ${money(prices.discount)}`} color={colors.greenDark} /> : null}
-          {payment === 'ONLINE' && prices.feeRate > 0 ? (
-            <PriceRow label={`Online payment fee (${prices.feeRate}%)`} value={`+ ${money(prices.fee)}`} />
-          ) : null}
           <View style={{ height: 1, backgroundColor: colors.line }} />
           <PriceRow label="To pay" value={money(prices.total)} strong />
           {prices.discount > 0 ? (
@@ -389,7 +381,7 @@ export default function Cart() {
             </View>
           ) : null}
           <Text style={{ fontSize: 11.5, color: colors.muted }}>
-            {payment === 'CASH' ? 'Pay the professional in cash when the job is done.' : 'The online payment fee is not refunded if you cancel.'} Hourly services are priced for one hour; the final amount follows the time worked.
+            {payment === 'CASH' ? 'Pay the professional in cash when the job is done.' : 'Pay online in the app once the job is done.'} Hourly services are priced for one hour; the final amount follows the time worked.
           </Text>
         </Card>
       </ScrollView>
@@ -399,7 +391,7 @@ export default function Cart() {
           <View>
             <Text style={{ color: colors.muted }}>To pay</Text>
             {prices.discount > 0 ? (
-              <Text style={{ fontSize: 12, color: '#8a9aad', textDecorationLine: 'line-through' }}>{money(prices.regular + prices.fee)}</Text>
+              <Text style={{ fontSize: 12, color: '#8a9aad', textDecorationLine: 'line-through' }}>{money(prices.regular)}</Text>
             ) : null}
           </View>
           <Text weight="extrabold" style={{ fontSize: 18, color: colors.navy }}>

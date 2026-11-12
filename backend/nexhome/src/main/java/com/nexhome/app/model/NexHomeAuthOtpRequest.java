@@ -57,6 +57,17 @@ public class NexHomeAuthOtpRequest {
 	@Column(name = "otp_hash", nullable = false, updatable = false, columnDefinition = "text")
 	private String otpHash;
 
+	/**
+	 * The plain OTP encrypted with NexHomeFieldEncryptor (V61): only a customer's or partner's LOGIN / REGISTRATION
+	 * OTP while staff may share it ({@code nexhome.otp.share-with-staff}); cleared once it is no longer PENDING.
+	 */
+	@Column(name = "otp_encrypted", columnDefinition = "text")
+	private String otpEncrypted;
+
+	/** The app that asked (V65): CUSTOMER, PARTNER or STAFF (the admin console); null for phone changes. */
+	@Column(name = "requested_from", updatable = false, length = 20)
+	private String requestedFrom;
+
 	/** OTP_PURPOSE lookup code. */
 	@Column(name = "purpose", nullable = false, updatable = false, length = 60)
 	private String purpose;

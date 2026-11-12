@@ -9,7 +9,8 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 /**
  * A wallet payout (V60): the cash and online jobs it settled with their commission, {@code onlineEarnings}
  * (online less commission plus adjustments) and {@code netAmount} paid (= onlineEarnings - cashCommission).
- * {@code items} only on the single payout.
+ * {@code items} only on the single payout. {@code bankAccountNumber} / {@code ifscCode}: the account paid into (null
+ * when that account was removed).
  */
 public record NexHomePartnerSettlementResponse(Long settlementId, String publicId, Long partnerProfileId,
 		String partnerPublicId, int cashJobs, BigDecimal cashAmount, BigDecimal cashCommission, int onlineJobs,
@@ -20,5 +21,7 @@ public record NexHomePartnerSettlementResponse(Long settlementId, String publicI
 				timezone = "Asia/Kolkata") Instant paidAt,
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
 				timezone = "Asia/Kolkata") Instant creationDate,
-		List<NexHomePartnerWalletResponse.Item> items) {
+		List<NexHomePartnerWalletResponse.Item> items,
+		String bankAccountNumber,
+		String ifscCode) {
 }

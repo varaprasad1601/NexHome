@@ -269,10 +269,17 @@ class NexHomeSupportFlowTest {
 
 		// Staff send a notification; the audit log has the ticket's changes, for staff only
 		perform(post("/api/notifications/send"), staff, """
-				{"audience": "USER", "userId": %d, "title": "Thanks", "message": "Sorry about the delay."}"""
+				{"audience": "USER", "userId": %d, "title": "Thanks", "message": "Sorry about the delay.", "priority": "low"}"""
 				.formatted(customerUser.getId()))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.recipients").value(1));
+		perform(get("/api/notifications/me?size=1"), customer, null)
+				.andExpect(jsonPath("$.content[0].title").value("Thanks"))
+				.andExpect(jsonPath("$.content[0].priority").value("LOW"));
+		perform(post("/api/notifications/send"), staff,
+				"{\"audience\": \"STAFF\", \"title\": \"x\", \"message\": \"y\", \"priority\": \"URGENT\"}")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Priority must be one of: HIGH, MEDIUM, LOW."));
 		perform(post("/api/notifications/send"), staff,
 				"{\"audience\": \"EVERYONE\", \"title\": \"x\", \"message\": \"y\"}")
 				.andExpect(status().isBadRequest());

@@ -128,6 +128,24 @@ public class NexHomeBooking {
 	@Column(name = "total_amount", nullable = false, precision = 12, scale = 2)
 	private BigDecimal totalAmount;
 
+	/**
+	 * The gateway's service charge and its GST the customer paid on top of the total (V69, Cashfree's surcharge);
+	 * not NexHome's money: never part of the total, revenue, refunds or the payout.
+	 */
+	/** When the partner asked the customer to confirm the work is done (V70; cleared if they say not yet). */
+	@Column(name = "completion_requested_at")
+	private Instant completionRequestedAt;
+
+	/** When the customer confirmed it (V70): the work stopped then and the booking completed. */
+	@Column(name = "completion_confirmed_at")
+	private Instant completionConfirmedAt;
+
+	@Column(name = "gateway_service_charge", nullable = false, precision = 12, scale = 2)
+	private BigDecimal gatewayServiceCharge = BigDecimal.ZERO;
+
+	@Column(name = "gateway_service_tax", nullable = false, precision = 12, scale = 2)
+	private BigDecimal gatewayServiceTax = BigDecimal.ZERO;
+
 	@JdbcTypeCode(SqlTypes.CHAR)
 	@Column(name = "currency", nullable = false, length = 3)
 	private String currency = "INR";

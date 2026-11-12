@@ -19,7 +19,9 @@ public record NexHomePaymentStatsResponse(
 		long cashDueCount,
 		BigDecimal revenueAmount,
 		BigDecimal revenueThisMonth,
-		List<MonthRevenue> revenueMonths) {
+		List<MonthRevenue> revenueMonths,
+		/** What the payment gateway has taken in all (charges + tax of the payments it reported, V68). */
+		BigDecimal gatewayChargesAmount) {
 
 	/**
 	 * @param month {@code YYYY-MM}

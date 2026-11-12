@@ -57,9 +57,9 @@ public class NexHomeNotification {
 	@Column(name = "read_at")
 	private Instant readAt;
 
-	/** NORMAL, or HIGH for what staff should act on now (V45). */
+	/** HIGH (for what should be acted on now), MEDIUM (the default) or LOW (V45, V64). */
 	@Column(name = "priority", nullable = false, length = 20, updatable = false)
-	private String priority = "NORMAL";
+	private String priority = "MEDIUM";
 
 	/** The app it belongs to (V54): CUSTOMER, PARTNER, STAFF (the console) or ALL. */
 	@Column(name = "audience", nullable = false, length = 20, updatable = false)

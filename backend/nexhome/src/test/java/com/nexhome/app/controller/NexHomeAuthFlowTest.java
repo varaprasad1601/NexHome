@@ -267,6 +267,120 @@ class NexHomeAuthFlowTest {
 	}
 
 	@Test
+	void oneAccountSignsUpForBothAppsWithOneCode() throws Exception {
+		NexHomeUser customer = newUser("CUSTOMER");
+		NexHomeUser partner = newUser("PARTNER");
+		String body = "{\"countryCode\":\"+91\",\"mobileNumber\":\"%s\",\"purpose\":\"%s\",\"roleCode\":\"%s\"}";
+
+		// A customer's number in the partner app: no login code (404, so the app offers sign-up)
+		perform(post("/api/auth/otp/request"), null, body.formatted(customer.getMobileNumber(), "LOGIN", "PARTNER"))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(
+						"This mobile number is not registered as a NexHome partner yet. Sign up to join."));
+		perform(post("/api/auth/otp/request"), null, body.formatted(partner.getMobileNumber(), "LOGIN", "ADMIN"))
+				.andExpect(status().isBadRequest());
+		perform(post("/api/auth/otp/request"), null, body.formatted(partner.getMobileNumber(), "LOGIN", "PARTNER"))
+				.andExpect(status().isCreated());
+
+		// Signing up as a partner with the existing account: one code, then the account has both roles
+		perform(post("/api/auth/register"), null, """
+				{"countryCode": "+91", "mobileNumber": "%s", "roleCode": "PARTNER"}""".formatted(customer.getMobileNumber()))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.purpose").value("REGISTRATION"));
+		org.assertj.core.api.Assertions.assertThat(userRoleRepository.findByUserIdOrderByRoleIdAsc(customer.getId()))
+				.hasSize(1);
+		String verify = verifyBody(customer.getMobileNumber(), "REGISTRATION").replace("}", ",\"roleCode\":\"PARTNER\"}");
+		JsonNode signedUp = json(perform(post("/api/auth/otp/verify"), null, verify).andExpect(status().isOk()));
+		org.assertj.core.api.Assertions.assertThat(signedUp.get("user").get("roles").toString())
+				.contains("\"CUSTOMER\"", "\"PARTNER\"");
+		perform(get("/api/partners/profiles/me"), signedUp.get("tokens").get("accessToken").asString(), null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.onboardingStatus").value("NOT_STARTED"));
+		// Now a partner: signing up again is 409, logging in works
+		perform(post("/api/auth/register"), null, """
+				{"countryCode": "+91", "mobileNumber": "%s", "roleCode": "PARTNER"}""".formatted(customer.getMobileNumber()))
+				.andExpect(status().isConflict());
+
+		// A role staff withdrew is not taken back by signing up
+		NexHomeUser former = newUser("PARTNER");
+		entityManager.createNativeQuery("update nexhome_user_roles set is_active = false where user_id = :id")
+				.setParameter("id", former.getId()).executeUpdate();
+		entityManager.clear();
+		perform(post("/api/auth/otp/request"), null, body.formatted(former.getMobileNumber(), "LOGIN", "PARTNER"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(
+						"The partner account of this number was turned off; please contact NexHome support."));
+		perform(post("/api/auth/register"), null, """
+				{"countryCode": "+91", "mobileNumber": "%s", "roleCode": "PARTNER"}""".formatted(former.getMobileNumber()))
+				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void staffSeeCustomersLoginOtpsAndOnlySuperUsersSeeStaffOnes() throws Exception {
+		NexHomeUser customer = newUser("CUSTOMER");
+		NexHomeUser admin = newUser("ADMIN");
+		String viewer = accessToken(newUser("SUPER_USER").getId());
+
+		perform(post("/api/auth/otp/request"), null, "{\"countryCode\":\"+91\",\"mobileNumber\":\""
+				+ customer.getMobileNumber() + "\",\"purpose\":\"LOGIN\"}").andExpect(status().isCreated());
+		perform(post("/api/auth/admin/otp/request"), null,
+				"{\"countryCode\":\"+91\",\"mobileNumber\":\"" + admin.getMobileNumber() + "\"}")
+				.andExpect(status().isCreated());
+
+		// The customer's code while pending, found by the number (with or without +91)
+		perform(get("/api/auth/otps").param("search", "+91 " + customer.getMobileNumber()), viewer, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].userId").value(customer.getId()))
+				.andExpect(jsonPath("$.content[0].roles[0]").value("CUSTOMER"))
+				.andExpect(jsonPath("$.content[0].purpose").value("LOGIN"))
+				.andExpect(jsonPath("$.content[0].requestStatus").value("PENDING"))
+				.andExpect(jsonPath("$.content[0].otp").value(org.hamcrest.Matchers.matchesPattern("\\d{6}")));
+		// An admin's code: only super users see it (V65), with the app that asked
+		perform(get("/api/auth/otps").param("search", admin.getMobileNumber()), viewer, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].requestedFrom").value("STAFF"))
+				.andExpect(jsonPath("$.content[0].otp").value(org.hamcrest.Matchers.matchesPattern("\\d{6}")));
+		String otherAdmin = accessToken(newUser("ADMIN").getId());
+		perform(get("/api/auth/otps").param("search", admin.getMobileNumber()), otherAdmin, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.totalElements").value(0));
+		// A sub-admin's code is listed to every LOGIN_OTP_VIEW reader
+		NexHomeUser subAdmin = newUser("SUB_ADMIN");
+		perform(post("/api/auth/admin/otp/request"), null,
+				"{\"countryCode\":\"+91\",\"mobileNumber\":\"" + subAdmin.getMobileNumber() + "\"}")
+				.andExpect(status().isCreated());
+		perform(get("/api/auth/otps").param("search", subAdmin.getMobileNumber()), otherAdmin, null)
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].otp").value(org.hamcrest.Matchers.matchesPattern("\\d{6}")));
+		// ... but not to other sub-admins (console codes go by rank)
+		String otherSubAdmin = accessToken(newUser("SUB_ADMIN").getId());
+		perform(get("/api/auth/otps").param("search", subAdmin.getMobileNumber()), otherSubAdmin, null)
+				.andExpect(jsonPath("$.totalElements").value(0));
+		// An admin who is also a customer logs in from the customer app: every viewer sees it, as Customer
+		NexHomeUser adminCustomer = newUser("ADMIN");
+		userRoleRepository.saveAndFlush(userMapper.toUserRoleEntity(adminCustomer,
+				roleRepository.findByCode("CUSTOMER").orElseThrow(), 1L));
+		perform(post("/api/auth/otp/request"), null, "{\"countryCode\":\"+91\",\"mobileNumber\":\""
+				+ adminCustomer.getMobileNumber() + "\",\"purpose\":\"LOGIN\",\"roleCode\":\"CUSTOMER\"}")
+				.andExpect(status().isCreated());
+		perform(get("/api/auth/otps").param("search", adminCustomer.getMobileNumber()), otherSubAdmin, null)
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].requestedFrom").value("CUSTOMER"))
+				.andExpect(jsonPath("$.content[0].otp").value(org.hamcrest.Matchers.matchesPattern("\\d{6}")));
+		// Only LOGIN_OTP_VIEW readers
+		perform(get("/api/auth/otps"), accessToken(customer.getId()), null).andExpect(status().isForbidden());
+
+		// Once used the code is gone
+		perform(post("/api/auth/otp/verify"), null, verifyBody(customer.getMobileNumber(), "LOGIN"))
+				.andExpect(status().isOk());
+		perform(get("/api/auth/otps").param("search", customer.getMobileNumber()), viewer, null)
+				.andExpect(jsonPath("$.content[0].requestStatus").value("VERIFIED"))
+				.andExpect(jsonPath("$.content[0].otp").doesNotExist());
+	}
+
+	@Test
 	void staffAddACustomerAccountToTheirNumber() throws Exception {
 		String admin = accessToken(newUser("ADMIN").getId());
 

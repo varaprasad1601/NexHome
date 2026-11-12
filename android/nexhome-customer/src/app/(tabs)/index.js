@@ -12,8 +12,10 @@ import { Cover, Text } from '../../components/ui';
 import { useAuth } from '../../context/AuthProvider';
 import useApi from '../../hooks/useApi';
 import { colors } from '../../theme';
-import { durationLabel, money, rangeLabel, serviceNameOf } from '../../utils/format';
-import { bookingStatus, compareUpcoming, isOpen, isPaymentDue } from '../../utils/status';
+import { durationLabel, money, parseApiDate, rangeLabel, serviceNameOf } from '../../utils/format';
+import { needsCompletionConfirmation, promptCompletion } from '../../utils/completion';
+import { promptRating } from '../../utils/rating';
+import { bookingStatus, isOpen, isPaid, isPaymentDue } from '../../utils/status';
 import useTabReset from '../../hooks/useTabReset';
 
 /** The header's blues (the "Ocean curve" of Admin Sreens/customer-app-samples/home-v2-styles.html). */
@@ -30,9 +32,15 @@ export default function Home() {
   const categories = useApi('/api/catalog/categories');
   const services = useApi('/api/catalog/services?size=8');
   const addresses = useApi('/api/addresses/me');
-  const summary = useApi('/api/notifications/me/summary?app=CUSTOMER', { pollMs: 15000 });
-  const bookings = useApi('/api/bookings/me?size=20', { pollMs: 20000 });
+  // Kept light: the bell once a minute; bookings every 20 s only while one is under way (the professional may ask to
+  // confirm the job), else on opening the screen
+  const summary = useApi('/api/notifications/me/summary?app=CUSTOMER', { pollMs: 60000 });
+  const bookings = useApi('/api/bookings/me?size=20', {
+    pollMs: 20000,
+    pollWhile: (page) => (page?.content ?? []).some((b) => ['IN_PROGRESS', 'PAUSED'].includes(b.bookingStatus) && !b.actualEndAt)
+  });
   const contact = useApi('/api/settings/public');
+  const reviews = useApi('/api/reviews/me?size=100');
 
   // White status bar text over the blue header while Home is shown
   useFocusEffect(
@@ -40,6 +48,23 @@ export default function Home() {
       setStatusBarStyle('light');
       return () => setStatusBarStyle('dark');
     }, [])
+  );
+
+  // A completed booking not reviewed yet: ask for a rating (once a session; never one they skipped)
+  useFocusEffect(
+    useCallback(() => {
+      if (!bookings.data) return;
+      // The professional finished an online job: confirm it is done first (V70)
+      const toConfirm = (bookings.data.content ?? []).find(needsCompletionConfirmation);
+      if (toConfirm) {
+        promptCompletion(toConfirm);
+        return;
+      }
+      if (!reviews.data) return;
+      const reviewed = new Set((reviews.data.content ?? []).map((r) => r.bookingId));
+      const unrated = (bookings.data.content ?? []).find((b) => b.bookingStatus === 'COMPLETED' && isPaid(b) && b.partnerProfileId && !reviewed.has(b.bookingId));
+      if (unrated) promptRating(unrated.bookingId);
+    }, [bookings.data, reviews.data])
   );
 
   const address = (addresses.data ?? []).find((a) => a.isDefault) ?? addresses.data?.[0];
@@ -291,9 +316,20 @@ export default function Home() {
   );
 }
 
-/** The upcoming booking that comes first in the Bookings tab's order (compareUpcoming), or null. */
+/** The order of Home's booking: working, partner accepted, partner assigned, then the other open ones (to do). */
+const HOME_RANK = { IN_PROGRESS: 0, PAUSED: 0, PARTNER_EN_ROUTE: 1, ASSIGNED: 2 };
+
+/**
+ * The booking Home shows, or null: work under way first, then a partner accepted, then a partner assigned, then the
+ * open booking booked most recently (pending or confirmed), then one done but waiting for the payment; within each the
+ * newest by when it was booked, then the highest booking id.
+ */
 function nextBooking(list) {
-  const upcoming = list.filter(isOpen);
-  if (!upcoming.length) return null;
-  return [...upcoming].sort(compareUpcoming)[0];
+  const open = list.filter(isOpen);
+  if (!open.length) return null;
+  const group = (booking) => (isPaymentDue(booking) ? 4 : HOME_RANK[booking.bookingStatus] ?? 3);
+  const bookedAt = (booking) => parseApiDate(booking.creationDate)?.date.getTime() ?? 0;
+  return [...open].sort(
+    (a, b) => group(a) - group(b) || bookedAt(b) - bookedAt(a) || Number(b.bookingId) - Number(a.bookingId)
+  )[0];
 }

@@ -63,7 +63,8 @@ public class NexHomeSecurityConfig {
 			"/api/faqs",
 			"/api/policies/current",
 			"/api/policies/current/*",
-			"/api/settings/public" };
+			"/api/settings/public",
+			"/api/payments/checkout" };
 
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http, NexHomeSecurityErrorHandler errorHandler)

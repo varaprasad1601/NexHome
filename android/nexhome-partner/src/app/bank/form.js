@@ -27,8 +27,9 @@ async function lookupIfsc(code) {
 
 /**
  * Add a bank account (POST /api/partners/bank-accounts/add: holder, number typed twice, IFSC, bank and branch filled
- * from the IFSC when possible) or edit one (`accountId`; PUT /bank-accounts/update: number and IFSC are fixed, a new
- * holder name sends it back for verification). An approved partner is warned first.
+ * from the IFSC when possible) or edit one (`accountId`; PUT /bank-accounts/update: the number and IFSC can be
+ * corrected until the profile is sent for review (NOT_STARTED, DRAFT, CHANGES_REQUESTED), then they are fixed; a
+ * changed number, IFSC or holder name sends it back for verification). An approved partner is warned first.
  */
 export default function BankForm() {
   const { accountId } = useLocalSearchParams();
@@ -40,6 +41,8 @@ export default function BankForm() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const approved = profile?.onboardingStatus === 'APPROVED';
+  // The number and IFSC: always when adding; when editing, only until the profile is sent for review
+  const identityEditable = !accountId || ['NOT_STARTED', 'DRAFT', 'CHANGES_REQUESTED'].includes(profile?.onboardingStatus);
   const set = (key) => (value) => setForm((current) => ({ ...current, [key]: value }));
 
   useEffect(() => {
@@ -50,7 +53,16 @@ export default function BankForm() {
         const account = accountId ? list.find((a) => String(a.partnerBankAccountId) === String(accountId)) : null;
         if (account) {
           setExisting(account);
-          setForm((current) => ({ ...current, accountHolderName: account.accountHolderName ?? '', bankName: account.bankName ?? '', branchName: account.branchName ?? '', isPrimary: account.isPrimary }));
+          setForm((current) => ({
+            ...current,
+            accountHolderName: account.accountHolderName ?? '',
+            accountNumber: account.accountNumber ?? '',
+            confirmNumber: account.accountNumber ?? '',
+            ifscCode: account.ifscCode ?? '',
+            bankName: account.bankName ?? '',
+            branchName: account.branchName ?? '',
+            isPrimary: account.isPrimary
+          }));
         } else if (!accountId) {
           const name = [profile.firstName, profile.lastName].filter(Boolean).join(' ');
           setForm((current) => ({ ...current, accountHolderName: current.accountHolderName || name, isPrimary: list.length === 0 }));
@@ -71,7 +83,7 @@ export default function BankForm() {
   const save = () => {
     const found = {};
     if (!form.accountHolderName.trim()) found.accountHolderName = 'Enter the name on the account';
-    if (!existing) {
+    if (!existing || identityEditable) {
       if (!/^\d{9,18}$/.test(form.accountNumber)) found.accountNumber = 'Account number is 9 to 18 digits';
       else if (form.accountNumber !== form.confirmNumber) found.confirmNumber = 'The numbers do not match';
       if (!IFSC.test(form.ifscCode)) found.ifscCode = 'IFSC is 4 letters, a 0 and 6 letters or digits';
@@ -91,6 +103,9 @@ export default function BankForm() {
             body: {
               partnerBankAccountId: existing.partnerBankAccountId,
               ...(form.accountHolderName.trim() !== existing.accountHolderName ? { accountHolderName: form.accountHolderName.trim() } : {}),
+              // Sent only when corrected (allowed until the profile is sent for review)
+              ...(identityEditable && existing.accountNumber && form.accountNumber !== existing.accountNumber ? { accountNumber: form.accountNumber } : {}),
+              ...(identityEditable && form.ifscCode !== existing.ifscCode ? { ifscCode: form.ifscCode } : {}),
               bankName: form.bankName.trim(),
               branchName: form.branchName.trim(),
               ...(form.isPrimary && !existing.isPrimary ? { isPrimary: true } : {})
@@ -157,13 +172,13 @@ export default function BankForm() {
       <FormScroll contentContainerStyle={{ padding: 16, gap: 14 }}>
           {approved ? <Banner tone="warning" title="Your profile is approved" text="A new account or a new holder name sends your profile for verification again. You cannot take jobs until it is approved." /> : null}
           <Field label="Account holder name" value={form.accountHolderName} onChangeText={set('accountHolderName')} error={errors.accountHolderName} autoCapitalize="words" maxLength={150} />
-          {existing ? (
+          {existing && !identityEditable ? (
             <Text style={{ color: colors.muted, fontSize: 13 }}>
-              Account ••••{existing.accountNumberLast4} · IFSC {existing.ifscCode}. To use another account, add it as a new one.
+              Account {existing.accountNumber ?? `••••${existing.accountNumberLast4}`} · IFSC {existing.ifscCode}. These cannot change after your profile is sent for review; to use another account, add it as a new one.
             </Text>
           ) : (
             <>
-              <Field label="Account number" value={form.accountNumber} onChangeText={(t) => set('accountNumber')(t.replace(/\D/g, ''))} error={errors.accountNumber} keyboardType="number-pad" maxLength={18} secureTextEntry />
+              <Field label="Account number" value={form.accountNumber} onChangeText={(t) => set('accountNumber')(t.replace(/\D/g, ''))} error={errors.accountNumber} keyboardType="number-pad" maxLength={18} secureTextEntry={!existing} />
               <Field label="Account number again" value={form.confirmNumber} onChangeText={(t) => set('confirmNumber')(t.replace(/\D/g, ''))} error={errors.confirmNumber} keyboardType="number-pad" maxLength={18} />
               <Field label="IFSC" value={form.ifscCode} onChangeText={changeIfsc} error={errors.ifscCode} autoCapitalize="characters" maxLength={11} placeholder="SBIN0001234" />
             </>

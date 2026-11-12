@@ -66,25 +66,32 @@ class NexHomeNotifier {
 	static final String STAFF = "STAFF";
 
 	static final String CUSTOMER_PROFILE = "CUSTOMER_PROFILE";
-	/** Notification priorities (V45). */
-	static final String NORMAL = "NORMAL";
+	/** Notification priorities (V45, V64): HIGH, MEDIUM (the default) or LOW. */
 	static final String HIGH = "HIGH";
+	static final String MEDIUM = "MEDIUM";
+	static final String LOW = "LOW";
+	static final java.util.List<String> PRIORITIES = java.util.List.of(HIGH, MEDIUM, LOW);
 
 	/**
 	 * One notification. {@code referenceType} / {@code referenceId}: what it is about, both or neither;
-	 * {@code priority} NORMAL (the default) or HIGH; {@code audience} the app it belongs to (V54), null to work it out
+	 * {@code priority} HIGH, MEDIUM (the default) or LOW; {@code audience} the app it belongs to (V54), null to work it out
 	 * for each recipient ({@link #audienceOf}).
 	 */
 	record Message(String type, String title, String message, String referenceType, Long referenceId,
 			String priority, String audience) {
 
 		Message(String type, String title, String message, String referenceType, Long referenceId) {
-			this(type, title, message, referenceType, referenceId, NORMAL, null);
+			this(type, title, message, referenceType, referenceId, MEDIUM, null);
 		}
 
 		/** The same message as HIGH priority. */
 		Message high() {
 			return new Message(type, title, message, referenceType, referenceId, HIGH, audience);
+		}
+
+		/** The same message with another priority. */
+		Message withPriority(String level) {
+			return new Message(type, title, message, referenceType, referenceId, level, audience);
 		}
 
 		/** The same message for one app. */

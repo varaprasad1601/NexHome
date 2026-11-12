@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, TextInput, View } from 'react-native';
+import { Linking, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiRequest } from '../api/client';
@@ -8,7 +8,9 @@ import { Button, ErrorBox, Header, Text } from '../components/ui';
 import { useAuth } from '../context/AuthProvider';
 import { colors, fonts } from '../theme';
 
-/** The 6-digit code sent to the number; verifying signs the partner in. Resend after the backend's 60 s wait. */
+/** The 6-digit code sent to the number; verifying signs the partner in. Resend after the backend's 60 s wait.
+ * Below, the support number to call for the code (GET /api/settings/public SUPPORT_PHONE), while OTPs are not sent by
+ * SMS. */
 export default function Otp() {
   const { mobile, purpose } = useLocalSearchParams();
   const { signIn } = useAuth();
@@ -16,6 +18,18 @@ export default function Otp() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [wait, setWait] = useState(60);
+  // NexHome's support number (public settings): OTPs are not sent by SMS yet, so support shares the code
+  const [supportPhone, setSupportPhone] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiRequest('/api/settings/public')
+      .then((settings) => !cancelled && setSupportPhone(settings?.SUPPORT_PHONE || null))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (wait <= 0) return undefined;
@@ -29,7 +43,7 @@ export default function Otp() {
     try {
       const result = await apiRequest('/api/auth/otp/verify', {
         method: 'POST',
-        body: { countryCode: '+91', mobileNumber: mobile, purpose, otp }
+        body: { countryCode: '+91', mobileNumber: mobile, purpose, otp, roleCode: 'PARTNER' }
       });
       await signIn(result);
       // Nothing to go back to: back from Home closes the app
@@ -45,7 +59,7 @@ export default function Otp() {
   const resend = async () => {
     setError('');
     try {
-      await apiRequest('/api/auth/otp/request', { method: 'POST', body: { countryCode: '+91', mobileNumber: mobile, purpose } });
+      await apiRequest('/api/auth/otp/request', { method: 'POST', body: { countryCode: '+91', mobileNumber: mobile, purpose, roleCode: 'PARTNER' } });
       setWait(60);
     } catch (err) {
       const seconds = /(\d+) seconds?/.exec(err.message);
@@ -83,6 +97,20 @@ export default function Otp() {
             </Text>
           )}
         </View>
+        {supportPhone ? (
+          <View style={{ backgroundColor: colors.white, borderRadius: 14, borderWidth: 1, borderColor: colors.line, padding: 14, gap: 4 }}>
+            <Text weight="bold" style={{ color: colors.navy }}>
+              Didn’t get the code?
+            </Text>
+            <Text style={{ color: colors.muted, lineHeight: 20 }}>
+              Call NexHome support at{' '}
+              <Text weight="bold" style={{ color: colors.blue }} onPress={() => Linking.openURL(`tel:${supportPhone.replace(/[^\d+]/g, '')}`)} accessibilityRole="link">
+                {supportPhone}
+              </Text>{' '}
+              and we will share your verification code with you.
+            </Text>
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );

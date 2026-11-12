@@ -64,6 +64,15 @@ export function durationLabel(minutes) {
   return `About ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
 }
 
+/** Exact minutes as "2 h 15 min" (time worked, extra time). */
+export function minutesLabel(minutes) {
+  const value = Math.max(0, Math.round(Number(minutes) || 0));
+  const hours = Math.floor(value / 60);
+  const rest = value % 60;
+  if (!hours) return `${rest} min`;
+  return rest ? `${hours} h ${rest} min` : `${hours} h`;
+}
+
 /** The service's own name: bookings store "Service - Option". */
 export function serviceNameOf(name) {
   return (name ?? '').split(' - ')[0];

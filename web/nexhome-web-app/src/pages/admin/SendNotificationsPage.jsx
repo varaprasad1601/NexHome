@@ -9,11 +9,13 @@ import { MoneyTabs, MoneyTile, When } from '../../components/admin/payment/money
 import FormField from '../../components/admin/system/FormField';
 import { cardClass, fieldClass, primaryButtonClass } from '../../components/admin/system/systemStyles';
 import { useAdminAuth } from '../../context/adminAuth';
-import { NOTIFICATION_AUDIENCES, SUPPORT_LOOKUPS, notificationStyle, supportBadgeClass } from '../../data/supportOptions';
+import { NOTIFICATION_AUDIENCES, NOTIFICATION_PRIORITIES, SUPPORT_LOOKUPS, notificationStyle, supportBadgeClass } from '../../data/supportOptions';
+import { PriorityTag } from '../../components/admin/NotificationsMenu';
 import useLookupLabels from '../../hooks/useLookupLabels';
 import { formatNumber } from '../../utils/format';
 
-const EMPTY_FORM = { audience: 'CUSTOMERS', mobile: '', notificationType: 'ANNOUNCEMENT', title: '', message: '' };
+const EMPTY_FORM = { audience: 'CUSTOMERS', mobile: '', notificationType: 'ANNOUNCEMENT', priority: 'MEDIUM', title: '', message: '' };
+const PRIORITY_OPTIONS = Object.entries(NOTIFICATION_PRIORITIES).map(([value, level]) => ({ value, label: level.label }));
 
 /**
  * The send form (NOTIFICATION_MANAGE write): to every customer, partner or staff member, or one user found by mobile
@@ -70,6 +72,7 @@ function SendForm({ lookups, onSent }) {
           audience: form.audience,
           userId,
           notificationType: form.notificationType,
+          priority: form.priority,
           title: form.title.trim(),
           message: form.message.trim()
         }
@@ -102,6 +105,9 @@ function SendForm({ lookups, onSent }) {
             onChange={(value) => set('notificationType', value)}
             options={(lookups.NOTIFICATION_TYPE ?? []).map((value) => ({ value: value.valueCode, label: value.displayName }))}
           />
+        </FormField>
+        <FormField label="Priority" htmlFor="notify-priority" hint="High for what needs action now; the apps show it as a tag.">
+          <Select id="notify-priority" value={form.priority} onChange={(value) => set('priority', value)} options={PRIORITY_OPTIONS} />
         </FormField>
         {form.audience === 'USER' && (
           <div className="md:col-span-2">
@@ -200,8 +206,11 @@ export default function SendNotificationsPage() {
               <Icon size={15} />
             </span>
             <span className="min-w-0">
-              <span className="block truncate font-bold" title={row.title}>
-                {row.title}
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate font-bold" title={row.title}>
+                  {row.title}
+                </span>
+                <PriorityTag priority={row.priority} />
               </span>
               <span className="block truncate text-[0.8125rem] text-[var(--muted)]" title={row.message}>
                 {row.message}

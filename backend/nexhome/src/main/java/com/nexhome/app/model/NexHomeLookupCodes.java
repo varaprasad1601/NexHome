@@ -62,6 +62,8 @@ public final class NexHomeLookupCodes {
 		public static final String WEBHOOK_PROCESSING_STATUS = "WEBHOOK_PROCESSING_STATUS";
 		public static final String REFUND_STATUS = "REFUND_STATUS";
 		public static final String PAYOUT_STATUS = "PAYOUT_STATUS";
+		public static final String PAYOUT_MODE = "PAYOUT_MODE";
+		public static final String DEDUCTION_REASON = "DEDUCTION_REASON";
 		public static final String TRANSFER_STATUS = "TRANSFER_STATUS";
 		public static final String CASH_COLLECTION_STATUS = "CASH_COLLECTION_STATUS";
 		/** Module 9. */
