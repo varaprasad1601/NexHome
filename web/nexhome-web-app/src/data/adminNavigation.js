@@ -92,8 +92,7 @@ export const ADMIN_NAV = [
       { label: 'Manage Roles', to: '/admin/system/roles', fn: 'ROLE_MANAGE' },
       { label: 'Manage Functions', to: '/admin/system/functions', fn: 'FUNCTION_MANAGE' },
       { label: 'Manage Lookups', to: '/admin/system/lookups', fn: 'LOOKUP_MANAGE' },
-      { label: 'Audit Logs', to: '/admin/system/audit-logs', fn: 'AUDIT_LOG_VIEW' },
-      { label: 'Login OTPs', to: '/admin/system/login-otps', fn: 'LOGIN_OTP_VIEW' }
+      { label: 'Audit Logs', to: '/admin/system/audit-logs', fn: 'AUDIT_LOG_VIEW' }
     ]
   },
   {

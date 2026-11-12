@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 
 import AdminLayout from './components/admin/AdminLayout';
 import AdminRoot from './components/admin/AdminRoot';
@@ -120,7 +120,8 @@ export default function App() {
               <Route path="system/lookups" element={<LookupsPage />} />
               <Route path="system/lookups/:lookupTypeId" element={<LookupTypePage />} />
               <Route path="system/audit-logs" element={<AuditLogsPage />} />
-              <Route path="system/login-otps" element={<LoginOtpsPage />} />
+              {/* Login OTPs live under User Management only; the old address leads there */}
+              <Route path="system/login-otps" element={<Navigate to="/admin/users/login-otps" replace />} />
               <Route path="reviews" element={<ReviewsPage />} />
               {/* Support tickets: Coming soon for now. To bring them back, restore the imports above and use:
               <Route path="support" element={<SupportTicketsPage />} />

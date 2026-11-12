@@ -104,9 +104,12 @@ export default function Footer() {
               </AppLink>
             </li>
             <li>
-              <span className="text-blue-200/90 cursor-default">
+              <AppLink
+                className="hover:text-white transition-colors"
+                to="/policies"
+              >
                 Policies & Terms
-              </span>
+              </AppLink>
             </li>
             <li className="pt-1 text-blue-200/80">
               Mon – Sun: 9 AM – 5 PM (IST)

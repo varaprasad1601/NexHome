@@ -1,0 +1,25 @@
+# Only what the image build needs goes to Docker: never secrets or build output
+
+# Secrets: passed at run time (docker run --env-file .env), never baked into an image
+.env
+.env.*
+firebase-service-account*.json
+*-firebase-adminsdk-*.json
+
+# Build output and tooling (the image builds its own jar)
+target/
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE and local files
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.git/
+.gitignore
+.gitattributes
+HELP.md
+api-docs.html
+Dockerfile
+.dockerignore
