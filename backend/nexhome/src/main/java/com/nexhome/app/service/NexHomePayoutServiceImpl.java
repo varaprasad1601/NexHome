@@ -524,9 +524,19 @@ public class NexHomePayoutServiceImpl implements NexHomePayoutService {
 		Object[] all = manualPayoutRepository.paidSince(java.time.LocalDate.of(2000, 1, 1)).get(0);
 		Object[] month = manualPayoutRepository.paidSince(java.time.LocalDate.now(ZONE).withDayOfMonth(1)).get(0);
 		Object[] deductions = deductionRepository.totals().get(0);
+		// Commission: online payouts' plus each collected cash job's (the service's commission on the cash)
+		Object[] online = payoutRepository.commissionTotals().get(0);
+		BigDecimal commission = (BigDecimal) online[0];
+		long commissionJobs = ((Number) online[1]).longValue();
+		for (com.nexhome.app.model.NexHomeCashCollection collection : cashCollectionRepository
+				.findAllCollectedWithService()) {
+			commission = commission.add(
+					NexHomeBookingMapper.commissionOf(collection.getBooking().getService(), collection.getAmount()));
+			commissionJobs++;
+		}
 		return new com.nexhome.app.dto.NexHomeManualPayoutStatsResponse(totalDue, partnersDue, (BigDecimal) all[1],
 				((Number) all[0]).longValue(), (BigDecimal) month[1], ((Number) month[0]).longValue(),
-				(BigDecimal) deductions[1], ((Number) deductions[0]).longValue());
+				(BigDecimal) deductions[1], ((Number) deductions[0]).longValue(), commission, commissionJobs);
 	}
 
 	/** Recorded payouts as responses, with who recorded and cancelled them (one query for the names). */

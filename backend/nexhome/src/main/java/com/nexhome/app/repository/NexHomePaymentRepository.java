@@ -48,22 +48,26 @@ public interface NexHomePaymentRepository extends JpaRepository<NexHomePayment, 
 	/**
 	 * Revenue per month (IST), oldest first; months without any are left out: payments captured (by
 	 * {@code captured_at}) plus cash collected (by {@code confirmed_at}) less refunds that succeeded (by
-	 * {@code completed_at}, else when they were made).
+	 * {@code completed_at}, else when they were made). Cancelled bookings' payments, refunds and cash are left out
+	 * (the dashboard shows only the bookings that went ahead).
 	 */
 	@Query(nativeQuery = true, value = """
 			select m.month as month, sum(m.amount) as total
 			from (
 				select to_char(p.captured_at at time zone 'Asia/Kolkata', 'YYYY-MM') as month, p.amount
 				from nexhome_payments p
+				join nexhome_bookings b on b.id = p.booking_id and b.booking_status <> 'CANCELLED'
 				where p.status in ('CAPTURED', 'PARTIALLY_REFUNDED', 'REFUNDED') and p.captured_at is not null
 				union all
 				select to_char(coalesce(r.completed_at, r.creation_date) at time zone 'Asia/Kolkata', 'YYYY-MM'),
 					-r.amount
 				from nexhome_payment_refunds r
+				join nexhome_bookings b on b.id = r.booking_id and b.booking_status <> 'CANCELLED'
 				where r.status = 'SUCCEEDED'
 				union all
 				select to_char(c.confirmed_at at time zone 'Asia/Kolkata', 'YYYY-MM'), c.amount
 				from nexhome_cash_collections c
+				join nexhome_bookings b on b.id = c.booking_id and b.booking_status <> 'CANCELLED'
 				where c.status = 'COLLECTED' and c.confirmed_at is not null
 			) m
 			group by 1

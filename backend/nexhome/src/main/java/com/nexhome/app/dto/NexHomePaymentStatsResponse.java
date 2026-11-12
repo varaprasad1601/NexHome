@@ -21,7 +21,15 @@ public record NexHomePaymentStatsResponse(
 		BigDecimal revenueThisMonth,
 		List<MonthRevenue> revenueMonths,
 		/** What the payment gateway has taken in all (charges + tax of the payments it reported, V68). */
-		BigDecimal gatewayChargesAmount) {
+		BigDecimal gatewayChargesAmount,
+		/** Cash partners collected (COLLECTED cash collections): amount and count. */
+		BigDecimal cashCollectedAmount,
+		long cashCollectedCount,
+		/** Bookings not paid yet (payment PENDING or FAILED, cash and online): their total and count. */
+		BigDecimal pendingPaymentAmount,
+		long pendingPaymentCount,
+		/** The amount of the open orders ({@code ordersAwaitingPayment} is their count). */
+		BigDecimal ordersAwaitingAmount) {
 
 	/**
 	 * @param month {@code YYYY-MM}

@@ -60,6 +60,14 @@ public interface NexHomePartnerPayoutRepository extends JpaRepository<NexHomePar
 			+ "where p.payoutStatus <> 'CANCELLED' group by p.partner.id")
 	java.util.List<Object[]> owedByPartner();
 
+	/**
+	 * [commission, jobs] of the online payouts that are not cancelled: NexHome's commission on online jobs plus the
+	 * online payment fee those bookings paid (bookings before V68), which NexHome kept too.
+	 */
+	@Query("select coalesce(sum(p.platformCommission + coalesce(p.booking.transactionFeeAmount, 0)), 0), count(p) "
+			+ "from NexHomePartnerPayout p where p.payoutStatus <> 'CANCELLED'")
+	java.util.List<Object[]> commissionTotals();
+
 	/** The net of a partner's payouts that are not cancelled. */
 	@Query("select coalesce(sum(p.netAmount), 0) from NexHomePartnerPayout p where p.partner.id = :partnerId "
 			+ "and p.payoutStatus <> 'CANCELLED'")

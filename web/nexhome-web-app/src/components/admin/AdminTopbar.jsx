@@ -1,9 +1,10 @@
-import { ChevronDown, CircleHelp, LogOut, Search, ShieldCheck, UserRound } from 'lucide-react';
+import { ChevronDown, CircleHelp, LogOut, ShieldCheck, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useAdminAuth } from '../../context/adminAuth';
 import { STAFF_ROLE_CODES } from '../../utils/adminSession';
+import GlobalSearch from './GlobalSearch';
 import NotificationsMenu from './NotificationsMenu';
 
 /** The signed-in admin's highest staff role (SUPER_USER before ADMIN before SUB_ADMIN). */
@@ -100,15 +101,7 @@ export default function AdminTopbar({ onMenuClick }) {
     <header className="sticky top-0 z-20 flex h-[4.25rem] items-center gap-3 border-b border-[var(--line)] bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
       <MenuButton onClick={onMenuClick} />
 
-      <label className="relative ml-1 hidden max-w-md flex-1 md:block">
-        <span className="sr-only">Search</span>
-        <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
-        <input
-          type="search"
-          placeholder="Search customers, bookings, partners, services…"
-          className="w-full rounded-full border border-[var(--line)] bg-[var(--light)] py-2.5 pl-10 pr-4 text-sm text-[var(--ink)] outline-none transition placeholder:text-[#8A9AAD] focus:border-[var(--blue)] focus:bg-white focus:ring-2 focus:ring-[var(--blue)]/15"
-        />
-      </label>
+      <GlobalSearch />
 
       <div className="ml-auto flex items-center gap-1 sm:gap-2">
         <NotificationsMenu />

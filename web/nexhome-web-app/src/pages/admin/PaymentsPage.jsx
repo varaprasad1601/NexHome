@@ -1,4 +1,4 @@
-import { Banknote, Hourglass, IndianRupee, Percent, RotateCcw, Search, Undo2 } from 'lucide-react';
+import { Banknote, Clock, HandCoins, Hourglass, IndianRupee, Percent, RotateCcw, Search, Undo2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
@@ -229,36 +229,54 @@ export default function PaymentsPage() {
         description="Money in: online payments, cash collected by partners, and the payment orders behind them."
       />
 
-      <div className="nh-scroll-hidden -mx-4 flex gap-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:mx-0 xl:grid xl:grid-cols-5 xl:overflow-visible xl:px-0 xl:pb-0">
+      <div className="nh-scroll-hidden -mx-4 flex gap-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:mx-0 xl:grid xl:grid-cols-4 xl:overflow-visible xl:px-0 xl:pb-0">
         <MoneyTile
           icon={IndianRupee}
           tone="bg-[#E9F6EF] text-[var(--green-2)]"
           label="Captured"
           value={stats && formatAmount(stats.capturedAmount)}
+          note={stats && `${stats.capturedCount} ${stats.capturedCount === 1 ? 'payment' : 'payments'}`}
         />
         <MoneyTile
-          icon={Undo2}
-          tone="bg-[#E8EEF6] text-[var(--navy)]"
-          label="Refunded"
-          value={stats && formatAmount(stats.refundedAmount)}
+          icon={Clock}
+          tone="bg-[#FFF1E6] text-[#C2570C]"
+          label="Pending Payments"
+          value={stats && formatAmount(stats.pendingPaymentAmount ?? 0)}
+          note={stats && `${stats.pendingPaymentCount ?? 0} ${stats.pendingPaymentCount === 1 ? 'booking' : 'bookings'} not paid yet`}
         />
         <MoneyTile
           icon={Hourglass}
           tone="bg-[#FFF7DE] text-[#B7860B]"
           label="Awaiting Payment"
-          value={stats && String(stats.ordersAwaitingPayment)}
+          value={stats && formatAmount(stats.ordersAwaitingAmount ?? 0)}
+          note={stats && `${stats.ordersAwaitingPayment} open ${stats.ordersAwaitingPayment === 1 ? 'order' : 'orders'}`}
+        />
+        <MoneyTile
+          icon={HandCoins}
+          tone="bg-[#E6F7F4] text-[#0F8A75]"
+          label="Cash Collected"
+          value={stats && formatAmount(stats.cashCollectedAmount ?? 0)}
+          note={stats && `${stats.cashCollectedCount ?? 0} ${stats.cashCollectedCount === 1 ? 'booking' : 'bookings'}`}
         />
         <MoneyTile
           icon={Banknote}
           tone="bg-[#EDF6FD] text-[var(--blue)]"
           label="Cash Due"
           value={stats && formatAmount(stats.cashDueAmount)}
+          note={stats && `${stats.cashDueCount} ${stats.cashDueCount === 1 ? 'booking' : 'bookings'}`}
         />
         <MoneyTile
           icon={Percent}
           tone="bg-[#FDECEC] text-[#C53030]"
           label="Gateway Charges"
           value={stats && formatAmount(stats.gatewayChargesAmount ?? 0)}
+        />
+        <MoneyTile
+          icon={Undo2}
+          tone="bg-[#E8EEF6] text-[var(--navy)]"
+          label="Refunded"
+          value={stats && formatAmount(stats.refundedAmount)}
+          note={stats && `${stats.refundCount} ${stats.refundCount === 1 ? 'refund' : 'refunds'}`}
         />
       </div>
 

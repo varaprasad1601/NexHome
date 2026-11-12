@@ -57,6 +57,12 @@ public interface NexHomePaymentOrderRepository extends JpaRepository<NexHomePaym
 
 	long countByPaymentStatusIn(List<String> statuses);
 
+	/** The total amount of the orders in these statuses (0 without any). */
+	@org.springframework.data.jpa.repository.Query("select coalesce(sum(o.amount), 0) from NexHomePaymentOrder o "
+			+ "where o.paymentStatus in :statuses")
+	java.math.BigDecimal sumAmountByPaymentStatusIn(
+			@org.springframework.data.repository.query.Param("statuses") List<String> statuses);
+
 	/** Newest first, with the customers. */
 	@EntityGraph(attributePaths = "customer")
 	Page<NexHomePaymentOrder> findAllByOrderByCreationDateDescIdDesc(Pageable pageable);

@@ -46,6 +46,14 @@ public interface NexHomeBookingRepository extends JpaRepository<NexHomeBooking, 
 	@Query("select b.bookingStatus, count(b) from NexHomeBooking b group by b.bookingStatus")
 	List<Object[]> countByStatus();
 
+	/**
+	 * Bookings whose payment is still to come (PENDING or FAILED; cancelled bookings have no payment status, V42):
+	 * [sum of their totals, count].
+	 */
+	@Query("select coalesce(sum(b.totalAmount), 0), count(b) from NexHomeBooking b "
+			+ "where b.paymentStatus in ('PENDING', 'FAILED')")
+	List<Object[]> pendingPaymentTotals();
+
 	/** Bookings scheduled to start in [from, to). */
 	/** The partners (of {@code partnerIds}) with a booking in {@code statuses} overlapping [startsAt, endsAt). */
 	@Query("select distinct b.partner.id from NexHomeBooking b where b.partner.id in :partnerIds "
@@ -78,10 +86,16 @@ public interface NexHomeBookingRepository extends JpaRepository<NexHomeBooking, 
 			+ "where b.customer.id = :customerId group by b.bookingStatus, a.assignmentStatus")
 	List<Object[]> countStagesOfCustomer(@Param("customerId") Long customerId);
 
-	/** How many bookings were made in each month (IST), oldest first; months without any are left out. */
+	/**
+	 * How many paid bookings were made in each month (IST), oldest first (the dashboard's card): payment PAID or
+	 * refunded in part or in full; cancelled bookings and those still awaiting payment are left out. Months without
+	 * any are left out.
+	 */
 	@Query(nativeQuery = true, value = """
 			select to_char(b.creation_date at time zone 'Asia/Kolkata', 'YYYY-MM') as month, count(*) as total
 			from nexhome_bookings b
+			where b.booking_status <> 'CANCELLED'
+				and b.payment_status in ('PAID', 'PARTIALLY_REFUNDED', 'REFUNDED')
 			group by 1
 			order by 1""")
 	List<MonthlyCount> countByMonth();

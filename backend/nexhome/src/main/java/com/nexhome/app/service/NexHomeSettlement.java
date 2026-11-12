@@ -69,6 +69,7 @@ class NexHomeSettlement {
 	private final NexHomeAuditRecorder auditRecorder;
 	private final com.nexhome.app.repository.NexHomeBookingAssignmentRepository assignmentRepository;
 	private final com.nexhome.app.repository.NexHomePaymentAttemptRepository attemptRepository;
+	private final com.nexhome.app.repository.NexHomePaymentOrderRepository orderRepository;
 
 	// ------------------------------------------------------------------------------------------------------------
 	// Payments
@@ -527,6 +528,38 @@ class NexHomeSettlement {
 						refund(payment.getId(), left, "Booking cancelled", actingUserId);
 					}
 				});
+	}
+
+	/**
+	 * A cancelled booking's open payment orders (CREATED / PENDING) end, at the gateway too, so the customer cannot
+	 * pay for it and it is no longer awaiting payment. An order covers every unpaid online booking of the checkout, so
+	 * the others get a new order (without this one) the next time they are paid. A gateway that cannot end the order
+	 * does not stop the cancellation.
+	 */
+	void cancelOpenOrders(NexHomeBooking booking, Long actingUserId) {
+		if (booking.getCheckoutId() == null) {
+			return;
+		}
+		for (NexHomePaymentOrder order : orderRepository.findByCheckoutIdOrderByIdDesc(booking.getCheckoutId())) {
+			if (!PaymentOrderStatus.CREATED.equals(order.getPaymentStatus())
+					&& !PaymentOrderStatus.PENDING.equals(order.getPaymentStatus())) {
+				continue;
+			}
+			if (!NexHomeManualPaymentGateway.PROVIDER.equals(order.getProvider())
+					&& order.getProvider().equals(gateway.provider()) && order.getProviderOrderId() != null) {
+				try {
+					gateway.cancelOrder(order.getProviderOrderId());
+				}
+				catch (RuntimeException e) {
+					log.warn("Could not end payment order {} at the gateway: {}", order.getPublicId(), e.getMessage());
+				}
+			}
+			auditRecorder.record("PAYMENT_ORDER_CANCELLED", "PAYMENT_ORDER", order.getPublicId(),
+					Map.of("paymentStatus", order.getPaymentStatus()),
+					Map.of("paymentStatus", PaymentOrderStatus.CANCELLED, "reason", "Booking cancelled"), actingUserId);
+			order.setPaymentStatus(PaymentOrderStatus.CANCELLED);
+			order.setUpdatedBy(actingUserId);
+		}
 	}
 
 	// ------------------------------------------------------------------------------------------------------------

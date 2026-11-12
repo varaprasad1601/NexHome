@@ -50,6 +50,11 @@ public interface NexHomeCashCollectionRepository extends JpaRepository<NexHomeCa
 			+ "from NexHomeCashCollection c where c.status = 'DUE'")
 	java.util.List<Object[]> dueTotals();
 
+	/** Cash collected by partners: [sum, count] of COLLECTED collections. */
+	@org.springframework.data.jpa.repository.Query("select coalesce(sum(c.amount), 0), count(c) "
+			+ "from NexHomeCashCollection c where c.status = 'COLLECTED'")
+	java.util.List<Object[]> collectedTotals();
+
 	/** The cash collected (COLLECTED) from a customer for their bookings. */
 	@org.springframework.data.jpa.repository.Query("select coalesce(sum(c.amount), 0) from NexHomeCashCollection c "
 			+ "where c.booking.customer.id = :customerId and c.status = 'COLLECTED'")

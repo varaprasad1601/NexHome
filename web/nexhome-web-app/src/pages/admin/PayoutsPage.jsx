@@ -1,4 +1,4 @@
-import { CalendarCheck, HandCoins, Plus, Search, Users, Wallet } from 'lucide-react';
+import { CalendarCheck, HandCoins, MinusCircle, Percent, Plus, Search, Wallet } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 import AdminPageHeader from '../../components/admin/AdminPageHeader';
@@ -257,9 +257,21 @@ export default function PayoutsPage() {
         }
       />
 
-      <div className="nh-scroll-hidden -mx-4 flex gap-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:mx-0 xl:grid xl:grid-cols-4 xl:overflow-visible xl:px-0 xl:pb-0">
-        <MoneyTile icon={Wallet} tone="bg-[#FFF7DE] text-[#B7860B]" label="Due to Partners" value={stats && formatAmount(stats.totalDue)} />
-        <MoneyTile icon={Users} tone="bg-[#EDF6FD] text-[var(--blue)]" label="Partners Owed" value={stats && String(stats.partnersDue)} />
+      <div className="nh-scroll-hidden -mx-4 flex gap-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:mx-0 xl:grid xl:grid-cols-5 xl:overflow-visible xl:px-0 xl:pb-0">
+        <MoneyTile
+          icon={Wallet}
+          tone="bg-[#FFF7DE] text-[#B7860B]"
+          label="Due to Partners"
+          value={stats && formatAmount(stats.totalDue)}
+          note={stats ? `${stats.partnersDue} partner${stats.partnersDue === 1 ? '' : 's'} owed` : undefined}
+        />
+        <MoneyTile
+          icon={Percent}
+          tone="bg-[#F1ECFB] text-[#6B46C1]"
+          label="Commission Earned"
+          value={stats && formatAmount(stats.commissionTotal ?? 0)}
+          note={stats ? `${stats.commissionJobs ?? 0} job${stats.commissionJobs === 1 ? '' : 's'}` : undefined}
+        />
         <MoneyTile
           icon={CalendarCheck}
           tone="bg-[#E9F6EF] text-[var(--green-2)]"
@@ -273,6 +285,13 @@ export default function PayoutsPage() {
           label="Paid in All"
           value={stats && formatAmount(stats.paidTotal)}
           note={stats ? `${stats.payoutCount} payout${stats.payoutCount === 1 ? '' : 's'}` : undefined}
+        />
+        <MoneyTile
+          icon={MinusCircle}
+          tone="bg-[#FDECEC] text-[#C53030]"
+          label="Deducted"
+          value={stats && formatAmount(stats.deductedTotal ?? 0)}
+          note={stats ? `${stats.deductionCount ?? 0} deduction${stats.deductionCount === 1 ? '' : 's'}` : undefined}
         />
       </div>
 

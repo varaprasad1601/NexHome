@@ -738,6 +738,8 @@ public class NexHomePaymentServiceImpl implements NexHomePaymentService {
 		Object[] captured = paymentRepository.capturedTotals().get(0);
 		Object[] refunded = refundRepository.succeededTotals().get(0);
 		Object[] cash = cashCollectionRepository.dueTotals().get(0);
+		Object[] cashCollected = cashCollectionRepository.collectedTotals().get(0);
+		Object[] pending = bookingRepository.pendingPaymentTotals().get(0);
 
 		YearMonth current = YearMonth.now(ZONE);
 		Map<YearMonth, BigDecimal> revenue = new LinkedHashMap<>();
@@ -757,7 +759,10 @@ public class NexHomePaymentServiceImpl implements NexHomePaymentService {
 				(BigDecimal) refunded[0], ((Number) refunded[1]).longValue(),
 				orderRepository.countByPaymentStatusIn(List.copyOf(OPEN_ORDERS)), (BigDecimal) cash[0],
 				((Number) cash[1]).longValue(), running.add(sumOf(revenue, month -> month.isAfter(current))),
-				revenue.getOrDefault(current, BigDecimal.ZERO), months, attemptRepository.gatewayChargesTotal());
+				revenue.getOrDefault(current, BigDecimal.ZERO), months, attemptRepository.gatewayChargesTotal(),
+				(BigDecimal) cashCollected[0], ((Number) cashCollected[1]).longValue(),
+				(BigDecimal) pending[0], ((Number) pending[1]).longValue(),
+				orderRepository.sumAmountByPaymentStatusIn(List.copyOf(OPEN_ORDERS)));
 	}
 
 	private static BigDecimal sumOf(Map<YearMonth, BigDecimal> amounts, Predicate<YearMonth> which) {

@@ -454,6 +454,8 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 				});
 		// A paid booking is refunded in full (cancellation fees come with Module 8)
 		settlement.refundOnCancel(booking, actingUserId);
+		// Its open payment orders end, so nobody pays for a cancelled booking
+		settlement.cancelOpenOrders(booking, actingUserId);
 		String previous = booking.getBookingStatus();
 		booking.setCancellationReason(reason);
 		// A cancelled booking has no payment status; its payments and refunds keep the history (V42)
