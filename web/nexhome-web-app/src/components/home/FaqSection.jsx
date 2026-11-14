@@ -1,6 +1,7 @@
 import { useSiteFaqs } from '../../hooks/useSiteCatalog';
 import AppLink from '../common/AppLink';
 import Icon from '../common/Icon';
+import LoadError from '../common/LoadError';
 import { useSiteState } from '../../context/siteState';
 
 /** FAQs on the home page; the FAQs page has them all. */
@@ -9,7 +10,7 @@ const HOME_FAQS = 6;
 /** The first six published customer FAQs, with See All FAQs. */
 export default function FaqSection() {
   const { openFaqIndex, setOpenFaqIndex } = useSiteState();
-  const { loading, faqs } = useSiteFaqs();
+  const { loading, error, retry, faqs } = useSiteFaqs();
 
   return (
     <section className="py-16 bg-white" id="faqs">
@@ -46,6 +47,7 @@ export default function FaqSection() {
               Array.from({ length: 4 }, (_, idx) => (
                 <div key={idx} className="h-14 rounded-2xl border border-gray-200 bg-gray-50 animate-pulse" />
               ))}
+            {error && <LoadError what="the FAQs" onRetry={retry} />}
             {faqs.slice(0, HOME_FAQS).map((faq, idx) => {
               const isOpen = openFaqIndex === idx;
               return (

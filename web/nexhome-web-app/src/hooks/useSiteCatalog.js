@@ -1,55 +1,66 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 
 import { apiRequest } from '../api/client';
 import { fileUrl } from '../api/files';
-import { ALL_FAQS, SERVICES } from '../data/siteData';
 
 /**
  * The public site's service catalogue and FAQs from the backend (public endpoints, no sign-in): the active service
  * categories (GET /api/catalog/categories) with their active services (GET /api/catalog/services, every page), and
- * the published website FAQs (GET /api/faqs?audience=WEB&general=true: app FAQs shown to Web, not those of a category or service). Each is
- * loaded once per visit and shared by every page. When the server cannot be reached, the site's built-in content
- * (data/siteData.js) is shown instead, so the site never goes blank.
+ * the published website FAQs (GET /api/faqs?audience=WEB&general=true: app FAQs shown to Web, not those of a category
+ * or service). Each is loaded once per visit and shared by every page. **There is no built-in content**: when the
+ * server cannot be reached (offline, CORS, an error) the pages show nothing of it, only a "could not load" notice with
+ * Try again (`error`, `retry`); a failed load is not kept, so the next page that needs it asks again.
  */
 
-const STATIC_CATALOG = {
-  source: 'static',
-  categories: SERVICES.map((service) => ({
-    categoryId: service.slug,
-    slug: service.slug,
-    name: service.name,
-    description: service.fullDesc || service.shortDesc,
-    imageUrl: service.image,
-    services: service.options.map((name) => ({ serviceId: name, name, shortDescription: null }))
-  }))
-};
-const STATIC_FAQS = ALL_FAQS.map((faq, index) => ({ faqId: `static-${index}`, question: faq.q, answer: faq.a }));
-
-let catalog = null;
-let catalogRequest = null;
-let faqs = null;
-let faqsRequest = null;
+/** A loaded-once value shared by every component: { loading, error, data }. */
+function createStore(fetcher, empty) {
+  let state = { loading: true, error: false, data: empty };
+  let request = null;
+  const listeners = new Set();
+  const set = (next) => {
+    state = next;
+    listeners.forEach((listener) => listener());
+  };
+  const load = () => {
+    if (request || (!state.loading && !state.error)) return;
+    if (state.error) set({ loading: true, error: false, data: empty });
+    request = fetcher()
+      .then((data) => set({ loading: false, error: false, data }))
+      .catch(() => set({ loading: false, error: true, data: empty }))
+      .finally(() => {
+        request = null;
+      });
+  };
+  return {
+    load,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    get: () => state,
+    retry: () => {
+      if (state.error) load();
+    }
+  };
+}
 
 async function fetchCatalog() {
   const [categories, services] = await Promise.all([apiRequest('/api/catalog/categories'), fetchAllServices()]);
-  return {
-    source: 'database',
-    categories: categories.map((category) => ({
-      categoryId: category.serviceCategoryId,
-      slug: category.slug,
-      name: category.name,
-      description: category.description,
-      imageUrl: fileUrl(category.iconUrl) ?? null,
-      services: services
-        .filter((service) => service.categoryId === category.serviceCategoryId)
-        .map((service) => ({
-          serviceId: service.serviceId,
-          name: service.name,
-          slug: service.slug,
-          shortDescription: service.shortDescription
-        }))
-    }))
-  };
+  return categories.map((category) => ({
+    categoryId: category.serviceCategoryId,
+    slug: category.slug,
+    name: category.name,
+    description: category.description,
+    imageUrl: fileUrl(category.iconUrl) ?? null,
+    services: services
+      .filter((service) => service.categoryId === category.serviceCategoryId)
+      .map((service) => ({
+        serviceId: service.serviceId,
+        name: service.name,
+        slug: service.slug,
+        shortDescription: service.shortDescription
+      }))
+  }));
 }
 
 async function fetchAllServices() {
@@ -61,40 +72,39 @@ async function fetchAllServices() {
   }
 }
 
-/** { loading, source ('database' | 'static'), categories: [{ slug, name, description, imageUrl, services }], serviceCount }. */
-export function useSiteCatalog() {
-  const [state, setState] = useState(() => catalog ?? { loading: true, source: null, categories: [] });
-  useEffect(() => {
-    if (catalog) return undefined;
-    let cancelled = false;
-    catalogRequest ??= fetchCatalog().catch(() => STATIC_CATALOG);
-    catalogRequest.then((loaded) => {
-      catalog = { ...loaded, loading: false };
-      if (!cancelled) setState(catalog);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  return { ...state, serviceCount: state.categories.reduce((total, category) => total + category.services.length, 0) };
+async function fetchFaqs() {
+  const list = await apiRequest('/api/faqs?audience=WEB&general=true');
+  return list.map((faq) => ({ faqId: faq.faqId, question: faq.question, answer: faq.answer }));
 }
 
-/** { loading, faqs: [{ faqId, question, answer }] } in their display order. */
-export function useSiteFaqs() {
-  const [state, setState] = useState(() => faqs ?? { loading: true, faqs: [] });
+const catalogStore = createStore(fetchCatalog, []);
+const faqStore = createStore(fetchFaqs, []);
+
+function useStore(store) {
+  const state = useSyncExternalStore(store.subscribe, store.get);
   useEffect(() => {
-    if (faqs) return undefined;
-    let cancelled = false;
-    faqsRequest ??= apiRequest('/api/faqs?audience=WEB&general=true')
-      .then((list) => list.map((faq) => ({ faqId: faq.faqId, question: faq.question, answer: faq.answer })))
-      .catch(() => STATIC_FAQS);
-    faqsRequest.then((loaded) => {
-      faqs = { loading: false, faqs: loaded };
-      if (!cancelled) setState(faqs);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    store.load();
+  }, [store]);
   return state;
+}
+
+/**
+ * { loading, error, retry, categories: [{ slug, name, description, imageUrl, services }], serviceCount }; categories is
+ * empty while loading and after an error.
+ */
+export function useSiteCatalog() {
+  const { loading, error, data } = useStore(catalogStore);
+  return {
+    loading,
+    error,
+    retry: catalogStore.retry,
+    categories: data,
+    serviceCount: data.reduce((total, category) => total + category.services.length, 0)
+  };
+}
+
+/** { loading, error, retry, faqs: [{ faqId, question, answer }] } in their display order (empty after an error). */
+export function useSiteFaqs() {
+  const { loading, error, data } = useStore(faqStore);
+  return { loading, error, retry: faqStore.retry, faqs: data };
 }

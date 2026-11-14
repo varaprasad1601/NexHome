@@ -1,13 +1,16 @@
 import AppLink from '../components/common/AppLink';
 import Icon from '../components/common/Icon';
+import LoadError from '../components/common/LoadError';
 import PageHeader from '../components/common/PageHeader';
 import { useSiteState } from '../context/siteState';
 import { useSiteFaqs } from '../hooks/useSiteCatalog';
+import { useSiteSettings } from '../hooks/useSiteSettings';
 
 /** Every published customer FAQ. */
 export default function FaqsPage() {
   const { openFaqIndex, setOpenFaqIndex } = useSiteState();
-  const { loading, faqs } = useSiteFaqs();
+  const { loading, error, retry, faqs } = useSiteFaqs();
+  const { hours } = useSiteSettings();
 
   return (
     <div className="bg-[#F8FAFC]">
@@ -26,7 +29,8 @@ export default function FaqsPage() {
             Array.from({ length: 5 }, (_, i) => (
               <div key={i} className="h-16 rounded-2xl border border-gray-100 bg-gray-50 animate-pulse" />
             ))}
-          {!loading && faqs.length === 0 && (
+          {error && <LoadError what="the FAQs" onRetry={retry} className="border-0 p-2" />}
+          {!loading && !error && faqs.length === 0 && (
             <p className="m-0 text-center text-sm text-gray-500">Answers to common questions will be listed here soon.</p>
           )}
           {faqs.map((faq, i) => (
@@ -60,7 +64,7 @@ export default function FaqsPage() {
         <div className="bg-white rounded-3xl p-8 sm:p-10 border border-gray-100 shadow-sm text-center">
           <h3 className="text-2xl font-black text-[#0B315F] mb-2">Still have a question?</h3>
           <p className="text-xs sm:text-sm text-gray-500 mb-6 max-w-md mx-auto">
-            We're happy to discuss your specific enquiry during business hours (Mon – Sun, 9 AM – 5 PM).
+            We're happy to discuss your specific enquiry during business hours ({hours}).
           </p>
           <AppLink
             to="/contact"

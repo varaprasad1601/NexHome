@@ -6,6 +6,7 @@ const ICON_PATHS = {
   'check': <path d="m5 12 4 4L19 6"/>,
   'plus': <path d="M12 5v14M5 12h14"/>,
   'minus': <path d="M5 12h14"/>,
+  'refresh': <path d="M21 12a9 9 0 0 1-15.5 6.2L3 16m0 5v-5h5M3 12a9 9 0 0 1 15.5-6.2L21 8m0-5v5h-5"/>,
   'star': (
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor" stroke="none"/>
   ),

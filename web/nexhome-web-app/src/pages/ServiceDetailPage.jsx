@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import AppLink from '../components/common/AppLink';
 import GradientCover from '../components/common/GradientCover';
 import Icon from '../components/common/Icon';
+import LoadError from '../components/common/LoadError';
 import PageHeader from '../components/common/PageHeader';
 import { useSiteCatalog } from '../hooks/useSiteCatalog';
 import { buildWhatsAppUrl } from '../utils/whatsapp';
@@ -26,7 +27,7 @@ function CategoryImage({ category }) {
 export default function ServiceDetailPage() {
   const { slug = '' } = useParams();
   const { setCustomerForm } = useSiteState();
-  const { loading, categories } = useSiteCatalog();
+  const { loading, error, retry, categories } = useSiteCatalog();
   const wanted = slug.replace('.html', '');
   const category = categories.find((c) => c.slug === wanted) || categories[0];
 
@@ -34,11 +35,13 @@ export default function ServiceDetailPage() {
     return (
       <div className="bg-[#F8FAFC]">
         <PageHeader current="Services" crumbs={[{ label: 'Services', to: '/services' }]} eyebrow="NEXHOME HOME SERVICES">
-          {loading ? 'Loading…' : 'Services coming soon'}
+          {loading ? 'Loading…' : error ? 'Services' : 'Services coming soon'}
         </PageHeader>
         <div className="container max-w-6xl py-12">
           {loading ? (
             <div className="h-64 rounded-3xl bg-white border border-gray-100 animate-pulse" />
+          ) : error ? (
+            <LoadError what="this service" onRetry={retry} />
           ) : (
             <p className="text-center text-sm text-gray-500">Services will be listed here soon.</p>
           )}

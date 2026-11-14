@@ -1,10 +1,11 @@
 import ServiceCard, { ServiceCardSkeleton } from '../components/common/ServiceCard';
+import LoadError from '../components/common/LoadError';
 import PageHeader from '../components/common/PageHeader';
 import { useSiteCatalog } from '../hooks/useSiteCatalog';
 
 /** Every service category from the catalogue, each card listing all of its services. */
 export default function ServicesPage() {
-  const { loading, categories, serviceCount } = useSiteCatalog();
+  const { loading, error, retry, categories, serviceCount } = useSiteCatalog();
   return (
     <div className="bg-[#F8FAFC]">
       <PageHeader
@@ -12,7 +13,7 @@ export default function ServicesPage() {
         eyebrow="EXPLORE WHAT WE OFFER"
         descriptionClassName="text-base"
         description={
-          loading
+          loading || error
             ? 'Browse our service categories. Each service can be discussed with NexHome before confirmation.'
             : `Browse our ${serviceCount} services in ${categories.length} ${categories.length === 1 ? 'category' : 'categories'}. Each service can be discussed with NexHome before confirmation.`
         }
@@ -28,7 +29,8 @@ export default function ServicesPage() {
             ? Array.from({ length: 8 }, (_, index) => <ServiceCardSkeleton key={index} />)
             : categories.map((category) => <ServiceCard key={category.slug} category={category} />)}
         </div>
-        {!loading && categories.length === 0 && (
+        {error && <LoadError what="our services" onRetry={retry} />}
+        {!loading && !error && categories.length === 0 && (
           <p className="text-center text-sm text-gray-500">Services will be listed here soon.</p>
         )}
       </div>

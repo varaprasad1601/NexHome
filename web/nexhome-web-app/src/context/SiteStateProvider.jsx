@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { SERVICES } from '../data/siteData';
+import { useSiteCatalog } from '../hooks/useSiteCatalog';
 import { buildWhatsAppUrl } from '../utils/whatsapp';
 import { SiteStateContext } from './siteState';
 
@@ -14,12 +14,12 @@ const EMPTY_WORKER_FORM = {
   consent: false
 };
 
-/** The service named by `?service=` on the contact page (slug or name), if any. */
-function serviceFromUrl() {
+/** The catalogue category named by `?service=` on the contact page (slug or name), if any. */
+function serviceFromUrl(categories) {
   if (!window.location.pathname.toLowerCase().includes('contact')) return null;
   const serviceParam = new URLSearchParams(window.location.search).get('service');
   if (!serviceParam) return null;
-  const match = SERVICES.find(
+  const match = categories.find(
     (s) => s.slug === serviceParam || s.name.toLowerCase() === serviceParam.toLowerCase()
   );
   return match ? match.name : null;
@@ -35,7 +35,7 @@ export default function SiteStateProvider({ children }) {
     name: '',
     email: '',
     phone: '',
-    service: serviceFromUrl() || '',
+    service: '',
     message: ''
   }));
   const [customerError, setCustomerError] = useState(null);
@@ -51,10 +51,23 @@ export default function SiteStateProvider({ children }) {
   // FAQ Accordion State (first open by default)
   const [openFaqIndex, setOpenFaqIndex] = useState(0);
 
+  // /contact?service=... selects that category once the catalogue has loaded (nothing when it cannot be loaded)
+  const { categories } = useSiteCatalog();
+  const [seenCategories, setSeenCategories] = useState(categories);
+  if (seenCategories !== categories) {
+    setSeenCategories(categories);
+    const service = serviceFromUrl(categories);
+    if (service) setCustomerForm((prev) => ({ ...prev, service }));
+  }
+  const categoriesRef = useRef(categories);
+  useEffect(() => {
+    categoriesRef.current = categories;
+  }, [categories]);
+
   // Going back or forward to /contact?service=... selects that service, as on first load
   useEffect(() => {
     const handlePopState = () => {
-      const service = serviceFromUrl();
+      const service = serviceFromUrl(categoriesRef.current);
       if (service) {
         setCustomerForm((prev) => ({ ...prev, service }));
       }

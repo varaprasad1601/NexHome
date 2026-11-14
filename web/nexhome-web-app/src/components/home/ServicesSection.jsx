@@ -2,6 +2,7 @@ import { useSiteCatalog } from '../../hooks/useSiteCatalog';
 import AppLink from '../common/AppLink';
 import ServiceCard, { ServiceCardSkeleton } from '../common/ServiceCard';
 import Icon from '../common/Icon';
+import LoadError from '../common/LoadError';
 
 /** Services listed on each category card here; the card's page and the Services page list them all. */
 const SERVICES_PER_CARD = 5;
@@ -13,7 +14,7 @@ const FEATURED = 4;
  * "see all services" card with the counts.
  */
 export default function ServicesSection() {
-  const { loading, categories, serviceCount } = useSiteCatalog();
+  const { loading, error, retry, categories, serviceCount } = useSiteCatalog();
   const featured = categories.slice(0, FEATURED);
   const moreCategories = categories.length - featured.length;
   return (
@@ -31,14 +32,17 @@ export default function ServicesSection() {
           </div>
 
           <p className="text-xs text-gray-500 max-w-md m-0">
-            {loading
+            {loading || error
               ? 'Essential home services, all in one place.'
               : `${serviceCount} home services in ${categories.length} ${categories.length === 1 ? 'category' : 'categories'}, all in one place.`}{' '}
             Professional. Reliable. Convenient.
           </p>
         </div>
 
+        {error && <LoadError what="our services" onRetry={retry} />}
+
         {/* 4 Featured Services + 5th Stacked "See All Services" Card */}
+        {!error && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
           {loading
             ? Array.from({ length: FEATURED }, (_, index) => <ServiceCardSkeleton key={index} />)
@@ -79,6 +83,7 @@ export default function ServicesSection() {
             </div>
           </AppLink>
         </div>
+        )}
       </div>
     </section>
   );
