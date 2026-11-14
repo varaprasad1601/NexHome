@@ -12,10 +12,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0B438B",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/android-icon-foreground.png"
       },
       "package": "com.nexhome.customer",
       "googleServicesFile": "./google-services.json"
@@ -31,7 +29,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash-brand.png",
-          "imageWidth": 220,
+          "imageWidth": 160,
           "resizeMode": "contain",
           "backgroundColor": "#f4f8fc"
         }
@@ -44,13 +42,20 @@
           }
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-status-bar"
     ],
     "scheme": "nexhome",
-    "splash": {
-      "image": "./assets/splash-brand.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#f4f8fc"
-    }
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "c82c0a7b-eb53-48a0-8519-70eb5a0af777"
+      }
+    },
+    "owner": "varaprasad_1601"
   }
 }

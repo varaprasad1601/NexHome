@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Banner, Button, Card, Choices, ErrorBox, Field, FormScroll, Header, SectionTitle, Text } from '../components/ui';
+import { Banner, Button, Card, Choices, ErrorBox, Field, FormScroll, Header, SectionTitle, showFieldErrors, Text } from '../components/ui';
 import WeeklyGrid from '../components/WeeklyGrid';
 import { useAuth } from '../context/AuthProvider';
 import useLookup from '../hooks/useLookup';
@@ -61,6 +61,7 @@ export default function Availability() {
     if (!Object.keys(weekly).length) found.weekly = 'Tick at least one slot you can work';
     else if (weekend && weekendProblem(weekend, weekly)) found.weekly = weekendProblem(weekend, weekly);
     setErrors(found);
+    showFieldErrors(found);
     setNotice('');
     if (Object.keys(found).length) return;
     setError('');
@@ -126,7 +127,6 @@ export default function Availability() {
             </Pressable>
           </View>
           ) : null}
-          {errors.areas ? <Text style={{ color: colors.red, fontSize: 12 }}>{errors.areas}</Text> : null}
           <Field label="How far you travel (km)" value={km} onChangeText={(t) => setKm(t.replace(/[^\d.]/g, ''))} error={errors.km} keyboardType="decimal-pad" maxLength={5} editable={!locked} />
         </Card>
         <Card style={{ gap: 12 }}>
@@ -134,7 +134,6 @@ export default function Availability() {
           <Choices label="Weekends" options={weekends.options} value={weekend} onChange={locked ? () => {} : setWeekend} error={errors.weekend} />
           <Text style={{ color: colors.muted, fontSize: 12.5 }}>Tick every slot you are free to take jobs. 12 PM - 1 PM is lunch.</Text>
           <WeeklyGrid value={weekly} onChange={locked ? undefined : setWeekly} />
-          {errors.weekly ? <Text style={{ color: colors.red, fontSize: 12 }}>{errors.weekly}</Text> : null}
         </Card>
         {blocked ? <Banner tone="warning" text="Your profile was not approved, so these cannot be changed. Contact NexHome support." /> : null}
         {editing ? (

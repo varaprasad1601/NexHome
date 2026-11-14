@@ -2,7 +2,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text as RNText, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text as RNText, TextInput, View } from 'react-native';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -102,7 +102,7 @@ export function Field({ label, error, style, inputStyle, onFocus, ...props }) {
   return (
     <View style={[{ gap: 6 }, style]}>
       {label ? (
-        <Text weight="bold" style={{ fontSize: 13 }}>
+        <Text weight="bold" style={{ fontSize: 13, color: error ? colors.red : colors.ink }}>
           {label}
         </Text>
       ) : null}
@@ -115,7 +115,6 @@ export function Field({ label, error, style, inputStyle, onFocus, ...props }) {
         }}
         style={[styles.input, error ? { borderColor: colors.red } : null, props.multiline ? { minHeight: 96, textAlignVertical: 'top', paddingTop: 12 } : null, inputStyle]}
       />
-      {error ? <Text style={{ color: colors.red, fontSize: 12 }}>{error}</Text> : null}
     </View>
   );
 }
@@ -204,7 +203,7 @@ export function Header({ title, back = true, right, onBack }) {
 export function BrandSplash() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.ground, padding: 40 }}>
-      <Image source={require('../../assets/splash-brand.png')} style={{ width: 220, height: 118 }} resizeMode="contain" accessibilityLabel="NexHome. Better Living, Every Day" />
+      <Image source={require('../../assets/splash-brand.png')} style={{ width: 160, height: 86 }} resizeMode="contain" accessibilityLabel="NexHome. Better Living, Every Day" />
     </View>
   );
 }
@@ -263,6 +262,16 @@ export function showError(message) {
   if (!message) return;
   const item = { message: String(message), id: Date.now() + Math.random() };
   errorListeners.forEach((listener) => listener(item));
+}
+
+/**
+ * A form's field errors ({ field: message }) in one floating popup, one line each; the fields themselves only turn
+ * red (Field and Choices show no text below them). Call it right after the form's check.
+ */
+export function showFieldErrors(errors) {
+  const messages = [...new Set(Object.values(errors ?? {}).filter(Boolean).map(String))];
+  if (!messages.length) return;
+  showError(messages.length === 1 ? messages[0] : messages.map((m) => `• ${m}`).join('\n'));
 }
 
 /** A screen's error: shown in the floating popup at the top of the screen, not in the page. */
@@ -338,6 +347,86 @@ export function Row({ label, value, strong, color }) {
 }
 
 /**
+ * A dropdown: a field box showing the choice (or `placeholder`) that opens a list in a bottom sheet. `options`
+ * [{ value, label }], `value`, `onChange(value)`. With `multiple`, `value` is an array, each row has a tick box and
+ * Done closes the sheet; the box lists the chosen labels. Like Field, an `error` only turns it red (the message pops up).
+ */
+export function Dropdown({ label, options, value, onChange, multiple, error, placeholder = 'Select' }) {
+  const [open, setOpen] = useState(false);
+  const insets = useSafeAreaInsets();
+  const isOn = (v) => (multiple ? (value ?? []).includes(v) : value === v);
+  const chosen = options.filter((o) => isOn(o.value)).map((o) => o.label);
+  const press = (v) => {
+    if (!multiple) {
+      onChange(v);
+      setOpen(false);
+    } else onChange(isOn(v) ? (value ?? []).filter((x) => x !== v) : [...(value ?? []), v]);
+  };
+  return (
+    <View style={{ gap: 6 }}>
+      {label ? (
+        <Text weight="bold" style={{ fontSize: 13, color: error ? colors.red : colors.ink }}>
+          {label}
+        </Text>
+      ) : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${label ?? placeholder}: ${chosen.length ? chosen.join(', ') : 'not chosen'}`}
+        onPress={() => {
+          Keyboard.dismiss();
+          setOpen(true);
+        }}
+        style={[styles.input, { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 }, error ? { borderColor: colors.red } : null]}
+      >
+        <Text weight={chosen.length ? 'semibold' : 'regular'} style={{ flex: 1, fontSize: 15, color: chosen.length ? colors.ink : '#8a9aad' }}>
+          {chosen.length ? chosen.join(', ') : placeholder}
+        </Text>
+        <Feather name="chevron-down" size={18} color={colors.muted} />
+      </Pressable>
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(11,49,95,0.35)' }} onPress={() => setOpen(false)} accessibilityLabel="Close" />
+        <View style={{ maxHeight: '70%', backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingTop: 10, paddingBottom: 12 + insets.bottom }}>
+          <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 4, backgroundColor: colors.line, marginBottom: 8 }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingBottom: 10 }}>
+            <Text weight="extrabold" style={{ flex: 1, fontSize: 16, color: colors.navy }}>
+              {label ?? placeholder}
+            </Text>
+            <Pressable onPress={() => setOpen(false)} accessibilityRole="button" hitSlop={10}>
+              {multiple ? (
+                <Text weight="bold" style={{ color: colors.blue, fontSize: 15 }}>
+                  Done
+                </Text>
+              ) : (
+                <Feather name="x" size={20} color={colors.muted} />
+              )}
+            </Pressable>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            {options.map((option) => {
+              const on = isOn(option.value);
+              return (
+                <Pressable
+                  key={String(option.value)}
+                  accessibilityRole={multiple ? 'checkbox' : 'radio'}
+                  accessibilityState={multiple ? { checked: on } : { selected: on }}
+                  onPress={() => press(option.value)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 50, paddingHorizontal: 18, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: on ? colors.blueSoft : colors.white }}
+                >
+                  <Feather name={multiple ? (on ? 'check-square' : 'square') : on ? 'check-circle' : 'circle'} size={20} color={on ? colors.blue : colors.muted} />
+                  <Text weight={on ? 'bold' : 'medium'} style={{ flex: 1, fontSize: 15, color: on ? colors.blue : colors.ink }}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+/**
  * One choice among options (lookup values etc.) as chips: `options` [{ value, label }], `value`, `onChange(value)`.
  * With `multiple`, `value` is an array and each chip toggles.
  */
@@ -350,7 +439,7 @@ export function Choices({ label, options, value, onChange, multiple, error }) {
   return (
     <View style={{ gap: 8 }}>
       {label ? (
-        <Text weight="bold" style={{ fontSize: 13 }}>
+        <Text weight="bold" style={{ fontSize: 13, color: error ? colors.red : colors.ink }}>
           {label}
         </Text>
       ) : null}
@@ -373,7 +462,6 @@ export function Choices({ label, options, value, onChange, multiple, error }) {
           );
         })}
       </View>
-      {error ? <Text style={{ color: colors.red, fontSize: 12 }}>{error}</Text> : null}
     </View>
   );
 }

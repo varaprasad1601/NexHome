@@ -106,7 +106,7 @@ export function Field({ label, error, style, inputStyle, onFocus, ...props }) {
   return (
     <View style={[{ gap: 6 }, style]}>
       {label ? (
-        <Text weight="bold" style={{ fontSize: 13 }}>
+        <Text weight="bold" style={{ fontSize: 13, color: error ? colors.red : colors.ink }}>
           {label}
         </Text>
       ) : null}
@@ -119,7 +119,6 @@ export function Field({ label, error, style, inputStyle, onFocus, ...props }) {
         }}
         style={[styles.input, error ? { borderColor: colors.red } : null, props.multiline ? { minHeight: 96, textAlignVertical: 'top', paddingTop: 12 } : null, inputStyle]}
       />
-      {error ? <Text style={{ color: colors.red, fontSize: 12 }}>{error}</Text> : null}
     </View>
   );
 }
@@ -208,7 +207,7 @@ export function Header({ title, back = true, right }) {
 export function BrandSplash() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.ground, padding: 40 }}>
-      <Image source={require('../../assets/splash-brand.png')} style={{ width: 220, height: 118 }} resizeMode="contain" accessibilityLabel="NexHome. Better Living, Every Day" />
+      <Image source={require('../../assets/splash-brand.png')} style={{ width: 160, height: 86 }} resizeMode="contain" accessibilityLabel="NexHome. Better Living, Every Day" />
     </View>
   );
 }
@@ -267,6 +266,16 @@ export function showError(message) {
   if (!message) return;
   const item = { message: String(message), id: Date.now() + Math.random() };
   errorListeners.forEach((listener) => listener(item));
+}
+
+/**
+ * A form's field errors ({ field: message }) in one floating popup, one line each; the fields themselves only turn
+ * red (Field shows no text below it). Call it right after the form's check.
+ */
+export function showFieldErrors(errors) {
+  const messages = [...new Set(Object.values(errors ?? {}).filter(Boolean).map(String))];
+  if (!messages.length) return;
+  showError(messages.length === 1 ? messages[0] : messages.map((m) => `• ${m}`).join('\n'));
 }
 
 /** A screen's error: shown in the floating popup at the top of the screen, not in the page. */

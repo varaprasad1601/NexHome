@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Banner, Button, ErrorBox, Field, FormScroll, Header, Text } from '../../components/ui';
+import { Banner, Button, ErrorBox, Field, FormScroll, Header, showFieldErrors, Text } from '../../components/ui';
 import { useAuth } from '../../context/AuthProvider';
 import { colors } from '../../theme';
 
@@ -91,6 +91,7 @@ export default function BankForm() {
     if (!form.bankName.trim()) found.bankName = 'Enter the bank';
     if (!form.branchName.trim()) found.branchName = 'Enter the branch';
     setErrors(found);
+    showFieldErrors(found);
     if (Object.keys(found).length) return;
 
     const proceed = async () => {

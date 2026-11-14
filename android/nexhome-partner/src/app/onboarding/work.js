@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import StepScreen from '../../components/StepScreen';
-import { Choices, Field, Text } from '../../components/ui';
+import { Choices, Dropdown, Field, showFieldErrors, Text } from '../../components/ui';
 import { useAuth } from '../../context/AuthProvider';
 import useApi from '../../hooks/useApi';
 import useLookup from '../../hooks/useLookup';
@@ -62,6 +62,7 @@ export default function Work() {
     const minimum = toNumber(form.minimumJobPaymentInr);
     if (minimum === null || Number.isNaN(minimum) || minimum < 0) found.minimumJobPaymentInr = 'Enter your minimum job payment (0 if none)';
     setErrors(found);
+    showFieldErrors(found);
     if (Object.keys(found).length) return false;
     setError('');
     setBusy(true);
@@ -92,9 +93,23 @@ export default function Work() {
     <StepScreen step="work" onSave={onSave} busy={busy} error={error}>
       <Choices label="Skill category" options={skills.options} value={form.skillCategory} onChange={set('skillCategory')} error={errors.skillCategory} />
       <Field label="Years of experience" value={form.yearsExperience} onChangeText={(t) => set('yearsExperience')(t.replace(/\D/g, ''))} error={errors.yearsExperience} keyboardType="number-pad" maxLength={2} />
-      <Choices label="Main service" options={categoryOptions} value={form.mainServiceCategoryId} onChange={set('mainServiceCategoryId')} error={errors.mainServiceCategoryId || categories.error} />
+      <Dropdown
+        label="Main service"
+        placeholder="Choose your main service"
+        options={categoryOptions}
+        value={form.mainServiceCategoryId}
+        onChange={set('mainServiceCategoryId')}
+        error={errors.mainServiceCategoryId || categories.error}
+      />
       {otherOptions.length ? (
-        <Choices label="Other services you can do (optional)" options={[...otherOptions, ...extra]} value={form.additionalSkills} onChange={set('additionalSkills')} multiple />
+        <Dropdown
+          label="Other services you can do (optional)"
+          placeholder="Choose other services"
+          options={[...otherOptions, ...extra]}
+          value={form.additionalSkills}
+          onChange={set('additionalSkills')}
+          multiple
+        />
       ) : null}
       <Choices label="How you want to work" options={arrangements.options} value={form.preferredArrangement} onChange={set('preferredArrangement')} error={errors.preferredArrangement} />
       <Choices label="Payment basis" options={bases.options} value={form.paymentBasis} onChange={set('paymentBasis')} error={errors.paymentBasis} />

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import StepScreen from '../../components/StepScreen';
-import { Field } from '../../components/ui';
+import { Field, showFieldErrors } from '../../components/ui';
 import { useAuth } from '../../context/AuthProvider';
 import { saveProfile } from '../../utils/onboarding';
 
@@ -31,6 +31,7 @@ export default function Address() {
     if (!form.state.trim()) found.state = 'State is required';
     if (!/^[1-9]\d{5}$/.test(form.postalCode)) found.postalCode = 'Enter the 6-digit PIN code';
     setErrors(found);
+    showFieldErrors(found);
     if (Object.keys(found).length) return false;
     setError('');
     setBusy(true);

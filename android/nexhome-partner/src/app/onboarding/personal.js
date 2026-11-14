@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import StepScreen from '../../components/StepScreen';
-import { Check, Choices, Field, Text } from '../../components/ui';
+import { Check, Choices, Field, showFieldErrors, Text } from '../../components/ui';
 import { useAuth } from '../../context/AuthProvider';
 import useLookup from '../../hooks/useLookup';
 import { colors } from '../../theme';
@@ -45,6 +45,7 @@ export default function Personal() {
     if (alternate && !/^[6-9]\d{9}$/.test(alternate)) found.alternateContactNumber = 'Enter a 10-digit mobile number';
     if (alternate && alternate === user?.mobileNumber) found.alternateContactNumber = 'Use a number other than your own';
     setErrors(found);
+    showFieldErrors(found);
     if (Object.keys(found).length) return false;
     setError('');
     setBusy(true);
@@ -84,7 +85,6 @@ export default function Personal() {
       />
       <Text style={{ color: colors.muted, fontSize: 12, marginTop: -8 }}>Stored encrypted. Only the last 4 digits are ever shown.</Text>
       <Check checked={form.isAdult} onChange={set('isAdult')} label="I am 18 years or older" />
-      {errors.isAdult ? <Text style={{ color: colors.red, fontSize: 12, marginTop: -8 }}>{errors.isAdult}</Text> : null}
       <Choices label="Preferred language" options={languages.options} value={form.preferredContactLanguage} onChange={set('preferredContactLanguage')} error={errors.preferredContactLanguage} />
       <Field
         label="Alternate mobile (optional)"

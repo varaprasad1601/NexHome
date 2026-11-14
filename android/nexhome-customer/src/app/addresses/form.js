@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Button, ErrorBox, Field, FormScroll, Header, Pick, Text } from '../../components/ui';
+import { Button, ErrorBox, Field, FormScroll, Header, Pick, showFieldErrors, Text } from '../../components/ui';
 import { useAuth } from '../../context/AuthProvider';
 import { colors } from '../../theme';
 
@@ -62,6 +62,7 @@ export default function AddressForm() {
     if (!form.state.trim()) found.state = 'State is required';
     if (!/^[1-9]\d{5}$/.test(form.postalCode)) found.postalCode = 'Enter the 6-digit PIN code';
     setErrors(found);
+    showFieldErrors(found);
     if (Object.keys(found).length) return;
     setError('');
     setBusy(true);

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import StepScreen from '../../components/StepScreen';
-import { Choices, Field } from '../../components/ui';
+import { Choices, Field, showFieldErrors } from '../../components/ui';
 import { useAuth } from '../../context/AuthProvider';
 import useLookup from '../../hooks/useLookup';
 import { saveProfile } from '../../utils/onboarding';
@@ -25,6 +25,7 @@ export default function Emergency() {
     if (!/^[6-9]\d{9}$/.test(digits)) found.number = 'Enter a 10-digit mobile number';
     else if (digits === user?.mobileNumber) found.number = 'Use someone else’s number, not yours';
     setErrors(found);
+    showFieldErrors(found);
     if (Object.keys(found).length) return false;
     setError('');
     setBusy(true);

@@ -1,0 +1,52 @@
+# What EAS Build does not upload (this file replaces .gitignore for EAS).
+# EAS installs the packages and generates the native project in the cloud.
+
+# dependencies (installed again by EAS)
+node_modules/
+
+# generated native folders and their build output (EAS runs prebuild from app.json)
+/android
+/ios
+.kotlin/
+.gradle/
+build/
+
+# Expo / Metro caches and bundles
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+
+# IDE and tool folders
+.idea/
+.vscode/
+.claude/
+
+# local env files (the backend address is set in eas.json)
+.env
+.env*.local
+
+# signing keys (EAS keeps the keystore)
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+*.orig.*
+
+# source artwork the app does not use (the icons are generated from it)
+assets/NexHome_App_Icon.png
+assets/NexHome_Partner_App_Icon.png
+
+# logs, docs and OS files
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+AGENTS.md
+README.md

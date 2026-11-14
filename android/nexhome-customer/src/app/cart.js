@@ -36,17 +36,9 @@ function fieldOf(message = '') {
   return 'page';
 }
 
-/** A field's error in red, right where it happened. */
+/** A field's error: shown in the floating popup (the screen still scrolls to the field). */
 function FieldError({ message }) {
-  if (!message) return null;
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-      <Feather name="alert-circle" size={14} color={colors.red} />
-      <Text weight="semibold" style={{ flex: 1, fontSize: 12.5, color: colors.red }}>
-        {message}
-      </Text>
-    </View>
-  );
+  return <ErrorBox message={message} />;
 }
 
 /** The times in three groups: [label, from minute, until minute]. */

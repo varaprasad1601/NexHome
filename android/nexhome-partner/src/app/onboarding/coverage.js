@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 
 import StepScreen from '../../components/StepScreen';
-import { Choices, Field, Text } from '../../components/ui';
+import { Choices, Field, showFieldErrors, Text } from '../../components/ui';
 import WeeklyGrid from '../../components/WeeklyGrid';
 import { useAuth } from '../../context/AuthProvider';
 import useLookup from '../../hooks/useLookup';
@@ -43,6 +43,7 @@ export default function Coverage() {
     if (!Object.keys(weekly).length) found.weekly = 'Tick at least one slot you can work';
     else if (weekend && weekendProblem(weekend, weekly)) found.weekly = weekendProblem(weekend, weekly);
     setErrors(found);
+    showFieldErrors(found);
     if (Object.keys(found).length) return false;
     setError('');
     setBusy(true);
@@ -95,7 +96,6 @@ export default function Coverage() {
           <Feather name="plus" size={20} color={colors.white} />
         </Pressable>
       </View>
-      {errors.areas ? <Text style={{ color: colors.red, fontSize: 12, marginTop: -8 }}>{errors.areas}</Text> : null}
       <Field label="How far you travel (km)" value={km} onChangeText={(t) => setKm(t.replace(/[^\d.]/g, ''))} error={errors.km} keyboardType="decimal-pad" maxLength={5} />
       <Choices label="Weekends" options={weekends.options} value={weekend} onChange={setWeekend} error={errors.weekend} />
       <Text weight="bold" style={{ fontSize: 13 }}>
@@ -103,7 +103,6 @@ export default function Coverage() {
       </Text>
       <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: -8 }}>Tick every slot you are free to take jobs. 12 PM - 1 PM is lunch.</Text>
       <WeeklyGrid value={weekly} onChange={setWeekly} />
-      {errors.weekly ? <Text style={{ color: colors.red, fontSize: 12 }}>{errors.weekly}</Text> : null}
     </StepScreen>
   );
 }

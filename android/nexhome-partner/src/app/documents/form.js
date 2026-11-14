@@ -6,7 +6,7 @@ import { Alert, Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { uploadFile } from '../../api/client';
-import { Banner, Button, Choices, ErrorBox, Field, FormScroll, Header, Text } from '../../components/ui';
+import { Banner, Button, Choices, ErrorBox, Field, FormScroll, Header, showFieldErrors, Text } from '../../components/ui';
 import { useAuth } from '../../context/AuthProvider';
 import useLookup from '../../hooks/useLookup';
 import { colors } from '../../theme';
@@ -69,6 +69,7 @@ export default function DocumentForm() {
     if (form.expiryDate && (!isIsoDate(form.expiryDate) || form.expiryDate < todayInIndia())) found.expiryDate = 'Enter a date from today on, as YYYY-MM-DD';
     if (!file && !existing) found.file = 'Add a photo or scan of the document';
     setErrors(found);
+    showFieldErrors(found);
     if (Object.keys(found).length) return;
 
     const proceed = async () => {
@@ -165,7 +166,6 @@ export default function DocumentForm() {
               <Text style={{ fontSize: 12, color: colors.muted }}>{file || existing?.fileName ? 'Tap to change' : `JPEG, PNG or PDF, up to ${MAX_MB} MB`}</Text>
             </View>
           </Pressable>
-          {errors.file ? <Text style={{ color: colors.red, fontSize: 12, marginTop: -8 }}>{errors.file}</Text> : null}
           <ErrorBox message={error} />
           <Button title="Save document" onPress={save} loading={busy} />
           {existing && existing.verificationStatus !== 'VERIFIED' ? <Button title="Delete document" variant="danger" onPress={remove} disabled={busy} /> : null}
