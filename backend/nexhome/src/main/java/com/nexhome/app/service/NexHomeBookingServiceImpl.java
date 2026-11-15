@@ -615,14 +615,29 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 
 		assignment.setAssignmentStatus(AssignmentStatus.CANCELLED);
 		assignment.setUpdatedBy(actingUserId);
+		String reason = NexHomeText.trimToNull(request.reason());
 		if (holding) {
-			releasePartner(booking,
-					Optional.ofNullable(NexHomeText.trimToNull(request.reason())).orElse(PARTNER_UNASSIGNED),
-					actingUserId);
-			tell(NexHomeNotifier.PARTNER, assignment.getPartner().getUser().getId(), "Taken off " + booking.getPublicId(),
-					"You are no longer assigned to " + booking.getServiceNameSnapshot() + ".", booking, actingUserId);
+			releasePartner(booking, Optional.ofNullable(reason).orElse(PARTNER_UNASSIGNED), actingUserId);
+			// Unassigned by NexHome: the partner (HIGH, with the reason staff gave) and the customer hear of it
+			notifier.notify(assignment.getPartner().getUser().getId(), new NexHomeNotifier.Message(
+					NotificationType.BOOKING, "Taken off " + booking.getPublicId(),
+					"NexHome took you off " + booking.getServiceNameSnapshot()
+							+ (reason == null ? "." : ": " + reason + "."),
+					NexHomeNotifier.BOOKING, booking.getId()).forApp(NexHomeNotifier.PARTNER).high(), actingUserId);
+			tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Partner unassigned " + booking.getPublicId(),
+					"NexHome is assigning another professional for your " + booking.getServiceNameSnapshot()
+							+ " job. We will tell you who.",
+					booking, actingUserId);
 			auditRecorder.record("PARTNER_UNASSIGNED", "BOOKING", booking.getPublicId(),
 					Map.of("partner", assignment.getPartner().getPublicId()), null, actingUserId);
+		}
+		else {
+			// An offer withdrawn before the partner answered: the partner hears it is gone
+			tell(NexHomeNotifier.PARTNER, assignment.getPartner().getUser().getId(),
+					"Offer withdrawn " + booking.getPublicId(),
+					"NexHome withdrew the offer for " + booking.getServiceNameSnapshot()
+							+ (reason == null ? "." : ": " + reason + "."),
+					booking, actingUserId);
 		}
 		log.info("Assignment {} of booking {} cancelled by User ID {}", assignment.getId(), booking.getPublicId(),
 				actingUserId);

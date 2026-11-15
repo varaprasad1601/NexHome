@@ -197,8 +197,8 @@ export default function LiveWatcher() {
       }
       if (fresh.length) lastSeenId.current = Math.max(lastSeenId.current ?? 0, ...fresh.map((n) => n.notificationId));
       if (!fresh.length) {
-        // Unknown which ones (the list failed): the sound alone, unless a push just rang
-        if (Date.now() - lastPushTime() > 60000) chime();
+        // Unknown which ones (the list failed): the sound alone without push (with push, the push rings)
+        if (!pushReady() && Date.now() - lastPushTime() > 60000) chime();
         return;
       }
       // Payment notices wait while the customer is paying (shown after the result screen)
@@ -248,7 +248,10 @@ export default function LiveWatcher() {
     async function showItems(items) {
       // Already in the phone's tray (a push while the app was in the background): not popped up again
       (await presentedIds()).forEach((id) => markShown(id));
-      const unseen = items.filter((n) => !wasShown(n.notificationId));
+      // With push, each notification arrives as the phone's own banner with the sound (the push handler): the app shows
+      // only payment notices itself, since their push comes 15 s late (backend); without push (Expo Go, not allowed) all
+      const mine = pushReady() ? items.filter((n) => n.notificationType === 'PAYMENT') : items;
+      const unseen = mine.filter((n) => !wasShown(n.notificationId));
       unseen.forEach((n) => markShown(n.notificationId));
       if (!unseen.length || cancelled) return;
       if (unseen.some((n) => n.notificationType === 'PARTNER_ARRIVED')) doorbell();

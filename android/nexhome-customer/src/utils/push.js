@@ -101,28 +101,38 @@ export function setUpPush({ onPush, onOpen, hold }) {
   // the same on every screen whatever the phone's channel settings; in the background the channel's sound plays
   N.setNotificationHandler({
     handleNotification: async (notification) => {
-      const content = notification?.request?.content ?? {};
-      const data = content.data ?? {};
-      // Ours (local) always shows; a push already shown by LiveWatcher, or held for later, does not pop up again
-      let quiet = !data.local && wasShown(data.notificationId);
-      if (!data.local && !quiet && hold) {
-        const taken = hold({
-          notificationId: data.notificationId,
-          notificationType: data.notificationType,
-          priority: data.priority,
-          referenceType: data.referenceType,
-          referenceId: data.referenceId,
-          title: content.title,
-          message: content.body
-        });
-        if (taken) {
-          markShown(data.notificationId);
-          quiet = true;
-        }
+      try {
+        return decide(notification);
+      } catch {
+        // Never lose a notification to a mistake here: show it
+        return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false };
       }
-      return { shouldShowBanner: !quiet, shouldShowList: !quiet, shouldPlaySound: false, shouldSetBadge: false };
     }
   });
+
+  /** How a notification shows while the app is open: a banner, unless already shown or held for later. */
+  function decide(notification) {
+    const content = notification?.request?.content ?? {};
+    const data = content.data ?? {};
+    // Ours (local) always shows; a push already shown by LiveWatcher, or held for later, does not pop up again
+    let quiet = !data.local && wasShown(data.notificationId);
+    if (!data.local && !quiet && hold) {
+      const taken = hold({
+        notificationId: data.notificationId,
+        notificationType: data.notificationType,
+        priority: data.priority,
+        referenceType: data.referenceType,
+        referenceId: data.referenceId,
+        title: content.title,
+        message: content.body
+      });
+      if (taken) {
+        markShown(data.notificationId);
+        quiet = true;
+      }
+    }
+    return { shouldShowBanner: !quiet, shouldShowList: !quiet, shouldPlaySound: false, shouldSetBadge: false };
+  }
   // The channels (Android keeps a channel's importance once made, so these are new ids made HIGH / MAX from the start:
   // banners pop up on screen); the ids of older builds are removed. Then, on the first launch, the permission is asked.
   const channel = { sound: 'notify.wav', vibrationPattern: [0, 250, 150, 250], lightColor: '#0b438b', showBadge: true };
