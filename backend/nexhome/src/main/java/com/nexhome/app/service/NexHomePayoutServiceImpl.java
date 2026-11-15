@@ -409,6 +409,12 @@ public class NexHomePayoutServiceImpl implements NexHomePayoutService {
 				Map.of("payoutStatus", com.nexhome.app.model.NexHomePartnerManualPayout.CANCELLED, "reason",
 						request.reason().trim()),
 				actingUserId);
+		notifier.notify(payout.getPartner().getUser().getId(), new NexHomeNotifier.Message(NotificationType.PAYMENT,
+				"Payout cancelled: " + payout.getAmount().toPlainString(),
+				"NexHome cancelled the payout of " + payout.getAmount().toPlainString() + ": " + request.reason().trim()
+						+ ". It is owed to you again.",
+				NexHomeNotifier.PARTNER_PROFILE, payout.getPartner().getId()).forApp(NexHomeNotifier.PARTNER),
+				actingUserId);
 		log.info("Payout {} cancelled", payout.getPublicId());
 		return manualPayoutDtos(java.util.List.of(payout)).get(0);
 	}
@@ -662,6 +668,12 @@ public class NexHomePayoutServiceImpl implements NexHomePayoutService {
 				Map.of("status", com.nexhome.app.model.NexHomePartnerDeduction.RECORDED),
 				Map.of("status", com.nexhome.app.model.NexHomePartnerDeduction.CANCELLED, "reason",
 						request.reason().trim()),
+				actingUserId);
+		notifier.notify(deduction.getPartner().getUser().getId(), new NexHomeNotifier.Message(NotificationType.PAYMENT,
+				"Deduction cancelled: " + deduction.getAmount().toPlainString(),
+				"NexHome cancelled the deduction of " + deduction.getAmount().toPlainString() + ": "
+						+ request.reason().trim() + ". It is added back to what NexHome owes you.",
+				NexHomeNotifier.PARTNER_PROFILE, deduction.getPartner().getId()).forApp(NexHomeNotifier.PARTNER),
 				actingUserId);
 		log.info("Deduction {} cancelled", deduction.getPublicId());
 		return deductionDtos(java.util.List.of(deduction)).get(0);

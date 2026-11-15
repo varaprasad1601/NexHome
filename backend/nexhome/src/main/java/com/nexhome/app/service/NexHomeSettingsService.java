@@ -25,7 +25,7 @@ public interface NexHomeSettingsService {
 
 		// Booking rules
 		public static final String OFFER_EXPIRY_MINUTES = "OFFER_EXPIRY_MINUTES";
-		public static final String UNASSIGNED_ALERT_HOURS = "UNASSIGNED_ALERT_HOURS";
+		public static final String UNASSIGNED_ALERT_MINUTES = "UNASSIGNED_ALERT_MINUTES";
 		public static final String MAX_DAYS_AHEAD = "MAX_DAYS_AHEAD";
 		public static final String MAX_CART_ITEMS = "MAX_CART_ITEMS";
 

@@ -186,6 +186,10 @@ export default function JobScreen() {
     }
   };
 
+  // Reached the work area (V75): the customer hears the doorbell; then Start work with their code
+  const arrived = () =>
+    run(() => authRequest('/api/bookings/arrived', { method: 'PUT', body: { bookingId: booking.bookingId } }), 'The customer was told you have arrived.');
+
   const timer = (eventType, message) => run(() => authRequest('/api/bookings/timer', { method: 'POST', body: { bookingId: booking.bookingId, eventType } }), message);
 
   // Start work with the customer's code (V59): a wrong code's message stays in the pop-up; success closes it
@@ -491,8 +495,23 @@ export default function JobScreen() {
 
         {isMine ? (
           <View style={{ gap: 10 }}>
-            {booking.bookingStatus === 'PARTNER_EN_ROUTE' ? (
+            {booking.bookingStatus === 'PARTNER_EN_ROUTE' && !booking.partnerArrivedAt ? (
               <View style={{ gap: 8 }}>
+                {/* Before starting: tell the customer you are at the door (they hear a doorbell) */}
+                <Button title="I've reached the work area" icon="map-pin" onPress={arrived} loading={busy} />
+                <Text style={{ fontSize: 12, color: colors.muted, textAlign: 'center' }}>
+                  {"Tap when you are at the customer's door. Then ask them for the start code."}
+                </Text>
+              </View>
+            ) : null}
+            {booking.bookingStatus === 'PARTNER_EN_ROUTE' && booking.partnerArrivedAt ? (
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 12, backgroundColor: colors.greenSoft }}>
+                  <Feather name="map-pin" size={15} color={colors.green} />
+                  <Text weight="semibold" style={{ flex: 1, fontSize: 12.5, color: colors.greenDark }}>
+                    Reached the work area: {whenLabel(booking.partnerArrivedAt)}. The customer was told.
+                  </Text>
+                </View>
                 <Button title="Start work" icon="play" onPress={() => setAskingCode(true)} loading={busy} disabled={Boolean(otherJob)} />
                 {otherJob ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 12, backgroundColor: colors.amberSoft }}>

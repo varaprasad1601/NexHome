@@ -84,6 +84,9 @@ class NexHomeSettlement {
 			Map.entry("cardless_emi", "Cardless EMI"), Map.entry("credit_card_emi", "Card EMI"),
 			Map.entry("debit_card_emi", "Card EMI"), Map.entry("bank_transfer", "Bank Transfer"));
 
+	/** Payment notices from the gateway are sent as NexHome's system account (user 1), never skipped as the actor's. */
+	private static final Long GATEWAY_NOTICE_ACTOR = 1L;
+
 	/** History headings of attempt statuses (SUCCESS is written by capture as PAYMENT_RECEIVED). */
 	private static final Map<String, String> ATTEMPT_EVENTS = Map.of("FAILED", "Payment failed", "PENDING",
 			"Payment pending", "USER_DROPPED", "Payment cancelled", "CANCELLED", "Payment cancelled", "VOID",
@@ -156,6 +159,33 @@ class NexHomeSettlement {
 							paymentLine(event, booking.getTotalAmount(), attempt.paymentMode(), attempt.providerPaymentId(),
 									attempt.message()),
 							actingUserId);
+				}
+				// The customer hears of a failed or pending payment once per attempt (not of one they cancelled)
+				if (!bookings.isEmpty() && ("FAILED".equals(attempt.status()) || "PENDING".equals(attempt.status()))) {
+					NexHomeBooking first = bookings.get(0);
+					boolean failed = "FAILED".equals(attempt.status());
+					String amount = order.getAmount().toPlainString() + " " + order.getCurrency();
+					notifier.notify(first.getCustomer().getUser().getId(), new NexHomeNotifier.Message(
+							NotificationType.PAYMENT,
+							(failed ? "Payment failed for " : "Payment pending for ") + first.getPublicId(),
+							failed ? "Your payment of " + amount + " did not go through"
+									+ (attempt.message() == null ? "" : ": " + attempt.message())
+									+ ". Open the booking and tap Pay to try again."
+									: "Your payment of " + amount + " is being confirmed by the bank. We will tell you"
+											+ " when it goes through; please do not pay again yet.",
+							NexHomeNotifier.BOOKING, first.getId()).forApp(NexHomeNotifier.CUSTOMER),
+							// From the gateway, not the customer's own action (their app's check records it too)
+							GATEWAY_NOTICE_ACTOR);
+					if (first.getPartner() != null) {
+						notifier.notify(first.getPartner().getUser().getId(), new NexHomeNotifier.Message(
+								NotificationType.PAYMENT,
+								(failed ? "Customer's payment failed: " : "Customer's payment pending: ") + first.getPublicId(),
+								failed ? "The customer's online payment of " + amount + " did not go through. They can try"
+										+ " again, or you can collect cash."
+										: "The customer's payment of " + amount + " is being confirmed by the bank.",
+								NexHomeNotifier.BOOKING, first.getId()).forApp(NexHomeNotifier.PARTNER),
+								GATEWAY_NOTICE_ACTOR);
+					}
 				}
 			}
 		}
@@ -372,9 +402,24 @@ class NexHomeSettlement {
 				bookingCreator.recordStatus(booking, status, status, line, actingUserId);
 			}
 			// A job whose work is finished waits IN_PROGRESS for its payment: this completes it
+			boolean completedBefore = BookingStatus.COMPLETED.equals(booking.getBookingStatus());
 			completeAfterCash(booking, actingUserId);
 			if (BookingStatus.COMPLETED.equals(booking.getBookingStatus())) {
 				ensurePayout(booking, payment, actingUserId);
+			}
+			// Completed earlier (by NexHome, before the payment): now paid, the customer is asked to rate it
+			if (completedBefore) {
+				notifier.notify(booking.getCustomer().getUser().getId(), new NexHomeNotifier.Message(
+						NotificationType.BOOKING, "Rate your service " + booking.getPublicId(),
+						"How was " + booking.getServiceNameSnapshot() + "? Rate your service and professional.",
+						NexHomeNotifier.BOOKING, booking.getId()).forApp(NexHomeNotifier.CUSTOMER), actingUserId);
+			}
+			if (booking.getPartner() != null) {
+				notifier.notify(booking.getPartner().getUser().getId(), new NexHomeNotifier.Message(
+						NotificationType.PAYMENT, "Customer paid " + booking.getPublicId(),
+						"The customer paid " + payment.getAmount().toPlainString() + " " + payment.getCurrency()
+								+ " online for " + booking.getServiceNameSnapshot() + ".",
+						NexHomeNotifier.BOOKING, booking.getId()).forApp(NexHomeNotifier.PARTNER), GATEWAY_NOTICE_ACTOR);
 			}
 			notifier.notify(booking.getCustomer().getUser().getId(), new NexHomeNotifier.Message(
 					NotificationType.PAYMENT, "Payment received for " + booking.getPublicId(),
@@ -637,7 +682,16 @@ class NexHomeSettlement {
 		notifier.notify(booking.getCustomer().getUser().getId(), new NexHomeNotifier.Message(NotificationType.BOOKING,
 				"Booking " + booking.getPublicId() + " completed",
 				booking.getServiceNameSnapshot() + " is done. Rate your service and partner.", NexHomeNotifier.BOOKING,
-				booking.getId()), actingUserId);
+				booking.getId()).forApp(NexHomeNotifier.CUSTOMER), actingUserId);
+		// The partner hears the job is completed and paid, also after their own Cash collected (sent as NexHome)
+		if (booking.getPartner() != null) {
+			boolean cash = PaymentMethod.CASH.equals(booking.getPaymentMethod());
+			notifier.notify(booking.getPartner().getUser().getId(), new NexHomeNotifier.Message(NotificationType.BOOKING,
+					"Job completed: " + booking.getPublicId(),
+					booking.getServiceNameSnapshot() + (cash ? " is completed and the cash is recorded."
+							: " is completed and paid online.") + " Your earnings are in your wallet.",
+					NexHomeNotifier.BOOKING, booking.getId()).forApp(NexHomeNotifier.PARTNER), GATEWAY_NOTICE_ACTOR);
+		}
 	}
 
 	/** The partner's payout for a completed, paid online booking (once per booking). */

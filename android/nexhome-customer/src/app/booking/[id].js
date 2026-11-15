@@ -230,6 +230,19 @@ export default function BookingScreen() {
           </View>
         ) : null}
 
+        {booking.bookingStatus === 'PARTNER_EN_ROUTE' && booking.partnerArrivedAt ? (
+          // The professional tapped "I've reached the work area" (V75)
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 16, backgroundColor: colors.greenSoft, borderWidth: 1.5, borderColor: colors.green }}>
+            <Feather name="bell" size={20} color={colors.green} />
+            <View style={{ flex: 1 }}>
+              <Text weight="extrabold" style={{ fontSize: 14.5, color: colors.greenDark }}>
+                Your professional is at your doorstep
+              </Text>
+              <Text style={{ fontSize: 12.5, color: colors.greenDark }}>Arrived {whenLabel(booking.partnerArrivedAt)}. Share the start code below to begin.</Text>
+            </View>
+          </View>
+        ) : null}
+
         {booking.startOtp ? (
           // The start code (V59): the professional enters it to start the work
           <LinearGradient colors={[colors.blue, '#1660b8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: 18, padding: 16, gap: 10 }}>

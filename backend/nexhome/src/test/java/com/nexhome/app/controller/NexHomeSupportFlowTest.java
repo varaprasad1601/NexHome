@@ -420,6 +420,26 @@ class NexHomeSupportFlowTest {
 		perform(put("/api/bookings/status/update").header("X-NexHome-App", "PARTNER"), token,
 				"{\"bookingId\": %d, \"bookingStatus\": \"PARTNER_EN_ROUTE\"}".formatted(bookingId))
 				.andExpect(status().isOk());
+		// Reached the work area (V75): kept once, a history line by the partner, the customer's doorbell notice (HIGH)
+		JsonNode arrived = json(perform(put("/api/bookings/arrived").header("X-NexHome-App", "PARTNER"), token,
+				"{\"bookingId\": %d}".formatted(bookingId)).andExpect(status().isOk()));
+		String arrivedAt = arrived.get("booking").get("partnerArrivedAt").asString();
+		assertThat(arrivedAt).isNotBlank();
+		JsonNode arrivalRow = arrived.get("history").get(arrived.get("history").size() - 1);
+		assertThat(arrivalRow.get("reason").asString()).isEqualTo("Partner reached the work area");
+		assertThat(arrivalRow.get("changedByParty").asString()).isEqualTo("PARTNER");
+		assertThat(json(perform(put("/api/bookings/arrived").header("X-NexHome-App", "PARTNER"), token,
+				"{\"bookingId\": %d}".formatted(bookingId)).andExpect(status().isOk()))
+				.get("booking").get("partnerArrivedAt").asString()).isEqualTo(arrivedAt);
+		JsonNode doorbell = null;
+		for (JsonNode notice : json(perform(get("/api/notifications/me?size=50&app=CUSTOMER"), token, null)).get("content")) {
+			if ("PARTNER_ARRIVED".equals(notice.get("notificationType").asString())) {
+				doorbell = notice;
+			}
+		}
+		assertThat(doorbell).isNotNull();
+		assertThat(doorbell.get("priority").asString()).isEqualTo("HIGH");
+		assertThat(doorbell.get("title").asString()).startsWith("Your partner arrived");
 
 		JsonNode partnerApp = json(perform(get("/api/notifications/me?size=50&app=PARTNER"), token, null)
 				.andExpect(status().isOk())).get("content");
@@ -432,6 +452,7 @@ class NexHomeSupportFlowTest {
 		assertThat(partnerTitles).anyMatch(title -> title.startsWith("New job assigned"))
 				.noneMatch(title -> title.startsWith("Partner accepted") || title.endsWith("confirmed"));
 		assertThat(customerTitles).anyMatch(title -> title.startsWith("Partner accepted"))
+				.anyMatch(title -> title.startsWith("Partner assigned"))
 				.anyMatch(title -> title.endsWith("confirmed"))
 				.noneMatch(title -> title.startsWith("New job assigned"));
 
@@ -448,6 +469,10 @@ class NexHomeSupportFlowTest {
 		long assignmentId = json(perform(post("/api/bookings/assignments/offer").header("X-NexHome-App", "STAFF"), token,
 				"{\"bookingId\": %d, \"partnerProfileId\": %d, \"direct\": true}".formatted(second, partnerId))
 				.andExpect(status().isCreated())).get("assignmentId").asLong();
+		perform(put("/api/bookings/arrived").header("X-NexHome-App", "PARTNER"), token,
+				"{\"bookingId\": %d}".formatted(second))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Accept the job first."));
 		perform(put("/api/bookings/assignments/respond").header("X-NexHome-App", "PARTNER"), token,
 				"{\"assignmentId\": %d, \"accept\": false, \"rejectionReason\": \"Too far\"}".formatted(assignmentId))
 				.andExpect(status().isOk());

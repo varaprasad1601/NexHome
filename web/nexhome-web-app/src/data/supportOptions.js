@@ -3,6 +3,7 @@ import {
   CalendarCheck,
   CreditCard,
   LifeBuoy,
+  MapPin,
   Megaphone,
   ShieldCheck,
   Star,
@@ -53,7 +54,9 @@ export const NOTIFICATION_STYLES = {
   SUPPORT: { icon: LifeBuoy, tile: 'bg-[#EDF6FD] text-[var(--blue)]' },
   ONBOARDING: { icon: UserRoundCheck, tile: 'bg-[#E9F6EF] text-[var(--green)]' },
   ACCOUNT: { icon: ShieldCheck, tile: 'bg-[#FDECEC] text-[#C53030]' },
-  ANNOUNCEMENT: { icon: Megaphone, tile: 'bg-[#E8EEF6] text-[var(--navy)]' }
+  ANNOUNCEMENT: { icon: Megaphone, tile: 'bg-[#E8EEF6] text-[var(--navy)]' },
+  // The partner reached the work area (V75)
+  PARTNER_ARRIVED: { icon: MapPin, tile: 'bg-[#E9F6EF] text-[var(--green)]' }
 };
 /** Notification priorities (V64): HIGH red, MEDIUM amber, LOW grey; the tag and the send form's options. */
 export const NOTIFICATION_PRIORITIES = {

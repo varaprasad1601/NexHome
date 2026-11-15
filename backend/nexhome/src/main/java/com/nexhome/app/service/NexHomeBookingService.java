@@ -72,6 +72,13 @@ public interface NexHomeBookingService {
 	NexHomeBookingDetailResponse requestCompletion(Long bookingId);
 
 	/**
+	 * The partner reached the work area (V75), after accepting and before starting: the arrival time and a history
+	 * line are kept, the customer is told (PARTNER_ARRIVED: the doorbell). Again: nothing changes. The assigned partner
+	 * or BOOKING_MANAGE write.
+	 */
+	NexHomeBookingDetailResponse markArrived(Long bookingId);
+
+	/**
 	 * The booking's customer answers it: not done clears the request (the partner carries on); done stops the work
 	 * (an HOURLY job priced for the minutes worked) and completes the booking with its payment PENDING.
 	 */

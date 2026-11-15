@@ -5,7 +5,8 @@ import { Platform } from 'react-native';
  * Push notifications (FCM, backend V53): the phone's token is registered after sign-in
  * (POST /api/notifications/devices/register) and unregistered at log-out, so a notification makes a sound and shows
  * in the phone's tray while the app is in the background or closed. The backend sends HIGH ones on the `alerts`
- * channel and the rest on `default`; both channels play `assets/sounds/notify.wav`.
+ * channel, the partner's arrival (PARTNER_ARRIVED) on `doorbell` and the rest on `default`; `doorbell` plays
+ * `assets/sounds/doorbell.wav`, the others `assets/sounds/notify.wav`.
  *
  * Only in a build (EAS APK / AAB): Expo Go cannot receive these and throws as soon as expo-notifications loads, so the
  * module is required lazily and never in Expo Go (the app then still chimes in the foreground: LiveWatcher).
@@ -54,10 +55,15 @@ export function setUpPush({ onPush, onOpen }) {
   const channel = { sound: 'notify.wav', vibrationPattern: [0, 250, 150, 250], lightColor: '#0b438b' };
   N.setNotificationChannelAsync('default', { ...channel, name: 'Notifications', importance: N.AndroidImportance.HIGH }).catch(() => {});
   N.setNotificationChannelAsync('alerts', { ...channel, name: 'Urgent alerts', importance: N.AndroidImportance.MAX }).catch(() => {});
+  // The partner reaching the door (PARTNER_ARRIVED) rings the doorbell, also when the app is closed
+  N.setNotificationChannelAsync('doorbell', { ...channel, sound: 'doorbell.wav', name: 'Professional at the door', importance: N.AndroidImportance.MAX }).catch(() => {});
 
-  const received = N.addNotificationReceivedListener(() => {
+  const received = N.addNotificationReceivedListener((notification) => {
+    const data = notification?.request?.content?.data ?? {};
+    // One the app showed itself (showPhoneNotification) is not a push: its sound already played
+    if (data.local) return;
     lastPushAt = Date.now();
-    onPush?.();
+    onPush?.(data);
   });
   const opened = N.addNotificationResponseReceivedListener((response) => {
     onOpen?.(response?.notification?.request?.content?.data ?? {});
@@ -71,6 +77,40 @@ export function setUpPush({ onPush, onOpen }) {
     received.remove();
     opened.remove();
   };
+}
+
+/**
+ * Shows one of the account's notifications as the phone's own banner (heads-up popup, also kept in the tray) while
+ * the app is open: on the doorbell channel for the partner's arrival, `alerts` for HIGH, else `default` (all
+ * importance HIGH or MAX, so they pop up; the foreground handler keeps them silent, LiveWatcher plays the sound).
+ * Returns false when it cannot (Expo Go, notifications not allowed): the app shows its own popup instead.
+ */
+export async function showPhoneNotification(notification) {
+  const N = notifications();
+  if (!N) return false;
+  try {
+    const { status } = await N.getPermissionsAsync();
+    if (status !== 'granted') return false;
+    const channelId =
+      notification.notificationType === 'PARTNER_ARRIVED' ? 'doorbell' : notification.priority === 'HIGH' ? 'alerts' : 'default';
+    await N.scheduleNotificationAsync({
+      content: {
+        title: notification.title,
+        body: notification.message,
+        data: {
+          local: true,
+          notificationId: String(notification.notificationId),
+          notificationType: notification.notificationType,
+          referenceType: notification.referenceType ?? '',
+          referenceId: notification.referenceId == null ? '' : String(notification.referenceId)
+        }
+      },
+      trigger: { channelId }
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Asks for permission (Android 13+) and registers this phone for the signed-in account and `app`. */

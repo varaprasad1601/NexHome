@@ -86,7 +86,10 @@ public class NexHomeFcmPushSender implements NexHomePushSender {
 	public String send(String deviceToken, String title, String body, Map<String, String> data, boolean high) {
 		Map<String, Object> android = new LinkedHashMap<>();
 		android.put("priority", high ? "HIGH" : "NORMAL");
-		android.put("notification", Map.of("channel_id", high ? "alerts" : "default", "sound", "default"));
+		// The partner arriving rings the apps' doorbell channel (its sound is the doorbell); HIGH ones alerts
+		boolean doorbell = data != null && "PARTNER_ARRIVED".equals(data.get("notificationType"));
+		android.put("notification", Map.of("channel_id", doorbell ? "doorbell" : high ? "alerts" : "default",
+				"sound", doorbell ? "doorbell" : "default"));
 		Map<String, Object> message = new LinkedHashMap<>();
 		message.put("token", deviceToken);
 		message.put("notification", Map.of("title", title, "body", body));

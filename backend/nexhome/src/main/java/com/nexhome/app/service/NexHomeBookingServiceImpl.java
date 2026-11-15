@@ -539,6 +539,14 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 				booking.getServiceNameSnapshot() + (direct ? "; accept or decline it." : "; the offer runs for "
 						+ minutes + " minutes."),
 				booking, actingUserId);
+		// The customer hears a professional was assigned (not of offers, which may go to several partners)
+		if (direct) {
+			String who = fullName(partner.getFirstName(), partner.getLastName());
+			tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Partner assigned " + booking.getPublicId(),
+					(who == null ? "A professional" : who) + " is assigned to your " + booking.getServiceNameSnapshot()
+							+ " job. We will tell you when they accept.",
+					booking, actingUserId);
+		}
 		auditRecorder.record(direct ? "PARTNER_ASSIGNED" : "OFFERED", "BOOKING", booking.getPublicId(), null,
 				Map.of("partner", partner.getPublicId()), actingUserId);
 		return bookingMapper.toAssignmentDto(assignment);
@@ -684,6 +692,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 	 */
 	private void releasePartner(NexHomeBooking booking, String reason, Long actingUserId) {
 		booking.setPartner(null);
+		booking.setPartnerArrivedAt(null);
 		if (BookingType.INSTANT.equals(booking.getBookingType())) {
 			booking.setScheduledStartAt(null);
 			booking.setScheduledEndAt(null);
@@ -713,19 +722,28 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		return expired.size();
 	}
 
+	/** "45 minutes", "2 hours", "1 hour 30 minutes". */
+	private static String windowLabel(Duration window) {
+		long hours = window.toHours();
+		long minutes = window.toMinutesPart();
+		String h = hours == 0 ? "" : hours + (hours == 1 ? " hour" : " hours");
+		String m = minutes == 0 ? "" : minutes + (minutes == 1 ? " minute" : " minutes");
+		return h.isEmpty() ? m : m.isEmpty() ? h : h + " " + m;
+	}
+
 	@Override
 	@Transactional
 	public int alertUnassignedBookings() {
 		Instant now = Instant.now();
-		Duration window = Duration.ofHours(settingsService.intValue(NexHomeSettingsService.Keys.UNASSIGNED_ALERT_HOURS));
+		Duration window = Duration.ofMinutes(settingsService.intValue(NexHomeSettingsService.Keys.UNASSIGNED_ALERT_MINUTES));
 		List<NexHomeBooking> soon = bookingRepository
 				.findByBookingStatusAndPartnerIsNullAndUnassignedAlertAtIsNullAndScheduledStartAtBetween(
 						BookingStatus.CONFIRMED, now, now.plus(window));
 		soon.forEach(booking -> {
 			notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_BOOKING_UNASSIGNED, BOOKING_MANAGE, new NexHomeNotifier.Message(
 					NotificationType.BOOKING, "No partner yet: " + booking.getPublicId(),
-					booking.getServiceNameSnapshot() + " starts within " + window.toHours()
-							+ (window.toHours() == 1 ? " hour" : " hours") + " and has no partner; assign one.",
+					booking.getServiceNameSnapshot() + " starts within " + windowLabel(window)
+							+ " and has no partner; assign one.",
 					NexHomeNotifier.BOOKING, booking.getId()), null);
 			booking.setUnassignedAlertAt(now);
 		});
@@ -770,6 +788,43 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 					booking, actingUserId);
 			log.info("Booking {}: completion asked of the customer", booking.getPublicId());
 		}
+		return detailOf(booking);
+	}
+
+	/** The history line of the partner reaching the work area (V75; status unchanged). */
+	static final String PARTNER_ARRIVED = "Partner reached the work area";
+
+	@Override
+	@Transactional
+	public NexHomeBookingDetailResponse markArrived(Long bookingId) {
+		Long actingUserId = permissionService.currentUserId();
+		NexHomeBooking booking = findBooking(bookingId);
+		if (!isAssignedPartner(booking) && !permissionService.can(BOOKING_MANAGE, NexHomeAccess.WRITE.name())) {
+			throw new AccessDeniedException("Only the booking's partner, or staff, can say the partner arrived.");
+		}
+		if (BookingStatus.ASSIGNED.equals(booking.getBookingStatus())) {
+			throw new InvalidRequestException("Accept the job first.");
+		}
+		if (!BookingStatus.PARTNER_EN_ROUTE.equals(booking.getBookingStatus())) {
+			throw new InvalidRequestException("Only an accepted job not started yet can be marked as arrived.");
+		}
+		if (booking.getPartnerArrivedAt() != null) {
+			return detailOf(booking);
+		}
+		booking.setPartnerArrivedAt(Instant.now());
+		booking.setUpdatedBy(actingUserId);
+		String status = booking.getBookingStatus();
+		bookingCreator.recordStatus(booking, status, status, PARTNER_ARRIVED, actingUserId);
+		String who = booking.getPartner() == null ? null
+				: fullName(booking.getPartner().getFirstName(), booking.getPartner().getLastName());
+		notifier.notify(customerUserOf(booking), new NexHomeNotifier.Message(NotificationType.PARTNER_ARRIVED,
+				"Your partner arrived " + booking.getPublicId(),
+				(who == null ? "Your professional" : who) + " has arrived at your doorstep for "
+						+ booking.getServiceNameSnapshot() + ". Share the start code to begin.",
+				NexHomeNotifier.BOOKING, booking.getId()).forApp(NexHomeNotifier.CUSTOMER).high(), actingUserId);
+		auditRecorder.record("PARTNER_ARRIVED", "BOOKING", booking.getPublicId(), null,
+				Map.of("arrivedAt", booking.getPartnerArrivedAt().toString()), actingUserId);
+		log.info("Booking {}: partner arrived", booking.getPublicId());
 		return detailOf(booking);
 	}
 
@@ -928,6 +983,9 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 
 		if (BookingTimerEvent.START.equals(event)) {
 			booking.setActualStartAt(now);
+			if (booking.getPartnerArrivedAt() == null) {
+				booking.setPartnerArrivedAt(now);
+			}
 			if (booking.getStartOtp() != null) {
 				booking.setStartOtpVerifiedAt(isAssignedPartner(booking) ? now : null);
 				booking.setStartOtp(null);
@@ -941,6 +999,10 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 						}
 						assignment.setUpdatedBy(actingUserId);
 					});
+			// The customer hears the work started
+			tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Work started on " + booking.getPublicId(),
+					"Your professional started working on " + booking.getServiceNameSnapshot() + ".", booking,
+					actingUserId);
 			// A partner who starts work is online (approved partners only have an availability that counts)
 			com.nexhome.app.model.NexHomePartnerProfile partner = booking.getPartner();
 			if (partner != null && !com.nexhome.app.model.NexHomeLookupCodes.PartnerAvailabilityStatus.ONLINE
@@ -982,6 +1044,13 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 			tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Booking " + booking.getPublicId() + " completed",
 					booking.getServiceNameSnapshot() + " is done. Rate your service and partner.", booking,
 					actingUserId);
+			// Paid already (during the work): the partner hears it is completed, also after their own STOP (as NexHome)
+			if (booking.getPartner() != null) {
+				notifier.notify(partnerUserOf(booking), new NexHomeNotifier.Message(NotificationType.BOOKING,
+						"Job completed: " + booking.getPublicId(),
+						booking.getServiceNameSnapshot() + " is completed and paid. Your earnings are in your wallet.",
+						NexHomeNotifier.BOOKING, booking.getId()).forApp(NexHomeNotifier.PARTNER), 1L);
+			}
 		}
 		log.info("Booking {} timer {} by User ID {}", booking.getPublicId(), event, actingUserId);
 		return detailOf(booking);

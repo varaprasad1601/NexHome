@@ -378,6 +378,13 @@ class NexHomeStaffNotificationFlowTest {
 				.andExpect(jsonPath("$.content[?(@.title == 'Personal note " + tag + "')]").isEmpty());
 		perform(get("/api/notifications/me?size=50"), bothToken, null)
 				.andExpect(jsonPath("$.totalElements").value(3));
+		// The staff list shows each recipient as that notification's app does: Customer for the customer notes, Admin
+		// (the number's staff role) for the staff note
+		perform(get("/api/notifications?size=50&userId=" + both.getId()), sender, null)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[?(@.title == 'Customer note " + tag + "')].userRole").value("Customer"))
+				.andExpect(jsonPath("$.content[?(@.title == 'Personal note " + tag + "')].userRole").value("Customer"))
+				.andExpect(jsonPath("$.content[?(@.title == 'Staff note " + tag + "')].userRole").value("Admin"));
 		perform(get("/api/notifications/me/summary?app=CUSTOMER"), bothToken, null)
 				.andExpect(jsonPath("$.total").value(2));
 		// Marking all read in one app leaves the other's unread

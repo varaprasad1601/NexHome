@@ -97,7 +97,8 @@ public class NexHomeBookingMapper {
 				cancelledByName,
 				startOtp,
 				booking.getCompletionRequestedAt(),
-				booking.getCompletionConfirmedAt());
+				booking.getCompletionConfirmedAt(),
+				booking.getPartnerArrivedAt());
 	}
 
 	/** "+91 9876543210", as staff screens show numbers. */

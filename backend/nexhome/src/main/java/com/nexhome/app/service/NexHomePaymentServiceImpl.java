@@ -381,6 +381,10 @@ public class NexHomePaymentServiceImpl implements NexHomePaymentService {
 				}
 				case "payment.failed" -> {
 					requireOrder(order);
+					// The attempt first (V67): its history line and the customer's "Payment failed", once per attempt
+					if (parsed.attempt() != null) {
+						settlement.recordAttempts(order, List.of(parsed.attempt()), SYSTEM_USER_ID);
+					}
 					settlement.fail(order, parsed.errorCode(), parsed.errorMessage(), SYSTEM_USER_ID);
 					stored.setProcessingStatus(WebhookProcessingStatus.PROCESSED);
 				}
@@ -645,7 +649,8 @@ public class NexHomePaymentServiceImpl implements NexHomePaymentService {
 				"Paid in cash for " + booking.getPublicId(),
 				"Your professional collected " + cash.getAmount().toPlainString() + " " + booking.getCurrency()
 						+ " in cash for " + booking.getServiceNameSnapshot()
-						+ ". The online payment is cancelled; you will not be charged online.",
+						+ ". The online payment is cancelled; you will not be charged online. Open the booking to"
+						+ " confirm you paid.",
 				NexHomeNotifier.BOOKING, booking.getId()), actingUserId);
 		log.info("Booking {} paid in cash instead of online ({})", booking.getPublicId(), cash.getAmount());
 		return paymentStatusOf(booking, last);
@@ -871,6 +876,16 @@ public class NexHomePaymentServiceImpl implements NexHomePaymentService {
 			// The booking's history shows the payment (same status: a payment event, V43)
 			bookingCreator.recordStatus(booking, booking.getBookingStatus(), booking.getBookingStatus(),
 					NexHomeSettlement.CASH_COLLECTED, actingUserId);
+			// The customer confirms paying it (PUT /cash-collections/acknowledge; the app's Confirm your payment)
+			if (cash.getCustomerAcknowledgedAt() == null) {
+				notifier.notify(booking.getCustomer().getUser().getId(), new NexHomeNotifier.Message(
+						com.nexhome.app.model.NexHomeLookupCodes.NotificationType.PAYMENT,
+						"Confirm your cash payment " + booking.getPublicId(),
+						"Your professional marked " + cash.getAmount().toPlainString() + " " + booking.getCurrency()
+								+ " collected in cash for " + booking.getServiceNameSnapshot()
+								+ ". Open the booking to confirm you paid.",
+						NexHomeNotifier.BOOKING, booking.getId()).forApp(NexHomeNotifier.CUSTOMER), actingUserId);
+			}
 		}
 		cash.setUpdatedBy(actingUserId);
 		// A cash job waits IN_PROGRESS after its work is finished; the cash settles it

@@ -238,13 +238,52 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 		Page<NexHomeNotification> notifications = notificationRepository.findAll(
 				NexHomeNotificationRepository.notificationSpec(userId, typeOrNull(notificationType), unread,
 						NexHomePaging.searchText(search)), pageRequest);
-		Set<Long> userIds = new HashSet<>();
-		notifications.forEach(notification -> userIds.add(notification.getUser().getId()));
-		Map<Long, NexHomeAuditUsers.Person> people = auditUsers.people(userIds);
+		Recipients recipients = recipientsOf(notifications.getContent());
 		return NexHomePaging.toPageResponse(pageRequest, notifications, notifications.stream()
-				.map(notification -> notificationMapper.toNotificationDto(notification,
-						people.get(notification.getUser().getId())))
+				.map(notification -> notificationMapper.toNotificationDto(notification, recipients.of(notification)))
 				.toList());
+	}
+
+	/**
+	 * Who received each notification, as the app it belongs to shows them (V54): a CUSTOMER one the customer profile's
+	 * name with "Customer", a PARTNER one the partner profile's name with "Partner", a STAFF (or ALL) one the staff
+	 * name and highest role. One number may be staff, a partner and a customer, so the account's highest role alone
+	 * would show an admin's customer notices as "Admin". One query each for a page.
+	 */
+	private Recipients recipientsOf(java.util.Collection<NexHomeNotification> notifications) {
+		Set<Long> userIds = new HashSet<>();
+		Set<Long> customers = new HashSet<>();
+		Set<Long> partners = new HashSet<>();
+		for (NexHomeNotification notification : notifications) {
+			Long userId = notification.getUser().getId();
+			userIds.add(userId);
+			if (NexHomeNotifier.CUSTOMER.equals(notification.getAudience())) {
+				customers.add(userId);
+			} else if (NexHomeNotifier.PARTNER.equals(notification.getAudience())) {
+				partners.add(userId);
+			}
+		}
+		return new Recipients(auditUsers.people(userIds),
+				customers.isEmpty() ? Map.of() : auditUsers.profileNames(customers, NexHomeRole.CUSTOMER),
+				partners.isEmpty() ? Map.of() : auditUsers.profileNames(partners, NexHomeRole.PARTNER));
+	}
+
+	/** The recipients of a page of notifications by the app each belongs to (see {@link #recipientsOf}). */
+	private record Recipients(Map<Long, NexHomeAuditUsers.Person> people, Map<Long, String> customerNames,
+			Map<Long, String> partnerNames) {
+
+		NexHomeAuditUsers.Person of(NexHomeNotification notification) {
+			Long userId = notification.getUser().getId();
+			NexHomeAuditUsers.Person person = people.get(userId);
+			String name = person == null ? null : person.name();
+			if (NexHomeNotifier.CUSTOMER.equals(notification.getAudience())) {
+				return new NexHomeAuditUsers.Person(customerNames.getOrDefault(userId, name), "Customer");
+			}
+			if (NexHomeNotifier.PARTNER.equals(notification.getAudience())) {
+				return new NexHomeAuditUsers.Person(partnerNames.getOrDefault(userId, name), "Partner");
+			}
+			return person;
+		}
 	}
 
 	@Override
@@ -274,11 +313,15 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 				: lookupService.validateCode(Types.DELIVERY_STATUS, deliveryStatus, "Delivery status");
 		Page<NexHomeNotificationDeliveryLog> logs = deliveryLogRepository.findAll(
 				NexHomeNotificationDeliveryLogRepository.deliverySpec(channelCode, statusCode, userId), pageRequest);
+		// A log of a notification shows its recipient as that notification's app does; others (SMS codes) by the account
 		Set<Long> userIds = new HashSet<>();
 		logs.forEach(entry -> userIds.add(entry.getUser().getId()));
 		Map<Long, NexHomeAuditUsers.Person> people = auditUsers.people(userIds);
+		Recipients recipients = recipientsOf(logs.stream().map(NexHomeNotificationDeliveryLog::getNotification)
+				.filter(java.util.Objects::nonNull).toList());
 		return NexHomePaging.toPageResponse(pageRequest, logs, logs.stream()
-				.map(entry -> notificationMapper.toDeliveryLogDto(entry, people.get(entry.getUser().getId())))
+				.map(entry -> notificationMapper.toDeliveryLogDto(entry, entry.getNotification() != null
+						? recipients.of(entry.getNotification()) : people.get(entry.getUser().getId())))
 				.toList());
 	}
 

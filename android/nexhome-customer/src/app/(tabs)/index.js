@@ -23,7 +23,7 @@ const HEADER = ['#1a73d9', colors.blue];
 
 /**
  * Home v2 with bubbles: a fixed blue header (greeting, address, bell; rounded bottom) with two soft bubbles and the
- * search floating on its edge, the next booking's status, the banner with the logo, Services, Popular near you (with ratings), Need help
+ * search floating on its edge, the bookings Working now and Next (`homeBookings`), the banner with the logo, Services, Popular near you (with ratings), Need help
  * choosing?, and the cart bar.
  */
 export default function Home() {
@@ -68,7 +68,7 @@ export default function Home() {
   const unread = summary.data?.unread ?? 0;
   const popular = useMemo(() => services.data?.content ?? [], [services.data]);
   const covers = useMemo(() => Object.fromEntries(popular.map((s) => [s.serviceId, s.coverImageUrl])), [popular]);
-  const next = useMemo(() => nextBooking(bookings.data?.content ?? []), [bookings.data]);
+  const cards = useMemo(() => homeBookings(bookings.data?.content ?? []), [bookings.data]);
   const phone = contact.data?.SUPPORT_PHONE;
   const refresh = () =>
     Promise.all([categories.refresh(), services.refresh(), addresses.refresh(), summary.refresh(), bookings.refresh(), contact.refresh()]);
@@ -152,37 +152,10 @@ export default function Home() {
       >
 
         <View style={{ padding: 20, paddingTop: 12, gap: 18 }}>
-          {/* The next booking, while there is one */}
-          {next ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push(`/booking/${next.bookingId}`)}
-              style={{ flexDirection: 'row', alignItems: 'stretch', gap: 12, padding: 14, borderRadius: 16, backgroundColor: colors.greenSoft, borderWidth: 1, borderColor: '#cdebdc' }}
-            >
-              {/* The icon is as tall as the three lines: they start at its top and end at its bottom */}
-              <View style={{ width: 48, borderRadius: 13, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }}>
-                <Feather name="calendar" size={20} color={colors.green} />
-              </View>
-              <View style={{ flex: 1, gap: 3, justifyContent: 'space-between' }}>
-                <Text weight="bold" style={{ fontSize: 13.5, lineHeight: 18 }} numberOfLines={1}>
-                  {serviceNameOf(next.serviceName)}
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <Feather name={next.scheduledStartAt ? 'clock' : 'zap'} size={12} color={colors.greenDark} />
-                  <Text weight="semibold" style={{ flex: 1, fontSize: 12, lineHeight: 16, color: colors.greenDark }} numberOfLines={1}>
-                    {next.scheduledStartAt ? rangeLabel(next.scheduledStartAt, next.scheduledEndAt) : 'As soon as possible'}
-                  </Text>
-                </View>
-                <Text style={{ fontSize: 12, lineHeight: 16, color: colors.muted }} numberOfLines={1}>
-                  {isPaymentDue(next) ? `Completed · payment due ${money(next.totalAmount)}` : bookingStatus(next.bookingStatus).label}
-                  {next.partnerName ? ` · ${next.partnerName}` : ''}
-                </Text>
-              </View>
-              <View style={{ justifyContent: 'center' }}>
-                <Feather name="chevron-right" size={18} color={colors.green} />
-              </View>
-            </Pressable>
-          ) : null}
+          {/* Working now and Next, while there are such bookings */}
+          {cards.map((card) => (
+            <HomeBookingCard key={card.key} title={card.title} booking={card.booking} live={card.key === 'working'} />
+          ))}
 
           {/* Banner with the logo */}
           <LinearGradient
@@ -314,19 +287,75 @@ export default function Home() {
 }
 
 /** The order of Home's booking: working, partner accepted, partner assigned, then the other open ones (to do). */
-const HOME_RANK = { IN_PROGRESS: 0, PAUSED: 0, PARTNER_EN_ROUTE: 1, ASSIGNED: 2 };
+const WORKING = ['IN_PROGRESS', 'PAUSED'];
 
 /**
- * The booking Home shows, or null: work under way first, then a partner accepted, then a partner assigned, then the
- * open booking booked most recently (pending or confirmed), then one done but waiting for the payment; within each the
- * newest by when it was booked, then the highest booking id.
+ * The bookings Home shows (at most two), each with its heading: **Working now** (the work under way, paused too; the
+ * one started first) and **Next** (the earliest open booking still to come: "as soon as possible" ones without a time
+ * first, then the earliest scheduled time); a job done but waiting for its payment only when there is neither.
  */
-function nextBooking(list) {
+function homeBookings(list) {
   const open = list.filter(isOpen);
-  if (!open.length) return null;
-  const group = (booking) => (isPaymentDue(booking) ? 4 : HOME_RANK[booking.bookingStatus] ?? 3);
-  const bookedAt = (booking) => parseApiDate(booking.creationDate)?.date.getTime() ?? 0;
-  return [...open].sort(
-    (a, b) => group(a) - group(b) || bookedAt(b) - bookedAt(a) || Number(b.bookingId) - Number(a.bookingId)
-  )[0];
+  const time = (booking) => parseApiDate(booking.scheduledStartAt)?.date.getTime() ?? 0;
+  const startedAt = (booking) => parseApiDate(booking.actualStartAt)?.date.getTime() ?? 0;
+  const working = open
+    .filter((b) => WORKING.includes(b.bookingStatus) && !isPaymentDue(b))
+    .sort((a, b) => startedAt(a) - startedAt(b))[0];
+  const next = open
+    .filter((b) => !WORKING.includes(b.bookingStatus) && !isPaymentDue(b))
+    .sort((a, b) => time(a) - time(b) || Number(a.bookingId) - Number(b.bookingId))[0];
+  const cards = [];
+  if (working) cards.push({ key: 'working', title: 'Working now', booking: working });
+  if (next) cards.push({ key: 'next', title: 'Next', booking: next });
+  if (!cards.length) {
+    const due = open.filter(isPaymentDue)[0];
+    if (due) cards.push({ key: 'due', title: 'Payment due', booking: due });
+  }
+  return cards;
+}
+
+/** One booking card of Home (status card: service, when, status and professional). */
+function HomeBookingCard({ title, booking, live }) {
+  return (
+    <View style={{ gap: 6 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        {live ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: colors.green }} /> : null}
+        <Text weight="extrabold" style={{ fontSize: 12.5, color: colors.navy }}>
+          {title}
+        </Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push(`/booking/${booking.bookingId}`)}
+        style={{ flexDirection: 'row', alignItems: 'stretch', gap: 12, padding: 14, borderRadius: 16, backgroundColor: colors.greenSoft, borderWidth: live ? 2 : 1, borderColor: live ? colors.green : '#cdebdc' }}
+      >
+        {/* The icon is as tall as the three lines: they start at its top and end at its bottom */}
+        <View style={{ width: 48, borderRadius: 13, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }}>
+          <Feather name={live ? 'tool' : 'calendar'} size={20} color={colors.green} />
+        </View>
+        <View style={{ flex: 1, gap: 3, justifyContent: 'space-between' }}>
+          <Text weight="bold" style={{ fontSize: 13.5, lineHeight: 18 }} numberOfLines={1}>
+            {serviceNameOf(booking.serviceName)}
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Feather name={booking.scheduledStartAt ? 'clock' : 'zap'} size={12} color={colors.greenDark} />
+            <Text weight="semibold" style={{ flex: 1, fontSize: 12, lineHeight: 16, color: colors.greenDark }} numberOfLines={1}>
+              {booking.scheduledStartAt ? rangeLabel(booking.scheduledStartAt, booking.scheduledEndAt) : 'As soon as possible'}
+            </Text>
+          </View>
+          <Text style={{ fontSize: 12, lineHeight: 16, color: colors.muted }} numberOfLines={1}>
+            {isPaymentDue(booking)
+              ? `Completed · payment due ${money(booking.totalAmount)}`
+              : booking.bookingStatus === 'PARTNER_EN_ROUTE' && booking.partnerArrivedAt
+                ? 'Arrived at your doorstep'
+                : bookingStatus(booking.bookingStatus).label}
+            {booking.partnerName ? ` · ${booking.partnerName}` : ''}
+          </Text>
+        </View>
+        <View style={{ justifyContent: 'center' }}>
+          <Feather name="chevron-right" size={18} color={colors.green} />
+        </View>
+      </Pressable>
+    </View>
+  );
 }

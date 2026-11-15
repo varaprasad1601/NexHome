@@ -63,7 +63,8 @@
           "color": "#0b438b",
           "defaultChannel": "default",
           "sounds": [
-            "./assets/sounds/notify.wav"
+            "./assets/sounds/notify.wav",
+            "./assets/sounds/doorbell.wav"
           ]
         }
       ]

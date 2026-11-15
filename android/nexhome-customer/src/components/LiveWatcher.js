@@ -3,12 +3,13 @@ import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 
 import { useAuth } from '../context/AuthProvider';
-import { chime } from '../utils/chime';
+import { chime, doorbell } from '../utils/chime';
 import { promptCompletion } from '../utils/completion';
 import { markRatingShown, promptRating, wasRatingShown } from '../utils/rating';
 import { isPaid } from '../utils/status';
 import { bump, setUnread } from '../utils/live';
-import { lastPushTime, registerPush, setUpPush } from '../utils/push';
+import { lastPushTime, registerPush, setUpPush, showPhoneNotification } from '../utils/push';
+import { showNotice } from './NoticeBanner';
 
 const APP = 'CUSTOMER';
 /** How often the notification count is looked at while the app is open (one small request). */
@@ -26,9 +27,18 @@ const OWN_FLOW = ['/pay', '/payment-status', '/payment-result', '/rate', '/confi
 const signatureOf = (bookings) =>
   bookings
     .map((b) =>
-      [b.bookingId, b.bookingStatus, b.paymentStatus, b.partnerProfileId, b.actualStartAt, b.actualEndAt, b.completionRequestedAt, b.totalAmount].join(':')
+      [b.bookingId, b.bookingStatus, b.paymentStatus, b.partnerProfileId, b.partnerArrivedAt, b.actualStartAt, b.actualEndAt, b.completionRequestedAt, b.totalAmount].join(':')
     )
     .join('|');
+
+/** Opens what a notification is about: its booking, else the notifications list. */
+function openTarget(data) {
+  if (data?.referenceType === 'BOOKING' && data.referenceId) {
+    router.push({ pathname: '/booking/[id]', params: { id: String(data.referenceId) } });
+  } else {
+    router.push('/notifications');
+  }
+}
 
 /**
  * A change the customer should hear about at once, even before its notification: the professional accepted (now
@@ -61,6 +71,7 @@ export default function LiveWatcher() {
   const pathname = usePathname();
   const pathRef = useRef(pathname);
   const lastUnread = useRef(null);
+  const lastSeenId = useRef(null);
   const lastSignature = useRef(null);
   const lastStatuses = useRef(new Map());
   const lookNow = useRef(null);
@@ -69,18 +80,14 @@ export default function LiveWatcher() {
   useEffect(
     () =>
       setUpPush({
-        onPush: () => {
-          chime();
+        onPush: (data) => {
+          // The professional at the door rings the doorbell, anything else the chime
+          if (data?.notificationType === 'PARTNER_ARRIVED') doorbell();
+          else chime();
           bump('notifications', 'bookings');
           lookNow.current?.();
         },
-        onOpen: (data) => {
-          if (data?.referenceType === 'BOOKING' && data.referenceId) {
-            router.push({ pathname: '/booking/[id]', params: { id: String(data.referenceId) } });
-          } else {
-            router.push('/notifications');
-          }
-        }
+        onOpen: openTarget
       }),
     []
   );
@@ -88,6 +95,7 @@ export default function LiveWatcher() {
   useEffect(() => {
     if (!signedIn || !customerProfileId) {
       lastUnread.current = null;
+      lastSeenId.current = null;
       lastSignature.current = null;
       lastStatuses.current = new Map();
       lookNow.current = null;
@@ -153,6 +161,47 @@ export default function LiveWatcher() {
       if (!cancelled && next) bookingTimer = setTimeout(lookBookings, next);
     }
 
+    /** The newest notification's id when the watcher started (only later ones pop up). */
+    async function baseline() {
+      try {
+        const page = await authRequest(`/api/notifications/me?size=1&app=${APP}`);
+        lastSeenId.current = page?.content?.[0]?.notificationId ?? 0;
+      } catch {
+        lastSeenId.current = 0;
+      }
+    }
+
+    /**
+     * New notifications arrived: each pops up (the phone's banner, else the app's own) with one sound, the doorbell
+     * when the professional reached the door, else the chime. A push of the last minute already did both.
+     */
+    async function present() {
+      let fresh = [];
+      try {
+        const page = await authRequest(`/api/notifications/me?size=5&unread=true&app=${APP}`);
+        fresh = (page?.content ?? []).filter((n) => n.notificationId > (lastSeenId.current ?? 0)).reverse();
+      } catch {
+        // Unknown which ones: the sound alone
+      }
+      if (fresh.length) lastSeenId.current = Math.max(lastSeenId.current ?? 0, ...fresh.map((n) => n.notificationId));
+      if (Date.now() - lastPushTime() <= 60000) return;
+      if (fresh.some((n) => n.notificationType === 'PARTNER_ARRIVED')) doorbell();
+      else chime();
+      for (const n of fresh.slice(-3)) {
+        if (cancelled) return;
+        const shown = await showPhoneNotification(n);
+        if (!shown) {
+          showNotice({
+            title: n.title,
+            body: n.message,
+            priority: n.priority,
+            icon: n.notificationType === 'PARTNER_ARRIVED' ? 'map-pin' : 'bell',
+            onPress: () => openTarget(n)
+          });
+        }
+      }
+    }
+
     async function lookNotifications() {
       if (cancelled || lookingNotices) return;
       clearTimeout(noticeTimer);
@@ -163,12 +212,13 @@ export default function LiveWatcher() {
           const summary = await authRequest(`/api/notifications/me/summary?app=${APP}`);
           if (cancelled) return;
           const unread = summary?.unread ?? 0;
-          if (lastUnread.current !== null && unread > lastUnread.current) {
-            // A push that came in the last minute already chimed
-            if (Date.now() - lastPushTime() > 60000) chime();
+          if (lastUnread.current === null) await baseline();
+          else if (unread > lastUnread.current) {
+            await present();
             bump('notifications', 'bookings');
             lookBookings();
           }
+          if (cancelled) return;
           lastUnread.current = unread;
           setUnread(unread);
         } catch {

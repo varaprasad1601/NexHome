@@ -90,9 +90,9 @@ public class NexHomeSettingsServiceImpl implements NexHomeSettingsService {
 
 			Definition.number(Keys.OFFER_EXPIRY_MINUTES, NUMBER, "Offer Expiry (minutes)",
 					"How long a partner has to accept a booking offer when staff do not set a time.", "30", 1, 60),
-			Definition.number(Keys.UNASSIGNED_ALERT_HOURS, NUMBER, "No-Partner Warning (hours before)",
-					"Staff are warned when a confirmed booking without a partner starts within this many hours.", "2",
-					1, 48),
+			Definition.number(Keys.UNASSIGNED_ALERT_MINUTES, NUMBER, "No-Partner Warning (minutes before)",
+					"Staff are warned when a confirmed booking without a partner starts within this many minutes"
+							+ " (e.g. 120 = 2 hours).", "120", 5, 2880),
 			Definition.number(Keys.MAX_DAYS_AHEAD, NUMBER, "Book Ahead Limit (days)",
 					"How far ahead a scheduled booking can be made.", "60", 1, 365),
 			Definition.number(Keys.MAX_CART_ITEMS, NUMBER, "Cart Limit (services)",

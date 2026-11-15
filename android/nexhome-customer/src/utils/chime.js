@@ -6,23 +6,37 @@ import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
  * audio for a moment instead of stopping it, and plays at most once in 4 seconds, so one event seen two ways (a push
  * and the next look, a notification and the booking change) sounds once.
  */
-let player = null;
+const players = {};
 let lastPlayed = 0;
+const SOUNDS = {
+  chime: () => require('../../assets/sounds/notify.wav'),
+  doorbell: () => require('../../assets/sounds/doorbell.wav')
+};
 
-export function chime() {
+function play(name) {
   const now = Date.now();
   if (now - lastPlayed < 4000) return;
   lastPlayed = now;
   try {
-    if (!player) {
+    if (!players[name]) {
       setAudioModeAsync({ interruptionModeAndroid: 'duckOthers', shouldPlayInBackground: false }).catch(() => {});
-      player = createAudioPlayer(require('../../assets/sounds/notify.wav'));
+      players[name] = createAudioPlayer(SOUNDS[name]());
     }
-    player.seekTo(0);
-    player.play();
+    players[name].seekTo(0);
+    players[name].play();
   } catch {
     // No sound on this phone right now: the notification still shows in the app
   }
+}
+
+/** The NexHome notification chime. */
+export function chime() {
+  play('chime');
+}
+
+/** The doorbell (Classic ding-dong, `assets/sounds/doorbell.wav`): the professional arrived at the door. */
+export function doorbell() {
+  play('doorbell');
 }
 
 /** When the chime last played (ms). */

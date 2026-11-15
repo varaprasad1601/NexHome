@@ -85,5 +85,10 @@ public record NexHomeBookingResponse(
 		/** When the customer confirmed it (V70): the work stopped then. */
 		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
 				timezone = "Asia/Kolkata")
-		Instant completionConfirmedAt) {
+		Instant completionConfirmedAt,
+
+		/** When the partner reached the work area (V75); null until then. */
+		@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "EEE, dd MMM yyyy HH:mm:ss z", locale = "en",
+				timezone = "Asia/Kolkata")
+		Instant partnerArrivedAt) {
 }

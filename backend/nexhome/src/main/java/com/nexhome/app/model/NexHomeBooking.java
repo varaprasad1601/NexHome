@@ -140,6 +140,10 @@ public class NexHomeBooking {
 	@Column(name = "completion_confirmed_at")
 	private Instant completionConfirmedAt;
 
+	/** When the partner reached the work area (V75); null before, and again once the partner is taken off. */
+	@Column(name = "partner_arrived_at")
+	private Instant partnerArrivedAt;
+
 	@Column(name = "gateway_service_charge", nullable = false, precision = 12, scale = 2)
 	private BigDecimal gatewayServiceCharge = BigDecimal.ZERO;
 

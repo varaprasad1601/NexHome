@@ -152,6 +152,13 @@ public class NexHomeBookingController {
 		return bookingService.requestCompletion(request.bookingId());
 	}
 
+	/** The partner reached the work area (V75); the customer hears the doorbell. */
+	@org.springframework.web.bind.annotation.PutMapping("/arrived")
+	public NexHomeBookingDetailResponse markArrived(
+			@Valid @RequestBody com.nexhome.app.dto.NexHomeBookingArrivedRequest request) {
+		return bookingService.markArrived(request.bookingId());
+	}
+
 	/** Staff: complete a job whose work is finished but not paid (the payment stays pending). */
 	@org.springframework.web.bind.annotation.PutMapping("/complete")
 	@org.springframework.security.access.prepost.PreAuthorize("@permissions.can('BOOKING_MANAGE', 'WRITE')")

@@ -11,6 +11,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import LiveWatcher from '../components/LiveWatcher';
+import NoticeBanner from '../components/NoticeBanner';
 import PaymentLock from '../components/PaymentLock';
 import { BrandSplash, FloatingError } from '../components/ui';
 import { AuthProvider } from '../context/AuthProvider';
@@ -28,6 +29,7 @@ export default function RootLayout() {
         <FloatingError />
         <PaymentLock />
         <LiveWatcher />
+        <NoticeBanner />
       </AuthProvider>
     </SafeAreaProvider>
   );

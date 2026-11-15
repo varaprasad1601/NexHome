@@ -466,6 +466,8 @@ public final class NexHomeLookupCodes {
 		public static final String ONBOARDING = "ONBOARDING";
 		public static final String ACCOUNT = "ACCOUNT";
 		public static final String ANNOUNCEMENT = "ANNOUNCEMENT";
+		/** The partner reached the work area (V75): the customer app rings the doorbell. */
+		public static final String PARTNER_ARRIVED = "PARTNER_ARRIVED";
 
 		private NotificationType() {
 		}
