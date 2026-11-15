@@ -81,6 +81,7 @@ export default function JobScreen() {
   // Only while the work is under way it reloads every 5 s (a pause, resume or finish by NexHome staff, the customer's
   // confirmation); otherwise only when the screen opens
   const detail = useApi(`/api/bookings/${id}`, {
+    live: 'bookings',
     pollMs: 5000,
     pollWhile: (d) => ['IN_PROGRESS', 'PAUSED'].includes(d?.booking?.bookingStatus) && !d?.booking?.actualEndAt
   });

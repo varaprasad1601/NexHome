@@ -29,7 +29,7 @@ function priorityTag(priority) {
  * tag (High red, with an alert icon; Medium amber; Low grey); opening one marks it read. */
 export default function Notifications() {
   const { authRequest } = useAuth();
-  const list = useApi('/api/notifications/me?size=50&app=PARTNER', { pollMs: 60000 });
+  const list = useApi('/api/notifications/me?size=50&app=PARTNER', { live: 'notifications' });
   const items = list.data?.content ?? [];
   const unread = items.some((n) => !n.isRead);
 

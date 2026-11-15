@@ -46,7 +46,26 @@
           }
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#0b438b",
+          "defaultChannel": "default",
+          "sounds": [
+            "./assets/sounds/notify.wav"
+          ]
+        }
+      ]
     ],
     "scheme": "nexhomepartner",
     "extra": {

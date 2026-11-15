@@ -17,7 +17,7 @@ import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -394,10 +394,17 @@ public class NexHomeCashfreePaymentGateway implements NexHomePaymentGateway {
 		return value == null || value.isBlank();
 	}
 
-	/** Connect and read timeouts; buffered, so the JSON goes with a Content-Length (not chunked). */
-	private static org.springframework.http.client.BufferingClientHttpRequestFactory timeouts(int seconds) {
-		SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-		factory.setConnectTimeout(Duration.ofSeconds(seconds));
+	/**
+	 * Connect and read timeouts; buffered, so the JSON goes with a Content-Length (not chunked). The JDK's
+	 * {@code java.net.http} client, not {@code HttpURLConnection} (SimpleClientHttpRequestFactory), which cannot send
+	 * PATCH: ending an order ({@link #cancelOrder}) failed with "Invalid HTTP method: PATCH" before reaching Cashfree.
+	 */
+	static org.springframework.http.client.BufferingClientHttpRequestFactory timeouts(int seconds) {
+		java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+				.version(java.net.http.HttpClient.Version.HTTP_1_1)
+				.connectTimeout(Duration.ofSeconds(seconds))
+				.build();
+		JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(client);
 		factory.setReadTimeout(Duration.ofSeconds(seconds));
 		return new org.springframework.http.client.BufferingClientHttpRequestFactory(factory);
 	}

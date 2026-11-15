@@ -73,11 +73,10 @@ export default function BookingScreen() {
   const { authRequest } = useAuth();
   // While the work is under way it reloads every 15 s (the professional's Finish work asks to confirm); else only
   // when the screen opens
-  const detail = useApi(`/api/bookings/${id}`, {
-    pollMs: 15000,
-    pollWhile: (d) => ['IN_PROGRESS', 'PAUSED'].includes(d?.booking?.bookingStatus) && !d?.booking?.actualEndAt
-  });
-  const payments = useApi(`/api/payments/bookings/${id}`);
+  // Reloaded after every change the professional or NexHome makes (components/LiveWatcher: every 15 s while a
+  // professional is assigned or working, and on each new notification)
+  const detail = useApi(`/api/bookings/${id}`, { live: 'bookings' });
+  const payments = useApi(`/api/payments/bookings/${id}`, { live: 'bookings' });
   const review = useApi(`/api/reviews/bookings/${id}`);
   const contact = useApi('/api/settings/public');
   const supportPhone = contact.data?.SUPPORT_PHONE;

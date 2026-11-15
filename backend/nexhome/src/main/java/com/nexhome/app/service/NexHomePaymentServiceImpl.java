@@ -369,6 +369,13 @@ public class NexHomePaymentServiceImpl implements NexHomePaymentService {
 					if (parsed.attempt() != null) {
 						settlement.recordAttempts(order, List.of(parsed.attempt()), SYSTEM_USER_ID);
 					}
+					if (PaymentOrderStatus.CANCELLED.equals(order.getPaymentStatus())) {
+						// Paid after the order was cancelled (cash collected or booking cancelled): staff refund it
+						settlement.lateOnlinePayment(order, parsed.providerPaymentId(), SYSTEM_USER_ID);
+						stored.setProcessingStatus(WebhookProcessingStatus.FAILED);
+						stored.setProcessingError("Paid after the order was cancelled; refund it at the gateway.");
+						break;
+					}
 					settlement.capture(order, parsed.providerPaymentId(), parsed.paymentMode(), SYSTEM_USER_ID);
 					stored.setProcessingStatus(WebhookProcessingStatus.PROCESSED);
 				}
@@ -565,18 +572,31 @@ public class NexHomePaymentServiceImpl implements NexHomePaymentService {
 			return paymentStatusOf(booking, last);
 		}
 
-		// The open online payments end, at the gateway too, so the customer cannot pay twice
+		// The open online payments end, at the gateway too, so the customer cannot pay twice. A gateway that cannot
+		// end an order (Cashfree refuses while a payment of it is still pending at the bank, or cannot be reached) does
+		// not stop the cash: the order is cancelled here, and a payment that still succeeds on it later is not
+		// captured but reported to the payment staff to refund (`lateOnlinePayment`).
 		for (NexHomePaymentOrder order : orderRepository.findByCheckoutIdOrderByIdDesc(booking.getCheckoutId())) {
 			if (!PAYABLE_ORDERS.contains(order.getPaymentStatus())) {
 				continue;
 			}
+			boolean endedAtGateway = true;
 			if (!NexHomeManualPaymentGateway.PROVIDER.equals(order.getProvider())
 					&& order.getProvider().equals(gateway.provider()) && order.getProviderOrderId() != null) {
-				gateway.cancelOrder(order.getProviderOrderId());
+				try {
+					gateway.cancelOrder(order.getProviderOrderId());
+				}
+				catch (RuntimeException e) {
+					endedAtGateway = false;
+					log.warn("Payment order {} could not be ended at the gateway; cancelled here only: {}",
+							order.getPublicId(), e.getMessage());
+				}
 			}
 			auditRecorder.record("PAYMENT_ORDER_CANCELLED", "PAYMENT_ORDER", order.getPublicId(),
 					Map.of("paymentStatus", order.getPaymentStatus()),
-					Map.of("paymentStatus", PaymentOrderStatus.CANCELLED, "reason", "Paid in cash"), actingUserId);
+					Map.of("paymentStatus", PaymentOrderStatus.CANCELLED, "reason", "Paid in cash",
+							"endedAtGateway", endedAtGateway),
+					actingUserId);
 			order.setPaymentStatus(PaymentOrderStatus.CANCELLED);
 			order.setUpdatedBy(actingUserId);
 		}

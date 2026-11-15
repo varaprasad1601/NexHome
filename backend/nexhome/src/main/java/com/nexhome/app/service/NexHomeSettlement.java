@@ -401,6 +401,33 @@ class NexHomeSettlement {
 		return payments;
 	}
 
+	/**
+	 * The gateway reports a successful payment on an order NexHome had cancelled (the partner collected the cash, or the
+	 * booking was cancelled, while that payment was still pending at the bank, so the gateway could not end the order).
+	 * Nothing is captured; the payment staff are alerted (HIGH) to refund it from the gateway's dashboard.
+	 */
+	void lateOnlinePayment(NexHomePaymentOrder order, String providerPaymentId, Long actingUserId) {
+		List<NexHomeBooking> bookings = bookingRepository.findByCheckoutIdOrderByIdAsc(order.getCheckoutId());
+		String ids = bookings.stream().map(NexHomeBooking::getPublicId).collect(java.util.stream.Collectors.joining(", "));
+		Long referenceId = bookings.isEmpty() ? null : bookings.get(0).getId();
+		notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_PAYMENT_FAILED, "PAYMENT_MANAGE",
+				new NexHomeNotifier.Message(NotificationType.PAYMENT, "Refund needed: paid on a cancelled order",
+						"The customer paid " + order.getAmount().toPlainString() + " " + order.getCurrency()
+								+ " online for " + ids + " (order " + order.getProviderOrderId()
+								+ (providerPaymentId == null ? "" : ", payment " + providerPaymentId)
+								+ ") after that payment was cancelled (paid in cash or the booking cancelled), so it"
+								+ " was not taken into the booking. Refund it from the " + order.getProvider()
+								+ " dashboard.",
+						referenceId == null ? null : NexHomeNotifier.BOOKING, referenceId).high(),
+				actingUserId);
+		auditRecorder.record("LATE_ONLINE_PAYMENT", "PAYMENT_ORDER", order.getPublicId(), null,
+				NexHomeAuditRecorder.values("amount", order.getAmount(), "reference", providerPaymentId,
+						"bookings", ids),
+				actingUserId);
+		log.warn("Payment order {} was paid after it was cancelled (paid in cash): refund {}", order.getPublicId(),
+				providerPaymentId);
+	}
+
 	/** The gateway reported a failed payment: the order FAILED, its bookings' payment FAILED (they stay PENDING). */
 	void fail(NexHomePaymentOrder order, String code, String message, Long actingUserId) {
 		if (PaymentOrderStatus.PAID.equals(order.getPaymentStatus())) {

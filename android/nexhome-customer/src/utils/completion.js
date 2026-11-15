@@ -2,7 +2,8 @@ import { router } from 'expo-router';
 
 /**
  * The professional tapped Finish work on an online job (V70): the customer confirms the work is done
- * (`confirm-completion/[id]`). The screen opens by itself (from Home and the booking page) once per request.
+ * (`confirm-completion/[id]`). The screen opens by itself from any screen (`components/LiveWatcher`, also Home and the
+ * booking page) once per request.
  */
 const prompted = new Set();
 

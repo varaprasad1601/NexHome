@@ -15,7 +15,7 @@ import useTabReset from '../../hooks/useTabReset';
  */
 export default function Jobs() {
   const [tab, setTab] = useState('upcoming');
-  const jobs = useApi('/api/bookings/partner/me?size=100');
+  const jobs = useApi('/api/bookings/partner/me?size=100', { live: 'bookings' });
   // Opening the tab shows Upcoming again
   useTabReset(() => setTab('upcoming'), jobs.refresh);
   const all = jobs.data?.content ?? [];

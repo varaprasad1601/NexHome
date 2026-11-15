@@ -32,15 +32,12 @@ export default function Home() {
   const categories = useApi('/api/catalog/categories');
   const services = useApi('/api/catalog/services?size=8');
   const addresses = useApi('/api/addresses/me');
-  // Kept light: the bell once a minute; bookings every 20 s only while one is under way (the professional may ask to
-  // confirm the job), else on opening the screen
-  const summary = useApi('/api/notifications/me/summary?app=CUSTOMER', { pollMs: 60000 });
-  const bookings = useApi('/api/bookings/me?size=20', {
-    pollMs: 20000,
-    pollWhile: (page) => (page?.content ?? []).some((b) => ['IN_PROGRESS', 'PAUSED'].includes(b.bookingStatus) && !b.actualEndAt)
-  });
+  // No timers of its own: components/LiveWatcher looks at the notifications and bookings on every screen and reloads
+  // these when the professional (or NexHome) changes a booking or a notification arrives
+  const summary = useApi('/api/notifications/me/summary?app=CUSTOMER', { live: 'notifications' });
+  const bookings = useApi('/api/bookings/me?size=20', { live: 'bookings' });
   const contact = useApi('/api/settings/public');
-  const reviews = useApi('/api/reviews/me?size=100');
+  const reviews = useApi('/api/reviews/me?size=100', { live: 'bookings' });
 
   // White status bar text over the blue header while Home is shown
   useFocusEffect(

@@ -161,6 +161,7 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 			throw new InvalidRequestException("Priority must be one of: HIGH, MEDIUM, LOW.");
 		}
 		List<Long> recipients;
+		String userApp = null;
 		if (USER.equals(audience)) {
 			if (request.userId() == null) {
 				throw new InvalidRequestException("User ID is required to notify one user.");
@@ -169,6 +170,7 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 					.filter(user -> AccountStatus.ACTIVE.equals(user.getAccountStatus()))
 					.orElseThrow(() -> new ResourceNotFoundException("User does not exist or is not active."));
 			recipients = List.of(request.userId());
+			userApp = appOfUser(request.userId(), NexHomeText.trimToNull(request.app()));
 		}
 		else if (AUDIENCES.containsKey(audience)) {
 			recipients = userRoleRepository.findActiveHoldersOf(AUDIENCES.get(audience));
@@ -179,17 +181,53 @@ public class NexHomeNotificationServiceImpl implements NexHomeNotificationServic
 		// Staff sending to their own group get it too: only the sender is left out of a group
 		List<NexHomeNotification> sent = notifier.notifyAll(recipients, new NexHomeNotifier.Message(type,
 				request.title().trim(), request.message().trim(), null, null).withPriority(priority)
-				.forApp(SENT_TO.getOrDefault(audience, NexHomeNotifier.ALL)), actingUserId);
+				.forApp(userApp != null ? userApp : SENT_TO.get(audience)), actingUserId);
 		Map<String, Object> details = new LinkedHashMap<>();
 		details.put("audience", audience);
 		details.put("userId", request.userId());
 		details.put("notificationType", type);
 		details.put("priority", priority);
+		details.put("app", userApp != null ? userApp : SENT_TO.get(audience));
 		details.put("title", request.title().trim());
 		details.put("recipients", sent.size());
 		auditRecorder.record("NOTIFICATION_SENT", "NOTIFICATION", audience, null, details, actingUserId);
 		log.info("Notification sent to {} ({} users) by User ID {}", audience, sent.size(), actingUserId);
 		return new NexHomeNotificationSendResponse(audience, sent.size());
+	}
+
+	/** The roles each app is for. */
+	private static final Map<String, List<String>> APP_ROLES = Map.of(NexHomeNotifier.CUSTOMER,
+			List.of(NexHomeRole.CUSTOMER), NexHomeNotifier.PARTNER, List.of(NexHomeRole.PARTNER),
+			NexHomeNotifier.STAFF, AUDIENCES.get("STAFF"));
+
+	/**
+	 * The app a note to one user shows in: the one asked for (the user must hold its role), else the user's only one.
+	 * Never ALL, so the same number's other accounts do not see it.
+	 */
+	private String appOfUser(Long userId, String requested) {
+		List<String> held = APPS.stream()
+				.filter(app -> userRoleRepository.existsByUserIdAndRoleCodeInAndActiveTrueAndRoleActiveFlagTrue(userId,
+						APP_ROLES.get(app)))
+				.toList();
+		if (requested != null) {
+			String app = requested.toUpperCase();
+			if (!APPS.contains(app)) {
+				throw new InvalidRequestException("App must be one of: CUSTOMER, PARTNER, STAFF.");
+			}
+			if (!held.contains(app)) {
+				throw new InvalidRequestException("This user has no active " + app.toLowerCase() + " account.");
+			}
+			return app;
+		}
+		if (held.size() == 1) {
+			return held.get(0);
+		}
+		if (held.isEmpty()) {
+			throw new InvalidRequestException("This user has no customer, partner or staff account to notify.");
+		}
+		throw new InvalidRequestException("This number has more than one account (" + String.join(", ", held.stream()
+				.map(app -> app.charAt(0) + app.substring(1).toLowerCase()).toList())
+				+ "); choose the app to send it to.");
 	}
 
 	@Override

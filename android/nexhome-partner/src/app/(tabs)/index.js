@@ -2,7 +2,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { setStatusBarStyle } from 'expo-status-bar';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Linking, Pressable, RefreshControl, ScrollView, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -30,8 +30,9 @@ function Stat({ label, value, icon }) {
 
 /**
  * Home: greeting and bell, the Online / Offline switch (PUT /api/partners/profiles/availability/update; BUSY is set
- * by work), new offers to accept or decline (GET /api/bookings/offers/me), jobs assigned and waiting for an answer,
- * today's jobs (GET /api/bookings/partner/me), the rating (GET /api/reviews/summary) and job figures
+ * by work), Working now (the work under way, and finished jobs waiting for their payment), new offers to accept or
+ * decline (GET /api/bookings/offers/me), jobs assigned and waiting for an answer, Today (only jobs scheduled for today
+ * or completed today, not ones accepted today for a later day; GET /api/bookings/partner/me), the rating (GET /api/reviews/summary) and job figures
  * (GET /api/bookings/partner-stats/{id}).
  */
 export default function Home() {
@@ -48,52 +49,48 @@ export default function Home() {
     }, [])
   );
   const id = profile?.partnerProfileId;
-  // Kept light: offers and the bell every 30 s (a rising unread count also reloads offers and jobs), jobs every minute
-  const offers = useApi('/api/bookings/offers/me?size=20', { pollMs: 30000 });
-  const jobs = useApi('/api/bookings/partner/me?size=100', { pollMs: 60000 });
-  const summary = useApi('/api/notifications/me/summary?app=PARTNER', { pollMs: 30000 });
+  // No timers of their own: components/LiveWatcher looks at the notifications every 30 s on every screen and a new one
+  // (a job offered or assigned, cancelled, ...) reloads these at once; jobs also once a minute (status changes that
+  // send no notification)
+  const offers = useApi('/api/bookings/offers/me?size=20', { live: 'bookings' });
+  const jobs = useApi('/api/bookings/partner/me?size=100', { live: 'bookings', pollMs: 60000 });
+  const summary = useApi('/api/notifications/me/summary?app=PARTNER', { live: 'notifications' });
   const rating = useApi(id ? `/api/reviews/summary?partnerProfileId=${id}` : null);
-  const stats = useApi(id ? `/api/bookings/partner-stats/${id}` : null);
+  const stats = useApi(id ? `/api/bookings/partner-stats/${id}` : null, { live: 'bookings' });
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
   const unread = summary.data?.unread ?? 0;
-  // A new notification (a job assigned or offered, cancelled, ...): load the offers and jobs at once, not at their
-  // next 20-second check
-  const lastUnread = useRef(null);
-  useEffect(() => {
-    if (lastUnread.current !== null && unread > lastUnread.current) {
-      offers.reload();
-      jobs.reload();
-      stats.reload();
-    }
-    lastUnread.current = unread;
-  }, [unread]); // eslint-disable-line react-hooks/exhaustive-deps
   const approved = profile?.onboardingStatus === 'APPROVED';
   const availability = profile?.availabilityStatus;
   const all = jobs.data?.content ?? [];
   const today = todayInIndia();
   const waiting = all.filter((j) => j.bookingStatus === 'ASSIGNED');
-  // Work under way or accepted, and anything else scheduled for today (assigned ones are listed above)
-  // The current job: the one being worked on, else the next accepted one (as soon as possible first, then soonest)
   const startOf = (job) => (job.scheduledStartAt ? parseApiDate(job.scheduledStartAt)?.date.getTime() ?? Infinity : -Infinity);
-  const current =
-    all.find((j) => ['IN_PROGRESS', 'PAUSED'].includes(j.bookingStatus)) ??
-    [...all].filter((j) => j.bookingStatus === 'PARTNER_EN_ROUTE').sort((a, b) => startOf(a) - startOf(b))[0] ??
-    null;
+  const endOf = (job) => parseApiDate(job.actualEndAt)?.date.getTime() ?? 0;
+  // Working now: the work under way (paused too), and finished jobs still waiting for their payment
+  const working = all
+    .filter((j) => ['IN_PROGRESS', 'PAUSED'].includes(j.bookingStatus) || (j.bookingStatus === 'COMPLETED' && !isPaid(j)))
+    .sort((a, b) => Number(b.bookingStatus !== 'COMPLETED') - Number(a.bookingStatus !== 'COMPLETED') || startOf(a) - startOf(b));
+  const workingIds = new Set(working.map((j) => j.bookingId));
+  // Today: only jobs scheduled for today (an instant job, "as soon as possible", counts as today) and jobs completed
+  // today; a job accepted today for a later day is not here (Jobs > Upcoming lists it). Assigned ones waiting for an
+  // answer are listed above.
+  const isToday = (job) => (job.scheduledStartAt ? isoDayOf(job.scheduledStartAt) === today : true);
   const todays = all.filter(
-    (j) => j.bookingId !== current?.bookingId
-  ).filter(
     (j) =>
-      ['PARTNER_EN_ROUTE', 'IN_PROGRESS', 'PAUSED'].includes(j.bookingStatus) ||
-      // Finished today, or finished and still waiting for the payment
-      (j.bookingStatus === 'COMPLETED' && (isoDayOf(j.actualEndAt) === today || !isPaid(j))) ||
-      (['PENDING', 'CONFIRMED'].includes(j.bookingStatus) && isoDayOf(j.scheduledStartAt) === today)
+      !workingIds.has(j.bookingId) &&
+      ((['CONFIRMED', 'PARTNER_EN_ROUTE'].includes(j.bookingStatus) && isToday(j)) ||
+        (j.bookingStatus === 'COMPLETED' && isoDayOf(j.actualEndAt) === today))
   );
-  // The most recent first, whatever its status (by when it finished, else started, else its scheduled start)
-  const recentOf = (job) => parseApiDate(job.actualEndAt ?? job.actualStartAt ?? job.scheduledStartAt)?.date.getTime() ?? 0;
-  todays.sort((a, b) => recentOf(b) - recentOf(a));
+  // Still to do first (soonest first), then the ones done today (latest first)
+  todays.sort((a, b) => {
+    const doneA = a.bookingStatus === 'COMPLETED';
+    const doneB = b.bookingStatus === 'COMPLETED';
+    if (doneA !== doneB) return doneA ? 1 : -1;
+    return doneA ? endOf(b) - endOf(a) : startOf(a) - startOf(b);
+  });
 
   const refresh = async () => {
     setRefreshing(true);
@@ -196,22 +193,24 @@ export default function Home() {
           <Stat icon="trending-up" label="Earned" value={stats.data ? money(stats.data.totalEarnings ?? 0) : '—'} />
         </View>
 
-        {current ? (
+        {working.length ? (
           <View style={{ gap: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Text weight="extrabold" style={{ fontSize: 17, color: colors.navy }}>
-                Current job
+                Working now
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.greenSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
                 <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: colors.green }} />
                 <Text weight="extrabold" style={{ fontSize: 10.5, color: colors.greenDark }}>
-                  Now
+                  In progress
                 </Text>
               </View>
             </View>
-            <View style={{ borderRadius: 20, borderWidth: 2, borderColor: colors.green }}>
-              <JobCard job={current} />
-            </View>
+            {working.map((job) => (
+              <View key={job.bookingId} style={{ borderRadius: 20, borderWidth: 2, borderColor: colors.green }}>
+                <JobCard job={job} />
+              </View>
+            ))}
           </View>
         ) : null}
 
@@ -245,7 +244,7 @@ export default function Home() {
             todays.map((job) => <JobCard key={job.bookingId} job={job} />)
           ) : (
             <Card>
-              <Empty icon="sun" title={jobs.loading ? 'Loading your jobs…' : 'No jobs today'} text={offerList.length || jobs.loading ? undefined : 'Stay online and new offers show here.'} />
+              <Empty icon="sun" title={jobs.loading ? 'Loading your jobs…' : 'No jobs scheduled today'} text={jobs.loading ? undefined : 'Jobs for later days are in Jobs > Upcoming.'} />
             </Card>
           )}
           <ErrorBox message={jobs.error || offers.error} />

@@ -254,6 +254,43 @@ class NexHomeCashfreePaymentGatewayTest {
 	}
 
 	@Test
+	void endsAnOrderWithPatchTerminated() {
+		server.expect(requestTo(BASE + "/orders/NHabc_1"))
+				.andExpect(method(HttpMethod.PATCH))
+				.andExpect(header("x-client-secret", SECRET))
+				.andExpect(content().json("{\"order_status\": \"TERMINATED\"}"))
+				.andRespond(withSuccess("{\"order_id\": \"NHabc_1\", \"order_status\": \"TERMINATED\"}",
+						MediaType.APPLICATION_JSON));
+
+		gateway.cancelOrder("NHabc_1");
+		server.verify();
+	}
+
+	@Test
+	void aRefusedEndIsAServiceUnavailable() {
+		// Cashfree refuses to end an order while one of its payments is still pending at the bank
+		server.expect(requestTo(BASE + "/orders/NHabc_1"))
+				.andExpect(method(HttpMethod.PATCH))
+				.andRespond(withBadRequest().contentType(MediaType.APPLICATION_JSON)
+						.body("{\"message\": \"order cannot be terminated\", \"code\": \"order_terminate_failed\"}"));
+
+		assertThatThrownBy(() -> gateway.cancelOrder("NHabc_1"))
+				.isInstanceOf(ServiceUnavailableException.class)
+				.hasMessage("The payment gateway could not cancel the online payment; please try again.");
+		server.verify();
+	}
+
+	@Test
+	void theRealConnectionCanSendPatch() throws Exception {
+		// The mock server above skips the connection; HttpURLConnection (SimpleClientHttpRequestFactory) threw
+		// "Invalid HTTP method: PATCH" here, so ending an order never reached Cashfree. Creating the request opens
+		// nothing.
+		var request = NexHomeCashfreePaymentGateway.timeouts(5)
+				.createRequest(java.net.URI.create(BASE + "/orders/NHabc_1"), HttpMethod.PATCH);
+		assertThat(request.getMethod()).isEqualTo(HttpMethod.PATCH);
+	}
+
+	@Test
 	void keysAreRequired() {
 		assertThatThrownBy(() -> new NexHomeCashfreePaymentGateway(
 				new NexHomeCashfreeProperties("", "", "sandbox", null, null, 5), RestClient.create()))

@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiError, apiRequest } from '../api/client';
+import { unregisterPush } from '../utils/push';
 
 const TOKENS_KEY = 'nexhome.tokens';
 const USER_KEY = 'nexhome.user';
@@ -45,6 +46,9 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(async () => {
     const refreshToken = tokensRef.current?.refreshToken;
+    // This phone stops getting the account's pushes (while the access token still works)
+    const accessToken = tokensRef.current?.accessToken;
+    if (accessToken) await unregisterPush((path, options) => apiRequest(path, { ...options, token: accessToken }));
     setProfile(null);
     await store(null, null);
     if (refreshToken) {

@@ -338,7 +338,8 @@ class NexHomeStaffNotificationFlowTest {
 
 	/**
 	 * V54: a staff member who is also a customer sees staff notes only in the console (app STAFF) and customer notes
-	 * only in the customer app (app CUSTOMER); a note to them alone is in both; without app, all of them.
+	 * only in the customer app (app CUSTOMER); a note to them alone goes to the app chosen (V72: never to both; without
+	 * one, 400 for such a number); without app, all of them.
 	 */
 	@Test
 	void eachAppShowsOnlyItsOwnNotifications() throws Exception {
@@ -355,16 +356,26 @@ class NexHomeStaffNotificationFlowTest {
 				.andExpect(status().isCreated());
 		perform(post("/api/notifications/send"), sender, "{\"audience\": \"USER\", \"userId\": " + both.getId()
 				+ ", \"title\": \"Personal note " + tag + "\", \"message\": \"For you.\"}")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(
+						"This number has more than one account (Customer, Staff); choose the app to send it to."));
+		perform(post("/api/notifications/send"), sender, "{\"audience\": \"USER\", \"userId\": " + both.getId()
+				+ ", \"app\": \"PARTNER\", \"title\": \"x\", \"message\": \"y\"}")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("This user has no active partner account."));
+		perform(post("/api/notifications/send"), sender, "{\"audience\": \"USER\", \"userId\": " + both.getId()
+				+ ", \"app\": \"CUSTOMER\", \"title\": \"Personal note " + tag + "\", \"message\": \"For you.\"}")
 				.andExpect(status().isCreated());
 
 		perform(get("/api/notifications/me?size=50&app=CUSTOMER"), bothToken, null)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.content[?(@.title == 'Customer note " + tag + "')].audience").value("CUSTOMER"))
-				.andExpect(jsonPath("$.content[?(@.title == 'Personal note " + tag + "')].audience").value("ALL"))
+				.andExpect(jsonPath("$.content[?(@.title == 'Personal note " + tag + "')].audience").value("CUSTOMER"))
 				.andExpect(jsonPath("$.content[?(@.title == 'Staff note " + tag + "')]").isEmpty());
 		perform(get("/api/notifications/me?size=50&app=STAFF"), bothToken, null)
 				.andExpect(jsonPath("$.content[?(@.title == 'Staff note " + tag + "')].audience").value("STAFF"))
-				.andExpect(jsonPath("$.content[?(@.title == 'Customer note " + tag + "')]").isEmpty());
+				.andExpect(jsonPath("$.content[?(@.title == 'Customer note " + tag + "')]").isEmpty())
+				.andExpect(jsonPath("$.content[?(@.title == 'Personal note " + tag + "')]").isEmpty());
 		perform(get("/api/notifications/me?size=50"), bothToken, null)
 				.andExpect(jsonPath("$.totalElements").value(3));
 		perform(get("/api/notifications/me/summary?app=CUSTOMER"), bothToken, null)

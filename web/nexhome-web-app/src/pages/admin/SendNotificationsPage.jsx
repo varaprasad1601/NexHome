@@ -14,8 +14,13 @@ import { PriorityTag } from '../../components/admin/NotificationsMenu';
 import useLookupLabels from '../../hooks/useLookupLabels';
 import { formatNumber } from '../../utils/format';
 
-const EMPTY_FORM = { audience: 'CUSTOMERS', mobile: '', notificationType: 'ANNOUNCEMENT', priority: 'MEDIUM', title: '', message: '' };
+const EMPTY_FORM = { audience: 'CUSTOMERS', app: 'CUSTOMER', mobile: '', notificationType: 'ANNOUNCEMENT', priority: 'MEDIUM', title: '', message: '' };
 const PRIORITY_OPTIONS = Object.entries(NOTIFICATION_PRIORITIES).map(([value, level]) => ({ value, label: level.label }));
+/** The app a note to one user shows in: only that account of the number sees it (not its other accounts). */
+const APP_OPTIONS = [
+  { value: 'CUSTOMER', label: 'Customer app' },
+  { value: 'PARTNER', label: 'Partner app' }
+];
 
 /**
  * The send form (NOTIFICATION_MANAGE write): to every customer, partner or staff member, or one user found by mobile
@@ -33,14 +38,12 @@ function SendForm({ lookups, onSent }) {
     setErrors((current) => ({ ...current, [field]: undefined }));
   };
 
-  /** The user with this mobile number among customers and partners (null if none). */
-  const findUser = async (mobile) => {
-    const searches = [
-      can('CUSTOMER_MANAGE', 'READ') && authRequest(`/api/users/customers?size=5&search=${mobile}`),
-      can('PARTNER_MANAGE', 'READ') && authRequest(`/api/users/partners?size=5&search=${mobile}`)
-    ].filter(Boolean);
-    const pages = await Promise.all(searches.map((search) => search.catch(() => ({ content: [] }))));
-    return pages.flatMap((page) => page.content).find((user) => user.mobileNumber === mobile) ?? null;
+  /** The user with this mobile number among the customers or the partners, by the app chosen (null if none). */
+  const findUser = async (mobile, app) => {
+    const list = app === 'PARTNER' ? ['PARTNER_MANAGE', 'partners'] : ['CUSTOMER_MANAGE', 'customers'];
+    if (!can(list[0], 'READ')) return null;
+    const page = await authRequest(`/api/users/${list[1]}?size=5&search=${mobile}`).catch(() => ({ content: [] }));
+    return page.content.find((user) => user.mobileNumber === mobile) ?? null;
   };
 
   const submit = async (e) => {
@@ -58,9 +61,9 @@ function SendForm({ lookups, onSent }) {
     try {
       let userId = null;
       if (form.audience === 'USER') {
-        const user = await findUser(mobile);
+        const user = await findUser(mobile, form.app);
         if (!user) {
-          setErrors({ mobile: 'No customer or partner has this mobile number' });
+          setErrors({ mobile: `No ${form.app === 'PARTNER' ? 'partner' : 'customer'} has this mobile number` });
           setSending(false);
           return;
         }
@@ -71,6 +74,7 @@ function SendForm({ lookups, onSent }) {
         body: {
           audience: form.audience,
           userId,
+          app: form.audience === 'USER' ? form.app : undefined,
           notificationType: form.notificationType,
           priority: form.priority,
           title: form.title.trim(),
@@ -110,8 +114,13 @@ function SendForm({ lookups, onSent }) {
           <Select id="notify-priority" value={form.priority} onChange={(value) => set('priority', value)} options={PRIORITY_OPTIONS} />
         </FormField>
         {form.audience === 'USER' && (
+          <FormField label="Show In" htmlFor="notify-app" hint="Only this account of the number gets it: a number that is also a partner (or customer) does not see it in the other app.">
+            <Select id="notify-app" value={form.app} onChange={(value) => set('app', value)} options={APP_OPTIONS} />
+          </FormField>
+        )}
+        {form.audience === 'USER' && (
           <div className="md:col-span-2">
-            <FormField label="Mobile Number" htmlFor="notify-mobile" error={errors.mobile} hint="A customer's or partner's number, without +91.">
+            <FormField label="Mobile Number" htmlFor="notify-mobile" error={errors.mobile} hint="The customer's or partner's number, without +91.">
               <input
                 id="notify-mobile"
                 className={fieldClass(errors.mobile)}

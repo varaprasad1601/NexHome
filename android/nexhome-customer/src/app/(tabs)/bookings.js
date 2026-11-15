@@ -36,7 +36,7 @@ const telOf = (number) => `tel:${String(number).replace(/[^\d+]/g, '')}`;
  */
 export default function Bookings() {
   const [tab, setTab] = useState('upcoming');
-  const bookings = useApi('/api/bookings/me?size=100');
+  const bookings = useApi('/api/bookings/me?size=100', { live: 'bookings' });
   const reviews = useApi('/api/reviews/me?size=100');
   const contact = useApi('/api/settings/public');
   const me = useApi('/api/profiles/customers/me');

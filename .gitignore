@@ -4,3 +4,4 @@
 # Cloud storage keys (they belong in backend/nexhome/.env)
 /cloudflare.properties
 /APP_FAQS.txt
+/nexhome-app
