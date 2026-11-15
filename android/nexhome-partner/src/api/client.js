@@ -61,7 +61,8 @@ function sendMultipart(url, method, headers, form) {
  * sent as multipart (through XMLHttpRequest, see sendMultipart; it sets the boundary), anything else as JSON.
  */
 export async function apiRequest(path, { method = 'GET', body, token } = {}) {
-  const headers = { Accept: 'application/json' };
+  // The app the request comes from: the backend then never hides a notice meant for this number's other app
+  const headers = { Accept: 'application/json', 'X-NexHome-App': 'PARTNER' };
   const multipart = typeof FormData !== 'undefined' && body instanceof FormData;
   if (body !== undefined && !multipart) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;

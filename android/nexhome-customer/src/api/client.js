@@ -39,7 +39,8 @@ export function fileUrl(path) {
 
 /** One request: JSON in and out, the bearer token when given; non-2xx responses throw ApiError. */
 export async function apiRequest(path, { method = 'GET', body, token } = {}) {
-  const headers = { Accept: 'application/json' };
+  // The app the request comes from: the backend then never hides a notice meant for this number's other app
+  const headers = { Accept: 'application/json', 'X-NexHome-App': 'CUSTOMER' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
   let response;

@@ -49,6 +49,10 @@ public class NexHomeBookingStatusHistory {
 	@Column(name = "reason", columnDefinition = "text")
 	private String reason;
 
+	/** The app the change came from (V73): CUSTOMER, PARTNER, STAFF or SYSTEM; null for older rows and clients. */
+	@Column(name = "changed_from", updatable = false, length = 20)
+	private String changedFrom;
+
 	@CreationTimestamp
 	@Column(name = "creation_date", nullable = false, updatable = false)
 	private Instant creationDate;

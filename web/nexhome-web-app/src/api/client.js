@@ -19,7 +19,12 @@ export async function apiRequest(path, { method = 'GET', body, token } = {}) {
   const multipart = body instanceof FormData;
   // The browser sets the multipart content type itself, with its boundary
   if (body !== undefined && !multipart) headers['Content-Type'] = 'application/json';
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+    // Signed-in calls come from the admin console: the backend then still tells this number's partner or customer
+    // account of what its staff account did (public calls send no extra header, so no CORS preflight)
+    headers['X-NexHome-App'] = 'STAFF';
+  }
 
   let response;
   try {

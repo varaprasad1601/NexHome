@@ -9,6 +9,8 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import com.nexhome.app.model.NexHomeLookupCodes.DeliveryStatus;
 import com.nexhome.app.model.NexHomeLookupCodes.NotificationChannel;
@@ -128,16 +130,40 @@ class NexHomeNotifier {
 		};
 	}
 
-	/** Notifies each user once; returns the notifications stored. */
+	/** The header the apps and the console send with every request: the app it came from. */
+	static final String APP_HEADER = "X-NexHome-App";
+
+	/** The app the current request came from (CUSTOMER, PARTNER or STAFF), or null (no request, an older client). */
+	static String actingApp() {
+		if (!(RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes)) {
+			return null;
+		}
+		String app = attributes.getRequest().getHeader(APP_HEADER);
+		if (app == null) {
+			return null;
+		}
+		app = app.trim().toUpperCase();
+		return List.of(CUSTOMER, PARTNER, STAFF).contains(app) ? app : null;
+	}
+
+	/**
+	 * Notifies each user once; returns the notifications stored. The actor is not told of their own action in the app
+	 * they acted from, but is in another one: one number may be staff, a partner and a customer, so an admin assigning
+	 * a job to their own partner account (or a partner whose number also booked the job) still hears of it there.
+	 * Without the app header (older clients) the actor is never told, as before.
+	 */
 	List<NexHomeNotification> notifyAll(Collection<Long> userIds, Message message, Long actingUserId) {
 		Set<Long> recipients = new LinkedHashSet<>(userIds);
-		recipients.removeIf(id -> id == null || SYSTEM_USER_ID.equals(id) || Objects.equals(id, actingUserId));
-		if (recipients.isEmpty()) {
-			return List.of();
-		}
+		recipients.removeIf(id -> id == null || SYSTEM_USER_ID.equals(id));
+		String actingApp = actingApp();
 		Instant now = Instant.now();
 		List<NexHomeNotification> notifications = new ArrayList<>();
 		for (Long userId : recipients) {
+			String audience = audienceOf(userId, message);
+			if (Objects.equals(userId, actingUserId)
+					&& (actingApp == null || ALL.equals(audience) || actingApp.equals(audience))) {
+				continue;
+			}
 			NexHomeNotification notification = new NexHomeNotification();
 			notification.setUser(userRepository.getReferenceById(userId));
 			notification.setNotificationType(message.type());
@@ -146,10 +172,13 @@ class NexHomeNotifier {
 			notification.setReferenceType(message.referenceType());
 			notification.setReferenceId(message.referenceId());
 			notification.setPriority(message.priority());
-			notification.setAudience(audienceOf(userId, message));
+			notification.setAudience(audience);
 			notification.setCreatedBy(actingUserId);
 			notification.setUpdatedBy(actingUserId);
 			notifications.add(notification);
+		}
+		if (notifications.isEmpty()) {
+			return List.of();
 		}
 		notificationRepository.saveAll(notifications);
 		deliveryLogRepository.saveAll(notifications.stream().map(notification -> {

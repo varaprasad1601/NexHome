@@ -2,8 +2,8 @@ import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 
 /**
- * Asking the customer to rate a completed booking they have not reviewed: the rating screen opens by itself (from
- * Home and the booking's page), once per booking each time the app runs, and never again for one they skipped
+ * Asking the customer to rate a completed booking they have not reviewed: the rating screen (for a cash job first
+ * "Confirm your payment") opens by itself from any screen (`components/LiveWatcher`, also Home and the booking's page), once per booking each time the app runs, and never again for one they skipped
  * (kept on the phone, the last 100).
  */
 const SKIPPED_KEY = 'nexhome.skippedRatings';
@@ -18,6 +18,11 @@ async function skippedSet() {
     skipped = new Set();
   }
   return skipped;
+}
+
+/** Whether the rating screen was already opened for this booking this session. */
+export function wasRatingShown(bookingId) {
+  return prompted.has(Number(bookingId));
 }
 
 /** The rating screen is open for this booking (it is not opened again this session). */

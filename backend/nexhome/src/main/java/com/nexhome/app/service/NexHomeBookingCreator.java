@@ -216,6 +216,8 @@ class NexHomeBookingCreator {
 		history.setNewStatus(newStatus);
 		history.setChangedBy(actingUserId);
 		history.setReason(reason);
+		// The app it came from (V73): NexHome itself for user 1, else the request's X-NexHome-App header
+		history.setChangedFrom(Long.valueOf(1L).equals(actingUserId) ? "SYSTEM" : NexHomeNotifier.actingApp());
 		history.setCreatedBy(actingUserId);
 		history.setUpdatedBy(actingUserId);
 		historyRepository.save(history);

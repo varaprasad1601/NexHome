@@ -371,6 +371,111 @@ class NexHomeSupportFlowTest {
 		}
 	}
 
+	/**
+	 * One number that is staff, a customer and a partner: the job it books for itself, assigns from the console
+	 * (header X-NexHome-App STAFF) to its own partner account and accepts from the partner app reaches each app with
+	 * only its own notices: "New job assigned" in the partner app (not the customer app, although the same user is the
+	 * booking's customer), "confirmed" and "Partner accepted" in the customer app.
+	 */
+	@Test
+	void oneNumberGetsEachBookingNoticeInItsOwnApp() throws Exception {
+		NexHomeUser me = newUser("CUSTOMER");
+		for (String role : List.of("PARTNER", "SUPER_USER")) {
+			userRoleRepository.saveAndFlush(userMapper.toUserRoleEntity(me, roleRepository.findByCode(role).orElseThrow(), 1L));
+		}
+		String token = accessToken(me.getId());
+		String suffix = UUID.randomUUID().toString().substring(0, 8);
+		long categoryId = json(perform(post("/api/catalog/categories/create"), token,
+				"{\"name\": \"Mine %s\"}".formatted(suffix))
+				.andExpect(status().isCreated())).get("serviceCategoryId").asLong();
+		long serviceId = json(perform(post("/api/catalog/services/create"), token, """
+				{"categoryId": %d, "name": "Tap Fix %s", "serviceTarget": "APPLIANCE", "pricingType": "FIXED",
+				 "basePrice": 300, "minimumCharge": 0, "estimatedDurationMinutes": 60,
+				 "platformCommissionType": "PERCENTAGE", "platformCommissionValue": 10, "isActive": true}"""
+				.formatted(categoryId, suffix))
+				.andExpect(status().isCreated())).get("serviceId").asLong();
+		long customerId = json(perform(post("/api/profiles/customers/create"), token,
+				"{\"userId\": %d, \"firstName\": \"Same\", \"lastName\": \"Number\"}".formatted(me.getId()))
+				.andExpect(status().isCreated())).get("customerProfileId").asLong();
+		long addressId = json(perform(post("/api/addresses/create"), token, """
+				{"userId": %d, "contactName": "Same", "mobileNumber": "9876543210", "addressType": "HOME",
+				 "label": "Home", "addressLine1": "Plot 7", "city": "Hyderabad", "state": "Telangana",
+				 "postalCode": "500081"}""".formatted(me.getId()))
+				.andExpect(status().isCreated())).get("addressId").asLong();
+		long partnerId = approvedPartner(token, me, categoryId, serviceId);
+		LocalDate monday = LocalDate.now(IST).plusDays(1).with(TemporalAdjusters.nextOrSame(DayOfWeek.MONDAY));
+
+		long bookingId = json(perform(post("/api/bookings/create").header("X-NexHome-App", "STAFF"), token, """
+				{"customerProfileId": %d, "serviceId": %d, "addressId": %d, "bookingType": "SCHEDULED",
+				 "scheduledStartAt": "%s", "paymentMethod": "CASH"}""".formatted(customerId, serviceId, addressId,
+				monday.atTime(10, 0).atZone(IST).toInstant()))
+				.andExpect(status().isCreated())).get("bookingId").asLong();
+		perform(put("/api/bookings/status/update").header("X-NexHome-App", "STAFF"), token,
+				"{\"bookingId\": %d, \"bookingStatus\": \"CONFIRMED\"}".formatted(bookingId))
+				.andExpect(status().isOk());
+		perform(post("/api/bookings/assignments/offer").header("X-NexHome-App", "STAFF"), token,
+				"{\"bookingId\": %d, \"partnerProfileId\": %d, \"direct\": true}".formatted(bookingId, partnerId))
+				.andExpect(status().isCreated());
+		// Accepted from the partner app
+		perform(put("/api/bookings/status/update").header("X-NexHome-App", "PARTNER"), token,
+				"{\"bookingId\": %d, \"bookingStatus\": \"PARTNER_EN_ROUTE\"}".formatted(bookingId))
+				.andExpect(status().isOk());
+
+		JsonNode partnerApp = json(perform(get("/api/notifications/me?size=50&app=PARTNER"), token, null)
+				.andExpect(status().isOk())).get("content");
+		JsonNode customerApp = json(perform(get("/api/notifications/me?size=50&app=CUSTOMER"), token, null)
+				.andExpect(status().isOk())).get("content");
+		List<String> partnerTitles = new java.util.ArrayList<>();
+		partnerApp.forEach(notice -> partnerTitles.add(notice.get("title").asString()));
+		List<String> customerTitles = new java.util.ArrayList<>();
+		customerApp.forEach(notice -> customerTitles.add(notice.get("title").asString()));
+		assertThat(partnerTitles).anyMatch(title -> title.startsWith("New job assigned"))
+				.noneMatch(title -> title.startsWith("Partner accepted") || title.endsWith("confirmed"));
+		assertThat(customerTitles).anyMatch(title -> title.startsWith("Partner accepted"))
+				.anyMatch(title -> title.endsWith("confirmed"))
+				.noneMatch(title -> title.startsWith("New job assigned"));
+
+		// A second job, declined from the partner app: the history says Partner Declined by the partner (not by
+		// Admin, the number's highest role), the customer hears of it, staff as HIGH
+		long second = json(perform(post("/api/bookings/create").header("X-NexHome-App", "STAFF"), token, """
+				{"customerProfileId": %d, "serviceId": %d, "addressId": %d, "bookingType": "SCHEDULED",
+				 "scheduledStartAt": "%s", "paymentMethod": "CASH"}""".formatted(customerId, serviceId, addressId,
+				monday.plusWeeks(1).atTime(10, 0).atZone(IST).toInstant()))
+				.andExpect(status().isCreated())).get("bookingId").asLong();
+		perform(put("/api/bookings/status/update").header("X-NexHome-App", "STAFF"), token,
+				"{\"bookingId\": %d, \"bookingStatus\": \"CONFIRMED\"}".formatted(second))
+				.andExpect(status().isOk());
+		long assignmentId = json(perform(post("/api/bookings/assignments/offer").header("X-NexHome-App", "STAFF"), token,
+				"{\"bookingId\": %d, \"partnerProfileId\": %d, \"direct\": true}".formatted(second, partnerId))
+				.andExpect(status().isCreated())).get("assignmentId").asLong();
+		perform(put("/api/bookings/assignments/respond").header("X-NexHome-App", "PARTNER"), token,
+				"{\"assignmentId\": %d, \"accept\": false, \"rejectionReason\": \"Too far\"}".formatted(assignmentId))
+				.andExpect(status().isOk());
+
+		JsonNode history = json(perform(get("/api/bookings/" + second), token, null).andExpect(status().isOk()))
+				.get("history");
+		JsonNode declined = history.get(history.size() - 1);
+		assertThat(declined.get("newStatus").asString()).isEqualTo("CONFIRMED");
+		assertThat(declined.get("action").asString()).isEqualTo("PARTNER_DECLINED");
+		assertThat(declined.get("changedByParty").asString()).isEqualTo("PARTNER");
+		assertThat(declined.get("changedByRole").asString()).isEqualTo("Partner");
+		assertThat(declined.get("changedByName").asString()).isEqualTo("Kiran Rao");
+		// The confirmation from the console stays the admin's
+		assertThat(history.get(1).get("changedByParty").asString()).isEqualTo("STAFF");
+
+		JsonNode customerNotices = json(perform(get("/api/notifications/me?size=50&app=CUSTOMER"), token, null)).get("content");
+		assertThat(customerNotices.findValuesAsString("title")).contains("Partner declined " + json(perform(
+				get("/api/bookings/" + second), token, null)).get("booking").get("publicId").asString());
+		JsonNode staffNotices = json(perform(get("/api/notifications/me?size=50&app=STAFF"), token, null)).get("content");
+		boolean highAlert = false;
+		for (JsonNode notice : staffNotices) {
+			if (notice.get("title").asString().startsWith("Partner declined")) {
+				highAlert = "HIGH".equals(notice.get("priority").asString());
+			}
+		}
+		assertThat(highAlert).isTrue();
+	}
+
 	private long approvedPartner(String staff, NexHomeUser partnerUser, long categoryId, long serviceId)
 			throws Exception {
 		long partnerId = json(perform(post("/api/partners/profiles/create"), staff, """

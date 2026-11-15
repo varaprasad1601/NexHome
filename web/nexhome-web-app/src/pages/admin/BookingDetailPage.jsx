@@ -67,6 +67,8 @@ const STAFF_TIMER_ACTIONS = (status, finished = false) =>
 /** The history reason the backend writes when staff take the partner off (shown as "Unassigned" alone). */
 const PARTNER_UNASSIGNED = 'Partner unassigned';
 /** A history row of the partner taken off (unassigned, or declining): back to CONFIRMED from ASSIGNED / PARTNER ACCEPTED. */
+/** The partner's own words of a "Partner declined: <reason>" history row. */
+const declineReason = (reason = '') => reason.replace(/^Partner declined:?\s*/, '') || 'No reason given';
 const isUnassigned = (row) => row.newStatus === 'CONFIRMED' && ['ASSIGNED', 'PARTNER_EN_ROUTE'].includes(row.oldStatus);
 /** The partner can be unassigned until the work starts. */
 const UNASSIGNABLE = ['ASSIGNED', 'PARTNER_EN_ROUTE'];
@@ -931,7 +933,9 @@ export default function BookingDetailPage() {
                 // A row whose status stays the same is a payment event ("Payment received · ₹…", "Payment failed ·
                 // …", "Cash collected"), its dot coloured by what happened
                 const paymentEvent = row.oldStatus === row.newStatus && row.reason;
-                const dot = row.reason?.startsWith('Payment failed')
+                // The partner declined (the booking went back to Confirmed): shown as such, with their reason
+                const declined = row.action === 'PARTNER_DECLINED';
+                const dot = declined || row.reason?.startsWith('Payment failed')
                   ? 'bg-[#C53030]'
                   : row.reason?.startsWith('Payment pending')
                     ? 'bg-[#E0A100]'
@@ -943,9 +947,15 @@ export default function BookingDetailPage() {
                   <span className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full ${dot}`} />
                   <div>
                     <div className="font-bold text-[var(--ink)]">
-                      {paymentEvent ? row.reason : isUnassigned(row) ? 'Unassigned' : label('BOOKING_STATUS', row.newStatus)}
+                      {declined
+                        ? 'Partner Declined'
+                        : paymentEvent
+                          ? row.reason
+                          : isUnassigned(row)
+                            ? 'Unassigned'
+                            : label('BOOKING_STATUS', row.newStatus)}
                       {!paymentEvent && row.reason && row.reason !== PARTNER_UNASSIGNED && (
-                        <span className="font-normal text-[var(--muted)]"> · {row.reason}</span>
+                        <span className="font-normal text-[var(--muted)]"> · {declined ? declineReason(row.reason) : row.reason}</span>
                       )}
                     </div>
                     <div className="text-[0.8125rem] text-[var(--muted)]">

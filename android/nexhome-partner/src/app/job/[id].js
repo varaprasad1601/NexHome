@@ -464,11 +464,15 @@ export default function JobScreen() {
               .filter((h) => h.oldStatus !== h.newStatus || h.reason)
               .map((h) => (
                 <View key={h.historyId} style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: historyDot(h.reason), marginTop: 5 }} />
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: h.action === 'PARTNER_DECLINED' ? '#c53030' : historyDot(h.reason), marginTop: 5 }} />
                   <View style={{ flex: 1 }}>
                     <Text weight="semibold" style={{ fontSize: 13 }}>
-                      {h.oldStatus === h.newStatus ? h.reason : bookingStatus(h.newStatus).label}
+                      {h.action === 'PARTNER_DECLINED' ? 'Partner declined' : h.oldStatus === h.newStatus ? h.reason : bookingStatus(h.newStatus).label}
                     </Text>
+                    {/* The partner declined: their reason; NexHome assigns another professional */}
+                    {h.action === 'PARTNER_DECLINED' ? (
+                      <Text style={{ fontSize: 12, color: colors.ink }}>{h.reason.replace(/^Partner declined:?\s*/, '') || 'No reason given'}</Text>
+                    ) : null}
                     {/* A status change a payment brought (Confirmed by "Payment received · ₹…") shows the payment */}
                     {h.oldStatus !== h.newStatus && h.reason?.startsWith('Payment') ? (
                       <Text style={{ fontSize: 12, color: colors.ink }}>{h.reason}</Text>

@@ -164,7 +164,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 				request.serviceVariantId(), request.addressId(), request.bookingType(), request.scheduledStartAt(),
 				request.paymentMethod(), request.minutes(), null, Boolean.TRUE.equals(request.slotRequested())),
 				actingUserId);
-		tell(customer.getUser().getId(), "Booking " + booking.getPublicId() + " created",
+		tell(NexHomeNotifier.CUSTOMER, customer.getUser().getId(), "Booking " + booking.getPublicId() + " created",
 				"We booked " + booking.getServiceNameSnapshot() + " for you.", booking, actingUserId);
 		log.info("Booking {} created for customer {} by User ID {}", booking.getPublicId(), customer.getPublicId(),
 				actingUserId);
@@ -410,12 +410,12 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 					});
 		}
 		if (BookingStatus.CONFIRMED.equals(target)) {
-			tell(customerUserOf(booking), "Booking " + booking.getPublicId() + " confirmed",
+			tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Booking " + booking.getPublicId() + " confirmed",
 					booking.getServiceNameSnapshot() + " is confirmed; we will assign a partner.", booking,
 					actingUserId);
 		}
 		else if (BookingStatus.PARTNER_EN_ROUTE.equals(target)) {
-			tell(customerUserOf(booking), "Partner accepted " + booking.getPublicId(),
+			tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Partner accepted " + booking.getPublicId(),
 					"Your partner accepted the job for " + booking.getServiceNameSnapshot() + ".", booking,
 					actingUserId);
 		}
@@ -463,9 +463,9 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		changeStatus(booking, BookingStatus.CANCELLED, reason, actingUserId);
 
 		String cancelled = "Booking " + booking.getPublicId() + " cancelled";
-		tell(customerUserOf(booking), cancelled, reason == null ? booking.getServiceNameSnapshot() : reason, booking,
+		tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), cancelled, reason == null ? booking.getServiceNameSnapshot() : reason, booking,
 				actingUserId);
-		tell(partnerUserOf(booking), cancelled, reason == null ? booking.getServiceNameSnapshot() : reason, booking,
+		tell(NexHomeNotifier.PARTNER, partnerUserOf(booking), cancelled, reason == null ? booking.getServiceNameSnapshot() : reason, booking,
 				actingUserId);
 		Map<String, Object> after = new LinkedHashMap<>();
 		after.put("bookingStatus", BookingStatus.CANCELLED);
@@ -535,7 +535,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		if (direct) {
 			take(assignment, AssignmentStatus.ASSIGNED, actingUserId);
 		}
-		tell(partner.getUser().getId(), (direct ? "New job assigned: " : "New job offer: ") + booking.getPublicId(),
+		tell(NexHomeNotifier.PARTNER, partner.getUser().getId(), (direct ? "New job assigned: " : "New job offer: ") + booking.getPublicId(),
 				booking.getServiceNameSnapshot() + (direct ? "; accept or decline it." : "; the offer runs for "
 						+ minutes + " minutes."),
 				booking, actingUserId);
@@ -580,7 +580,8 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 			assignment.setRejectionReason(reason);
 			assignment.setRespondedAt(Instant.now());
 			assignment.setUpdatedBy(actingUserId);
-			partnerDeclined(assignment, reason, actingUserId);
+			// An offer (maybe one of several) refused: staff only; the customer never knew of it
+			partnerDeclined(assignment, reason, false, actingUserId);
 			log.info("Partner {} rejected booking {}", assignment.getPartner().getPublicId(),
 					assignment.getBooking().getPublicId());
 		}
@@ -610,7 +611,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 			releasePartner(booking,
 					Optional.ofNullable(NexHomeText.trimToNull(request.reason())).orElse(PARTNER_UNASSIGNED),
 					actingUserId);
-			tell(assignment.getPartner().getUser().getId(), "Taken off " + booking.getPublicId(),
+			tell(NexHomeNotifier.PARTNER, assignment.getPartner().getUser().getId(), "Taken off " + booking.getPublicId(),
 					"You are no longer assigned to " + booking.getServiceNameSnapshot() + ".", booking, actingUserId);
 			auditRecorder.record("PARTNER_UNASSIGNED", "BOOKING", booking.getPublicId(),
 					Map.of("partner", assignment.getPartner().getPublicId()), null, actingUserId);
@@ -671,8 +672,8 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		}
 		assignment.setAssignmentStatus(AssignmentStatus.REJECTED);
 		assignment.setRejectionReason(reason);
-		releasePartner(booking, "Partner declined: " + reason, actingUserId);
-		partnerDeclined(assignment, reason, actingUserId);
+		releasePartner(booking, PARTNER_DECLINED + ": " + reason, actingUserId);
+		partnerDeclined(assignment, reason, true, actingUserId);
 		log.info("Partner {} declined booking {}", assignment.getPartner().getPublicId(), booking.getPublicId());
 		return bookingMapper.toAssignmentDto(assignment);
 	}
@@ -763,7 +764,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 			booking.setUpdatedBy(actingUserId);
 			String status = booking.getBookingStatus();
 			bookingCreator.recordStatus(booking, status, status, COMPLETION_REQUESTED, actingUserId);
-			tell(customerUserOf(booking), "Is your job done? " + booking.getPublicId(),
+			tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Is your job done? " + booking.getPublicId(),
 					"Your professional finished " + booking.getServiceNameSnapshot()
 							+ ". Confirm in the app to see the final amount and pay.",
 					booking, actingUserId);
@@ -791,7 +792,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 			booking.setUpdatedBy(actingUserId);
 			bookingCreator.recordStatus(booking, status, status, COMPLETION_DECLINED, actingUserId);
 			if (booking.getPartner() != null) {
-				tell(booking.getPartner().getUser().getId(), "Not finished yet: " + booking.getPublicId(),
+				tell(NexHomeNotifier.PARTNER, booking.getPartner().getUser().getId(), "Not finished yet: " + booking.getPublicId(),
 						"The customer says " + booking.getServiceNameSnapshot() + " is not finished yet. Carry on.",
 						booking, actingUserId);
 			}
@@ -802,7 +803,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		bookingCreator.recordStatus(booking, status, status, COMPLETION_CONFIRMED, actingUserId);
 		stopOnlineWork(booking, actingUserId);
 		if (booking.getPartner() != null) {
-			tell(booking.getPartner().getUser().getId(), "Job done: " + booking.getPublicId(),
+			tell(NexHomeNotifier.PARTNER, booking.getPartner().getUser().getId(), "Job done: " + booking.getPublicId(),
 					"The customer confirmed the work. They pay " + booking.getTotalAmount().toPlainString()
 							+ " online now.",
 					booking, actingUserId);
@@ -838,7 +839,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 			bookingCreator.recordStatus(booking, current, current, NexHomeSettlement.WORK_FINISHED, actingUserId);
 		}
 		booking.setUpdatedBy(actingUserId);
-		tell(customerUserOf(booking), "Work finished on " + booking.getPublicId(),
+		tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Work finished on " + booking.getPublicId(),
 				"Please pay " + booking.getTotalAmount().toPlainString() + " for " + booking.getServiceNameSnapshot()
 						+ " in the app.",
 				booking, actingUserId);
@@ -871,12 +872,12 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		auditRecorder.record("BOOKING_COMPLETED", "BOOKING", booking.getPublicId(),
 				Map.of("bookingStatus", BookingStatus.IN_PROGRESS),
 				Map.of("bookingStatus", BookingStatus.COMPLETED, "paymentStatus", booking.getPaymentStatus()), actingUserId);
-		tell(customerUserOf(booking), "Booking " + booking.getPublicId() + " completed",
+		tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Booking " + booking.getPublicId() + " completed",
 				"Please pay " + booking.getTotalAmount().toPlainString() + " for " + booking.getServiceNameSnapshot()
 						+ " in the app.",
 				booking, actingUserId);
 		if (booking.getPartner() != null) {
-			tell(booking.getPartner().getUser().getId(), "Job completed: " + booking.getPublicId(),
+			tell(NexHomeNotifier.PARTNER, booking.getPartner().getUser().getId(), "Job completed: " + booking.getPublicId(),
 					"NexHome completed the job. The customer will pay online.", booking, actingUserId);
 		}
 		log.info("Booking {} completed by staff, payment pending", booking.getPublicId());
@@ -965,7 +966,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 				else {
 					bookingCreator.recordStatus(booking, current, current, NexHomeSettlement.WORK_FINISHED, actingUserId);
 				}
-				tell(customerUserOf(booking), "Work finished on " + booking.getPublicId(),
+				tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Work finished on " + booking.getPublicId(),
 						"Please pay " + booking.getTotalAmount().toPlainString()
 								+ (cash ? " in cash to your professional." : " in the NexHome app: open the booking and tap Pay."),
 						booking, actingUserId);
@@ -978,7 +979,7 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		if (BookingTimerEvent.STOP.equals(event)) {
 			// Cash is now due to the partner, or the partner is owed a payout for a paid online booking
 			settlement.onBookingCompleted(booking, actingUserId);
-			tell(customerUserOf(booking), "Booking " + booking.getPublicId() + " completed",
+			tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Booking " + booking.getPublicId() + " completed",
 					booking.getServiceNameSnapshot() + " is done. Rate your service and partner.", booking,
 					actingUserId);
 		}
@@ -1120,10 +1121,16 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 		return NexHomeText.trimToNull(String.join(" ", java.util.Objects.toString(first, ""), java.util.Objects.toString(last, "")));
 	}
 
-	/** A booking notification to one user (none for a null user, the actor or the system account). */
-	private void tell(Long userId, String title, String message, NexHomeBooking booking, Long actingUserId) {
+	/**
+	 * A booking notification to one user in one app ({@code app}: CUSTOMER for the booking's customer, PARTNER for its
+	 * partner), stated rather than worked out from the user, so a number that is both the customer and the partner of a
+	 * booking gets each notice in the right app. None for a null user or the system account, nor for the actor acting
+	 * from that same app.
+	 */
+	private void tell(String app, Long userId, String title, String message, NexHomeBooking booking,
+			Long actingUserId) {
 		notifier.notify(userId, new NexHomeNotifier.Message(NotificationType.BOOKING, title, message,
-				NexHomeNotifier.BOOKING, booking.getId()), actingUserId);
+				NexHomeNotifier.BOOKING, booking.getId()).forApp(app), actingUserId);
 	}
 
 	private static Long customerUserOf(NexHomeBooking booking) {
@@ -1137,17 +1144,58 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 	/** The customer hears the partner accepted. */
 	private void partnerAccepted(NexHomeBookingAssignment assignment, Long actingUserId) {
 		NexHomeBooking booking = assignment.getBooking();
-		tell(customerUserOf(booking), "Partner accepted " + booking.getPublicId(),
+		tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Partner accepted " + booking.getPublicId(),
 				"Your partner accepted the job for " + booking.getServiceNameSnapshot() + ".", booking, actingUserId);
 	}
 
-	/** The staff who read bookings hear the partner declined, so they find another. */
-	private void partnerDeclined(NexHomeBookingAssignment assignment, String reason, Long actingUserId) {
+	/**
+	 * The partner declined: the staff who read bookings hear it as HIGH (they must find another partner; the alert's
+	 * setting can still turn it off), and, for a job assigned to the partner ({@code tellCustomer}), the customer that
+	 * NexHome is finding another professional.
+	 */
+	private void partnerDeclined(NexHomeBookingAssignment assignment, String reason, boolean tellCustomer,
+			Long actingUserId) {
 		NexHomeBooking booking = assignment.getBooking();
 		notifier.notifyStaff(NexHomeSettingsService.Keys.ALERT_PARTNER_DECLINED, BOOKING_MANAGE, new NexHomeNotifier.Message(
 				NotificationType.BOOKING, "Partner declined " + booking.getPublicId(),
 				assignment.getPartner().getPublicId() + " declined: " + reason, NexHomeNotifier.BOOKING,
-				booking.getId()), actingUserId);
+				booking.getId()).high(), actingUserId);
+		if (!tellCustomer) {
+			return;
+		}
+		tell(NexHomeNotifier.CUSTOMER, customerUserOf(booking), "Partner declined " + booking.getPublicId(),
+				"The professional could not take your " + booking.getServiceNameSnapshot()
+						+ " job. NexHome will assign another professional soon.", booking, actingUserId);
+	}
+
+	/** The history reason of a partner declining a job: "Partner declined: <reason>". */
+	static final String PARTNER_DECLINED = "Partner declined";
+
+	/**
+	 * Who made a history change, for this booking: the app it came from (V73: CUSTOMER, PARTNER, STAFF, SYSTEM), else
+	 * (older rows and clients) by the user: NexHome's account SYSTEM, a partner's own answers (declining, accepting,
+	 * starting the work) PARTNER when one of the booking's partners made them, then its customer, its partners, staff.
+	 */
+	private static String partyOf(NexHomeBookingStatusHistory row, Long customerUserId, Set<Long> partnerUserIds) {
+		if (row.getChangedFrom() != null) {
+			return row.getChangedFrom();
+		}
+		Long by = row.getChangedBy();
+		if (by == null) {
+			return null;
+		}
+		if (by == 1L) {
+			return "SYSTEM";
+		}
+		boolean partnersAnswer = (row.getReason() != null && row.getReason().startsWith(PARTNER_DECLINED))
+				|| (BookingStatus.ASSIGNED.equals(row.getOldStatus())
+						&& BookingStatus.PARTNER_EN_ROUTE.equals(row.getNewStatus()))
+				|| (BookingStatus.IN_PROGRESS.equals(row.getNewStatus())
+						&& Set.of(BookingStatus.ASSIGNED, BookingStatus.PARTNER_EN_ROUTE).contains(row.getOldStatus()));
+		if (partnersAnswer && partnerUserIds.contains(by)) {
+			return "PARTNER";
+		}
+		return by.equals(customerUserId) ? "CUSTOMER" : partnerUserIds.contains(by) ? "PARTNER" : "STAFF";
 	}
 
 	private void changeStatus(NexHomeBooking booking, String target, String reason, Long actingUserId) {
@@ -1229,16 +1277,36 @@ public class NexHomeBookingServiceImpl implements NexHomeBookingService {
 			partnerUserIds.add(booking.getPartner().getUser().getId());
 		}
 		assignments.forEach(a -> partnerUserIds.add(a.getPartner().getUser().getId()));
+		// The partners' names by user, for rows a partner made
+		Map<Long, String> partnerNames = new java.util.HashMap<>();
+		java.util.function.Consumer<NexHomePartnerProfile> addPartner = profile -> partnerNames.putIfAbsent(
+				profile.getUser().getId(), fullName(profile.getFirstName(), profile.getLastName()));
+		if (booking.getPartner() != null) {
+			addPartner.accept(booking.getPartner());
+		}
+		assignments.forEach(a -> addPartner.accept(a.getPartner()));
+		NexHomeCustomerProfile customerProfile = booking.getCustomer();
+		String customerName = fullName(customerProfile.getFirstName(), customerProfile.getLastName());
 		List<NexHomeBookingHistoryResponse> historyDtos = new ArrayList<>();
 		for (int i = 0; i < history.size(); i++) {
 			NexHomeBookingStatusHistory row = history.get(i);
 			Long by = row.getChangedBy();
-			String party = by == null ? null
-					: by.equals(customerUserId) ? "CUSTOMER"
-							: partnerUserIds.contains(by) ? "PARTNER" : by == 1L ? "SYSTEM" : "STAFF";
+			String party = partyOf(row, customerUserId, partnerUserIds);
+			String name = who.get(i).byName();
+			String role = who.get(i).byRole();
+			// One number may be staff, a partner and a customer: the row shows the account that acted
+			if ("PARTNER".equals(party) && by != null) {
+				name = partnerNames.getOrDefault(by, name);
+				role = "Partner";
+			}
+			else if ("CUSTOMER".equals(party) && by != null && by.equals(customerUserId)) {
+				name = customerName != null ? customerName : name;
+				role = "Customer";
+			}
+			String action = row.getReason() != null && row.getReason().startsWith(PARTNER_DECLINED) ? "PARTNER_DECLINED"
+					: null;
 			historyDtos.add(new NexHomeBookingHistoryResponse(row.getId(), row.getOldStatus(), row.getNewStatus(),
-					row.getChangedBy(), who.get(i).byName(), who.get(i).byRole(), party, row.getReason(),
-					lines.get(i).at()));
+					row.getChangedBy(), name, role, party, row.getReason(), action, lines.get(i).at()));
 		}
 		List<NexHomeBookingTimeLog> logs = timeLogRepository.findByBookingIdOrderByEventAtAscIdAsc(bookingId);
 		// Who assigned each partner, by name and role (one query for all, as for the history)

@@ -41,11 +41,13 @@ export function lastPushTime() {
 export function setUpPush({ onPush, onOpen }) {
   const N = notifications();
   if (!N) return () => {};
+  // While the app is open the banner shows and LiveWatcher plays the NexHome chime itself (`onPush`), so the sound is
+  // the same on every screen whatever the phone's channel settings; in the background the channel's sound plays
   N.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
       shouldShowList: true,
-      shouldPlaySound: true,
+      shouldPlaySound: false,
       shouldSetBadge: false
     })
   });

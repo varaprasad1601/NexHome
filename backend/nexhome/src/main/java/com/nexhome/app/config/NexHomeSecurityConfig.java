@@ -152,7 +152,7 @@ public class NexHomeSecurityConfig {
 		cors.setAllowedOriginPatterns(
 				properties.corsAllowedOrigins() == null ? List.of() : properties.corsAllowedOrigins());
 		cors.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-		cors.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+		cors.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-NexHome-App"));
 		cors.setMaxAge(3600L);
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 		source.registerCorsConfiguration("/api/**", cors);
