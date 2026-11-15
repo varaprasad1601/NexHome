@@ -587,7 +587,9 @@ npx expo export --platform android   # bundles it: catches broken imports and ro
 # Cloud APK (EAS, either app): eas login; eas init; eas build --platform android --profile preview
 #   eas.json sets EXPO_PUBLIC_API_BASE_URL (.env is not uploaded); .easignore leaves out node_modules and the local android/
 #   folder (EAS runs prebuild from app.json); keep packages on SDK 58's versions (npx expo install --fix) so expo doctor passes
-#   Expo projects are owned by the nexhome-uat organisation (app.json "owner"); GitHub builds: base directory android/<app>,
+#   Expo projects are owned by the Expo account bgmiexpoaccount (app.json "owner"; projectId customer 66431bf7-6fcd-40f8-86ec-e3ecced8bd6e,
+#   partner bcb3d6fe-2292-41ce-a7b3-b8de0588663a; the slugs must match the Expo projects). Before: organisation nexhome-uat
+#   (customer c82c0a7b-eb53-48a0-8519-70eb5a0af777, partner a3f118b8-778e-4d71-825b-f90fd31bcc09). GitHub builds: base directory android/<app>,
 #   profile and environment "preview" (lowercase). expo-build-properties buildArchs = arm64-v8a, armeabi-v7a: no x86
 #   engines (APK ~40 MB, not 77; such builds do not install on an x86 emulator; real phones and wireless adb are fine)
 # Local APK: .env EXPO_PUBLIC_API_BASE_URL=http://<PC LAN IP>:8080 (a release build has no Metro to find the PC), then
