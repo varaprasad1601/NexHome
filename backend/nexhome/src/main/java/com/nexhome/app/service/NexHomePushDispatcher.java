@@ -7,8 +7,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
@@ -62,7 +63,16 @@ class NexHomePushDispatcher {
 	private final NexHomeNotificationDeliveryLogRepository deliveryLogRepository;
 	private final NexHomeUserRepository userRepository;
 	private final TransactionTemplate transactions;
-	private final ExecutorService executor = Executors.newFixedThreadPool(2, runnable -> {
+	/**
+	 * A customer's payment notifications (received, failed, pending) are pushed this many seconds late: the payment is
+	 * often captured while the customer is still in the UPI app (the partner's Payment processing screen checks every
+	 * 5 s), and a push then would show before the app's payment result screen. Back in the app within this time, the app
+	 * shows the notification after the result screen and the late push stays silent (the same notification id);
+	 * still away, it arrives as usual.
+	 */
+	static final long CUSTOMER_PAYMENT_DELAY_SECONDS = 15;
+
+	private final ScheduledExecutorService executor = Executors.newScheduledThreadPool(2, runnable -> {
 		Thread thread = new Thread(runnable, "nexhome-push");
 		thread.setDaemon(true);
 		return thread;
@@ -109,12 +119,25 @@ class NexHomePushDispatcher {
 	}
 
 	private void submit(List<Push> pushes) {
+		List<Push> later = pushes.stream().filter(NexHomePushDispatcher::customerPayment).toList();
+		List<Push> now = pushes.stream().filter(push -> !customerPayment(push)).toList();
 		try {
-			executor.execute(() -> send(pushes));
+			if (!now.isEmpty()) {
+				executor.execute(() -> send(now));
+			}
+			if (!later.isEmpty()) {
+				executor.schedule(() -> send(later), CUSTOMER_PAYMENT_DELAY_SECONDS, TimeUnit.SECONDS);
+			}
 		}
 		catch (RuntimeException ex) {
 			log.warn("Push notifications not queued: {}", ex.getMessage());
 		}
+	}
+
+	/** A payment notification for the customer app (pushed late, see {@link #CUSTOMER_PAYMENT_DELAY_SECONDS}). */
+	private static boolean customerPayment(Push push) {
+		return NexHomeNotifier.CUSTOMER.equals(push.audience())
+				&& com.nexhome.app.model.NexHomeLookupCodes.NotificationType.PAYMENT.equals(push.notificationType());
 	}
 
 	/** Sends every push to its user's active devices and records the outcome. */

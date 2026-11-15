@@ -19,11 +19,11 @@ import { ATTEMPT_DONE, PAYMENT_RETURN } from '../utils/pay';
 const IDLE_CHECK_MS = 15000;
 const ACTIVE_CHECK_MS = 4000;
 /**
- * How long an attempt may wait for the bank (PENDING) while the customer is on this screen before it closes: the result
- * screen then shows Payment pending at once and keeps watching until the bank answers. Time in the UPI app does not
- * count (no checks while the app is in the background), so approving there is never cut short.
+ * How long an attempt may wait for the bank (PENDING) while the customer is on this screen before it closes: the next
+ * screen shows Processing payment while the bank confirms. Time in the UPI app does not count (no checks while the
+ * app is in the background), so approving there is never cut short.
  */
-const PENDING_GRACE_MS = 8000;
+const PENDING_GRACE_MS = 2000;
 
 /** Addresses the page itself may open; anything else (upi:, intent:, tez:, phonepe:, ...) is a payment app. */
 const WEB = /^(https?:|about:|data:|blob:|javascript:)/i;

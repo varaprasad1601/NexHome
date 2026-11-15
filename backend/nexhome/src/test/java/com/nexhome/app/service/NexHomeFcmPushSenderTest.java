@@ -67,7 +67,7 @@ class NexHomeFcmPushSenderTest {
 				.andExpect(content().json("""
 						{"message": {"token": "device-1", "notification": {"title": "Booking confirmed",
 						 "body": "See you soon"}, "data": {"referenceType": "BOOKING", "referenceId": "7"},
-						 "android": {"priority": "HIGH", "notification": {"channel_id": "alerts"}}}}"""))
+						 "android": {"priority": "HIGH", "notification": {"channel_id": "nexhome_alerts"}}}}"""))
 				.andRespond(withSuccess("{\"name\": \"projects/nexhome-test/messages/0:123\"}",
 						MediaType.APPLICATION_JSON));
 

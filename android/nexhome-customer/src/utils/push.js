@@ -1,12 +1,14 @@
 import Constants, { ExecutionEnvironment } from 'expo-constants';
+import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
 /**
  * Push notifications (FCM, backend V53): the phone's token is registered after sign-in
  * (POST /api/notifications/devices/register) and unregistered at log-out, so a notification makes a sound and shows
- * in the phone's tray while the app is in the background or closed. The backend sends HIGH ones on the `alerts`
- * channel, the partner's arrival (PARTNER_ARRIVED) on `doorbell` and the rest on `default`; `doorbell` plays
- * `assets/sounds/doorbell.wav`, the others `assets/sounds/notify.wav`.
+ * in the phone's tray while the app is in the background or closed. The backend sends HIGH ones on the `nexhome_alerts`
+ * channel, the partner's arrival (PARTNER_ARRIVED) on `nexhome_doorbell` and the rest on `nexhome_general`
+ * (`CHANNELS`); the doorbell plays `assets/sounds/doorbell.wav`, the others `assets/sounds/notify.wav`. The
+ * notification permission is asked on the first launch (`askOnFirstLaunch`) and again at sign-in if not allowed.
  *
  * Only in a build (EAS APK / AAB): Expo Go cannot receive these and throws as soon as expo-notifications loads, so the
  * module is required lazily and never in Expo Go (the app then still chimes in the foreground: LiveWatcher).
@@ -25,6 +27,27 @@ function notifications() {
     }
   }
   return Notifications;
+}
+
+/** The notification channels; the backend's pushes name the same ids (NexHomeFcmPushSender). */
+export const CHANNELS = { general: 'nexhome_general', alerts: 'nexhome_alerts', doorbell: 'nexhome_doorbell' };
+/** Channel ids of older builds (some were made at normal importance, which never pops up): removed. */
+const OLD_CHANNELS = ['default', 'alerts', 'doorbell'];
+const ASKED_KEY = 'nexhome.notificationPermissionAsked';
+
+/**
+ * The first time the app runs (once per install), it asks to show notifications (Android 13+), before sign-in, so
+ * popups and the notification bar work from the start. Signing in asks again if it was not allowed then.
+ */
+async function askOnFirstLaunch(N) {
+  try {
+    if (await SecureStore.getItemAsync(ASKED_KEY)) return;
+    await SecureStore.setItemAsync(ASKED_KEY, '1');
+    const { status, canAskAgain } = await N.getPermissionsAsync();
+    if (status !== 'granted' && canAskAgain !== false) await N.requestPermissionsAsync();
+  } catch {
+    // Asked again at sign-in (registerPush)
+  }
 }
 
 let token = null;
@@ -100,11 +123,18 @@ export function setUpPush({ onPush, onOpen, hold }) {
       return { shouldShowBanner: !quiet, shouldShowList: !quiet, shouldPlaySound: false, shouldSetBadge: false };
     }
   });
-  const channel = { sound: 'notify.wav', vibrationPattern: [0, 250, 150, 250], lightColor: '#0b438b' };
-  N.setNotificationChannelAsync('default', { ...channel, name: 'Notifications', importance: N.AndroidImportance.HIGH }).catch(() => {});
-  N.setNotificationChannelAsync('alerts', { ...channel, name: 'Urgent alerts', importance: N.AndroidImportance.MAX }).catch(() => {});
-  // The partner reaching the door (PARTNER_ARRIVED) rings the doorbell, also when the app is closed
-  N.setNotificationChannelAsync('doorbell', { ...channel, sound: 'doorbell.wav', name: 'Professional at the door', importance: N.AndroidImportance.MAX }).catch(() => {});
+  // The channels (Android keeps a channel's importance once made, so these are new ids made HIGH / MAX from the start:
+  // banners pop up on screen); the ids of older builds are removed. Then, on the first launch, the permission is asked.
+  const channel = { sound: 'notify.wav', vibrationPattern: [0, 250, 150, 250], lightColor: '#0b438b', showBadge: true };
+  Promise.all([
+    N.setNotificationChannelAsync(CHANNELS.general, { ...channel, name: 'Notifications', importance: N.AndroidImportance.HIGH }),
+    N.setNotificationChannelAsync(CHANNELS.alerts, { ...channel, name: 'Urgent alerts', importance: N.AndroidImportance.MAX }),
+    // The partner reaching the door (PARTNER_ARRIVED) rings the doorbell, also when the app is closed
+    N.setNotificationChannelAsync(CHANNELS.doorbell, { ...channel, sound: 'doorbell.wav', name: 'Professional at the door', importance: N.AndroidImportance.MAX })
+  ])
+    .catch(() => {})
+    .then(() => Promise.all(OLD_CHANNELS.map((id) => N.deleteNotificationChannelAsync(id).catch(() => {}))))
+    .then(() => askOnFirstLaunch(N));
 
   const received = N.addNotificationReceivedListener((notification) => {
     const data = notification?.request?.content?.data ?? {};
@@ -143,11 +173,17 @@ export async function showPhoneNotification(notification) {
     const { status } = await N.getPermissionsAsync();
     if (status !== 'granted') return false;
     const channelId =
-      notification.notificationType === 'PARTNER_ARRIVED' ? 'doorbell' : notification.priority === 'HIGH' ? 'alerts' : 'default';
+      notification.notificationType === 'PARTNER_ARRIVED'
+        ? CHANNELS.doorbell
+        : notification.priority === 'HIGH'
+          ? CHANNELS.alerts
+          : CHANNELS.general;
     await N.scheduleNotificationAsync({
       content: {
         title: notification.title,
         body: notification.message,
+        // Heads-up on older Android too (newer ones go by the channel's importance)
+        priority: N.AndroidNotificationPriority?.MAX ?? 'max',
         data: {
           local: true,
           notificationId: String(notification.notificationId),

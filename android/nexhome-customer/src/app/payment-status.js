@@ -12,13 +12,13 @@ import { holdPaymentNotices } from '../utils/noticeHold';
 import { finishPayment, payOnline } from '../utils/pay';
 
 /**
- * How often the order is checked, the least time Processing shows, how long a SUCCESS not yet captured may settle
- * before showing Pending, and how long a pending payment is watched (it then turns into successful or failed here).
+ * How often the order is checked, the least time Processing shows, how long Processing payment stays while the bank
+ * confirms (then Payment pending), and how long a pending payment is watched (it then turns into successful or failed).
  */
 const CHECK_MS = 2500;
 const PENDING_CHECK_MS = 4000;
 const MIN_PROCESSING_MS = 1500;
-const SUCCESS_SETTLE_MS = 6000;
+const PROCESSING_MAX_MS = 60000;
 const PENDING_WATCH_MS = 5 * 60 * 1000;
 
 /** Each result: icon, colours, title and text. */
@@ -64,6 +64,8 @@ export default function PaymentStatus() {
   const { orderId, bookingId, next, since } = useLocalSearchParams();
   const { authRequest } = useAuth();
   const [result, setResult] = useState(null); // { state, order, message }
+  // The bank is confirming (its attempt PENDING): Processing payment says so while it waits
+  const [bankConfirming, setBankConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -107,10 +109,10 @@ export default function PaymentStatus() {
         }
         if (attempt !== 'PENDING' && attempt !== 'SUCCESS') return show({ state: 'OPEN', order });
       }
-      // The bank is still confirming: Payment pending at once (a SUCCESS being captured gets a few seconds first), and
-      // this screen keeps checking, turning into successful or failed when the bank answers
-      const settling = order?.lastAttemptStatus === 'SUCCESS' && Date.now() - started < SUCCESS_SETTLE_MS;
-      if (!pendingShown && !settling && (order || Date.now() - started >= SUCCESS_SETTLE_MS)) {
+      // The bank is still confirming: Processing payment stays (saying so) for up to a minute, then Payment pending;
+      // either way this screen keeps checking and turns into successful or failed when the bank answers
+      if (order?.lastAttemptStatus === 'PENDING') setBankConfirming(true);
+      if (!pendingShown && Date.now() - started >= PROCESSING_MAX_MS) {
         pendingShown = true;
         const pendingRef = order && order.lastAttemptId !== (since || null) ? order.lastAttemptId : null;
         show({ state: 'PENDING', order, reference: pendingRef });
@@ -174,7 +176,11 @@ export default function PaymentStatus() {
             <Text weight="extrabold" style={{ fontSize: 22, color: colors.navy }}>
               Processing payment
             </Text>
-            <Text style={{ color: colors.muted, textAlign: 'center' }}>Please wait while we confirm your payment. Do not close the app.</Text>
+            <Text style={{ color: colors.muted, textAlign: 'center' }}>
+              {bankConfirming
+                ? 'Waiting for your bank to confirm the payment. This can take up to a minute. Please do not close the app or pay again.'
+                : 'Please wait while we confirm your payment. Do not close the app.'}
+            </Text>
           </>
         ) : (
           <>

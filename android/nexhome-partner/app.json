@@ -60,7 +60,7 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#0b438b",
-          "defaultChannel": "default",
+          "defaultChannel": "nexhome_general",
           "sounds": [
             "./assets/sounds/notify.wav",
             "./assets/sounds/doorbell.wav"

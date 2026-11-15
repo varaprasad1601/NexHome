@@ -88,8 +88,10 @@ public class NexHomeFcmPushSender implements NexHomePushSender {
 		android.put("priority", high ? "HIGH" : "NORMAL");
 		// The partner arriving rings the apps' doorbell channel (its sound is the doorbell); HIGH ones alerts
 		boolean doorbell = data != null && "PARTNER_ARRIVED".equals(data.get("notificationType"));
-		android.put("notification", Map.of("channel_id", doorbell ? "doorbell" : high ? "alerts" : "default",
-				"sound", doorbell ? "doorbell" : "default"));
+		// The apps' channel ids (utils/push CHANNELS; made at high importance, so the banner pops up)
+		android.put("notification", Map.of("channel_id",
+				doorbell ? "nexhome_doorbell" : high ? "nexhome_alerts" : "nexhome_general",
+				"sound", doorbell ? "doorbell" : "notify"));
 		Map<String, Object> message = new LinkedHashMap<>();
 		message.put("token", deviceToken);
 		message.put("notification", Map.of("title", title, "body", body));

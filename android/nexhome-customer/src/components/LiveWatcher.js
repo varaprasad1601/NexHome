@@ -77,6 +77,7 @@ export default function LiveWatcher() {
   const lastStatuses = useRef(new Map());
   // Back from the background with push on: what happened meanwhile already rang by push; catch up quietly
   const quietBookings = useRef(false);
+  const catchUp = useRef(false);
   const lookNow = useRef(null);
 
   // A push while the app is open: the chime at once, and the screens reload; tapping one opens what it is about
@@ -214,6 +215,35 @@ export default function LiveWatcher() {
       await showItems(now);
     }
 
+    /**
+     * Back from the background with push on: what came meanwhile rang by push already, except the customer's payment
+     * notices, whose push is sent late (backend, 15 s): those wait for the payment result screen when a payment screen
+     * is open, else pop up now; the late push then stays quiet (same id).
+     */
+    async function catchUpNotices() {
+      let fresh = [];
+      try {
+        const page = await authRequest(`/api/notifications/me?size=10&unread=true&app=${APP}`);
+        fresh = (page?.content ?? []).filter((n) => n.notificationId > (lastSeenId.current ?? 0)).reverse();
+      } catch {
+        return;
+      }
+      if (fresh.length) lastSeenId.current = Math.max(lastSeenId.current ?? 0, ...fresh.map((n) => n.notificationId));
+      const now = [];
+      for (const n of fresh) {
+        if (wasShown(n.notificationId)) continue;
+        if (isHeld(n)) {
+          holdNotice(n);
+          markShown(n.notificationId);
+        } else if (n.notificationType === 'PAYMENT') {
+          now.push(n);
+        } else {
+          markShown(n.notificationId);
+        }
+      }
+      await showItems(now);
+    }
+
     /** Pops up notifications not shown yet (the phone's banner, else the app's own) with one sound. */
     async function showItems(items) {
       // Already in the phone's tray (a push while the app was in the background): not popped up again
@@ -250,10 +280,12 @@ export default function LiveWatcher() {
           const unread = summary?.unread ?? 0;
           if (lastUnread.current === null) await baseline();
           else if (unread > lastUnread.current) {
-            await present();
+            if (catchUp.current) await catchUpNotices();
+            else await present();
             bump('notifications', 'bookings');
             lookBookings();
           }
+          catchUp.current = false;
           if (cancelled) return;
           lastUnread.current = unread;
           setUnread(unread);
@@ -289,8 +321,7 @@ export default function LiveWatcher() {
         // With push, notifications that came while the app was away are already in the tray (sound included): the
         // next look starts again from the newest one instead of popping them up a second time; screens still reload
         if (pushReady()) {
-          if (lastUnread.current !== null) bump('notifications', 'bookings');
-          lastUnread.current = null;
+          catchUp.current = true;
           quietBookings.current = true;
         }
         lookNotifications();
