@@ -44,7 +44,7 @@ export default function LiveWatcher() {
     () =>
       setUpPush({
         onPush: () => {
-          chime();
+          // The banner rang with its channel's sound: screens reload
           bump('notifications', 'bookings');
           lookNow.current?.();
         },
@@ -109,12 +109,17 @@ export default function LiveWatcher() {
       const unseen = items.filter((n) => !wasShown(n.notificationId));
       unseen.forEach((n) => markShown(n.notificationId));
       if (!unseen.length || cancelled) return;
-      if (unseen.some((n) => n.notificationType === 'PARTNER_ARRIVED')) doorbell();
-      else chime();
+      let rang = false;
       for (const n of unseen.slice(-3)) {
         if (cancelled) return;
+        // The phone's banner rings with its channel's sound; the app's own popup gets the app's sound (once)
         const shownOnPhone = await showPhoneNotification(n);
         if (!shownOnPhone) {
+          if (!rang) {
+            if (unseen.some((m) => m.notificationType === 'PARTNER_ARRIVED')) doorbell();
+            else chime();
+            rang = true;
+          }
           showNotice({
             title: n.title,
             body: n.message,

@@ -84,10 +84,8 @@ export default function LiveWatcher() {
   useEffect(
     () =>
       setUpPush({
-        onPush: (data) => {
-          // The professional at the door rings the doorbell, anything else the chime
-          if (data?.notificationType === 'PARTNER_ARRIVED') doorbell();
-          else chime();
+        onPush: () => {
+          // The banner rang with its channel's sound (the doorbell for the professional at the door): screens reload
           bump('notifications', 'bookings');
           lookNow.current?.();
         },
@@ -135,7 +133,8 @@ export default function LiveWatcher() {
           if (cancelled) return;
           const signature = signatureOf(bookings);
           if (lastSignature.current !== null && signature !== lastSignature.current) {
-            if (!quietBookings.current && bookings.some((b) => soundWorthy(lastStatuses.current.get(b.bookingId), b))) chime();
+            // Without push only (with push, the accept / decline notification rings)
+            if (!pushReady() && !quietBookings.current && bookings.some((b) => soundWorthy(lastStatuses.current.get(b.bookingId), b))) chime();
             bump('bookings');
           }
           lastSignature.current = signature;
@@ -254,12 +253,17 @@ export default function LiveWatcher() {
       const unseen = mine.filter((n) => !wasShown(n.notificationId));
       unseen.forEach((n) => markShown(n.notificationId));
       if (!unseen.length || cancelled) return;
-      if (unseen.some((n) => n.notificationType === 'PARTNER_ARRIVED')) doorbell();
-      else chime();
+      let rang = false;
       for (const n of unseen.slice(-3)) {
         if (cancelled) return;
+        // The phone's banner rings with its channel's sound; the app's own popup gets the app's sound (once)
         const shownOnPhone = await showPhoneNotification(n);
         if (!shownOnPhone) {
+          if (!rang) {
+            if (unseen.some((m) => m.notificationType === 'PARTNER_ARRIVED')) doorbell();
+            else chime();
+            rang = true;
+          }
           showNotice({
             title: n.title,
             body: n.message,
@@ -303,13 +307,20 @@ export default function LiveWatcher() {
     }
 
     // Held payment notices pop up once the result screen has shown the outcome (already marked shown: shown here)
-    const stopRelease = onRelease((items) => {
+    const stopRelease = onRelease(async (items) => {
       if (cancelled) return;
-      chime();
-      items.slice(-3).forEach(async (n) => {
+      let rang = false;
+      for (const n of items.slice(-3)) {
+        // The phone's banner rings with its channel's sound; the app's own popup gets the chime (once)
         const shownOnPhone = await showPhoneNotification(n);
-        if (!shownOnPhone) showNotice({ title: n.title, body: n.message, priority: n.priority, icon: 'bell', onPress: () => openTarget(n) });
-      });
+        if (!shownOnPhone) {
+          if (!rang) {
+            chime();
+            rang = true;
+          }
+          showNotice({ title: n.title, body: n.message, priority: n.priority, icon: 'bell', onPress: () => openTarget(n) });
+        }
+      }
     });
 
     lookNow.current = () => {

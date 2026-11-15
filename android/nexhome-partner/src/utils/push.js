@@ -97,15 +97,15 @@ export function lastPushTime() {
 export function setUpPush({ onPush, onOpen, hold }) {
   const N = notifications();
   if (!N) return () => {};
-  // While the app is open the banner shows and LiveWatcher plays the NexHome chime itself (`onPush`), so the sound is
-  // the same on every screen whatever the phone's channel settings; in the background the channel's sound plays
+  // While the app is open the banner pops up with its channel's sound (the same as in the background); LiveWatcher no
+  // longer plays its own chime for it
   N.setNotificationHandler({
     handleNotification: async (notification) => {
       try {
         return decide(notification);
       } catch {
         // Never lose a notification to a mistake here: show it
-        return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false };
+        return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false };
       }
     }
   });
@@ -131,7 +131,9 @@ export function setUpPush({ onPush, onOpen, hold }) {
         quiet = true;
       }
     }
-    return { shouldShowBanner: !quiet, shouldShowList: !quiet, shouldPlaySound: false, shouldSetBadge: false };
+    // shouldPlaySound must be true for a banner: with it false expo marks the notification silent, and Android never
+    // pops up (heads-up) a silent one; the channel plays its sound (notify.wav, the doorbell for PARTNER_ARRIVED)
+    return { shouldShowBanner: !quiet, shouldShowList: !quiet, shouldPlaySound: !quiet, shouldSetBadge: false };
   }
   // The channels (Android keeps a channel's importance once made, so these are new ids made HIGH / MAX from the start:
   // banners pop up on screen); the ids of older builds are removed. Then, on the first launch, the permission is asked.
@@ -172,8 +174,8 @@ export function setUpPush({ onPush, onOpen, hold }) {
 
 /**
  * Shows one of the account's notifications as the phone's own banner (heads-up popup, also kept in the tray) while
- * the app is open: on the doorbell channel for the partner's arrival, `alerts` for HIGH, else `default` (all
- * importance HIGH or MAX, so they pop up; the foreground handler keeps them silent, LiveWatcher plays the sound).
+ * the app is open: on the doorbell channel for the partner's arrival, the alerts channel for HIGH, else the general
+ * one (importance HIGH or MAX, so they pop up, with the channel's sound).
  * Returns false when it cannot (Expo Go, notifications not allowed): the app shows its own popup instead.
  */
 export async function showPhoneNotification(notification) {
@@ -194,6 +196,9 @@ export async function showPhoneNotification(notification) {
         body: notification.message,
         // Heads-up on older Android too (newer ones go by the channel's importance)
         priority: N.AndroidNotificationPriority?.MAX ?? 'max',
+        // A sound and a vibration, or expo marks it silent and Android never pops it up (the channel's sound plays)
+        sound: channelId === CHANNELS.doorbell ? 'doorbell.wav' : 'notify.wav',
+        vibrate: [0, 250, 150, 250],
         data: {
           local: true,
           notificationId: String(notification.notificationId),
