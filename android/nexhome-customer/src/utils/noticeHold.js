@@ -1,8 +1,9 @@
 /**
  * Payment notifications wait while the customer pays: the checkout (`pay`) and the result screen (`payment-status`)
  * hold them, so "Payment received / failed / pending" does not pop up over the checkout or before the result screen
- * says it. The result screen lets them go once it shows the outcome; they then pop up (sound and banner) a moment
- * later. `components/LiveWatcher` and the push handler (`utils/push`) hold PAYMENT notifications through `isHeld`.
+ * says it. The result screen lets them go once it shows the outcome; they then pop up (sound and the app's own
+ * popup) a moment later. Only without push (`components/LiveWatcher` through `isHeld`): with push every notification
+ * shows as the phone's banner, and the backend pushes payment notices 15 s late (NexHomePushDispatcher).
  */
 let holders = 0;
 const held = [];

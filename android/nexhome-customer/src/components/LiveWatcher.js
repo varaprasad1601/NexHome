@@ -9,7 +9,7 @@ import { markRatingShown, promptRating, wasRatingShown } from '../utils/rating';
 import { isPaid } from '../utils/status';
 import { bump, setUnread } from '../utils/live';
 import { holdNotice, isHeld, onRelease } from '../utils/noticeHold';
-import { lastPushTime, markShown, presentedIds, pushReady, registerPush, setUpPush, showPhoneNotification, wasShown } from '../utils/push';
+import { lastPushTime, pushReady, registerPush, setUpPush } from '../utils/push';
 import { showNotice } from './NoticeBanner';
 
 const APP = 'CUSTOMER';
@@ -63,8 +63,11 @@ function soundWorthy(before, now) {
  *   and the rating, from whatever screen is open (not over the pay flow, which opens it itself);
  * - both again as soon as the app comes back to the front; no requests while it is in the background (the timers
  *   keep going, so a look is never lost);
- * - push (in a build): registers the phone, so notifications sound and show in the tray while the app is in the
- *   background or closed; one arriving while the app is open chimes at once; tapping one opens its booking.
+ * - push (in a build): registers the phone; every notification then arrives as the phone's own banner with its sound,
+ *   in the background and while the app is open (as in commit b9c0ec4), and this watcher shows nothing itself; tapping
+ *   one opens its booking. The backend pushes payment notices 15 s late, so they come after the payment result
+ *   screen. Without push (Expo Go, notifications not allowed) the app's own popup (`NoticeBanner`) and chime show each
+ *   new notification instead (payment ones after the result screen: `utils/noticeHold`).
  */
 export default function LiveWatcher() {
   const { signedIn, profile, authRequest } = useAuth();
@@ -77,25 +80,17 @@ export default function LiveWatcher() {
   const lastStatuses = useRef(new Map());
   // Back from the background with push on: what happened meanwhile already rang by push; catch up quietly
   const quietBookings = useRef(false);
-  const catchUp = useRef(false);
   const lookNow = useRef(null);
 
-  // A push while the app is open: the chime at once, and the screens reload; tapping one opens what it is about
+  // A push while the app is open showed its own banner with its sound: the screens reload; tapping one opens it
   useEffect(
     () =>
       setUpPush({
         onPush: () => {
-          // The banner rang with its channel's sound (the doorbell for the professional at the door): screens reload
           bump('notifications', 'bookings');
           lookNow.current?.();
         },
-        onOpen: openTarget,
-        // While the customer pays, payment pushes wait for the result screen (utils/noticeHold)
-        hold: (notification) => {
-          if (!isHeld(notification)) return false;
-          holdNotice(notification);
-          return true;
-        }
+        onOpen: openTarget
       }),
     []
   );
@@ -183,10 +178,12 @@ export default function LiveWatcher() {
     }
 
     /**
-     * New notifications arrived: each pops up (the phone's banner, else the app's own) with one sound, the doorbell
-     * when the professional reached the door, else the chime. A push of the last minute already did both.
+     * New notifications arrived. With push each comes as the phone's banner with its sound: nothing more. Without push
+     * the app's own popup shows each (at most 3) with one sound, the doorbell when the professional reached the door,
+     * else the chime; payment ones wait while the customer pays (shown after the result screen).
      */
     async function present() {
+      if (pushReady()) return;
       let fresh = [];
       try {
         const page = await authRequest(`/api/notifications/me?size=5&unread=true&app=${APP}`);
@@ -196,82 +193,32 @@ export default function LiveWatcher() {
       }
       if (fresh.length) lastSeenId.current = Math.max(lastSeenId.current ?? 0, ...fresh.map((n) => n.notificationId));
       if (!fresh.length) {
-        // Unknown which ones (the list failed): the sound alone without push (with push, the push rings)
-        if (!pushReady() && Date.now() - lastPushTime() > 60000) chime();
+        // Unknown which ones (the list failed): the sound alone
+        if (Date.now() - lastPushTime() > 60000) chime();
         return;
       }
       // Payment notices wait while the customer is paying (shown after the result screen)
       const now = [];
       for (const n of fresh) {
-        if (wasShown(n.notificationId)) continue;
-        if (isHeld(n)) {
-          holdNotice(n);
-          markShown(n.notificationId);
-        } else {
-          now.push(n);
-        }
+        if (isHeld(n)) holdNotice(n);
+        else now.push(n);
       }
-      await showItems(now);
+      showItems(now);
     }
 
-    /**
-     * Back from the background with push on: what came meanwhile rang by push already, except the customer's payment
-     * notices, whose push is sent late (backend, 15 s): those wait for the payment result screen when a payment screen
-     * is open, else pop up now; the late push then stays quiet (same id).
-     */
-    async function catchUpNotices() {
-      let fresh = [];
-      try {
-        const page = await authRequest(`/api/notifications/me?size=10&unread=true&app=${APP}`);
-        fresh = (page?.content ?? []).filter((n) => n.notificationId > (lastSeenId.current ?? 0)).reverse();
-      } catch {
-        return;
-      }
-      if (fresh.length) lastSeenId.current = Math.max(lastSeenId.current ?? 0, ...fresh.map((n) => n.notificationId));
-      const now = [];
-      for (const n of fresh) {
-        if (wasShown(n.notificationId)) continue;
-        if (isHeld(n)) {
-          holdNotice(n);
-          markShown(n.notificationId);
-        } else if (n.notificationType === 'PAYMENT') {
-          now.push(n);
-        } else {
-          markShown(n.notificationId);
-        }
-      }
-      await showItems(now);
-    }
-
-    /** Pops up notifications not shown yet (the phone's banner, else the app's own) with one sound. */
-    async function showItems(items) {
-      // Already in the phone's tray (a push while the app was in the background): not popped up again
-      (await presentedIds()).forEach((id) => markShown(id));
-      // With push, each notification arrives as the phone's own banner with the sound (the push handler): the app shows
-      // only payment notices itself, since their push comes 15 s late (backend); without push (Expo Go, not allowed) all
-      const mine = pushReady() ? items.filter((n) => n.notificationType === 'PAYMENT') : items;
-      const unseen = mine.filter((n) => !wasShown(n.notificationId));
-      unseen.forEach((n) => markShown(n.notificationId));
-      if (!unseen.length || cancelled) return;
-      let rang = false;
-      for (const n of unseen.slice(-3)) {
-        if (cancelled) return;
-        // The phone's banner rings with its channel's sound; the app's own popup gets the app's sound (once)
-        const shownOnPhone = await showPhoneNotification(n);
-        if (!shownOnPhone) {
-          if (!rang) {
-            if (unseen.some((m) => m.notificationType === 'PARTNER_ARRIVED')) doorbell();
-            else chime();
-            rang = true;
-          }
-          showNotice({
-            title: n.title,
-            body: n.message,
-            priority: n.priority,
-            icon: n.notificationType === 'PARTNER_ARRIVED' ? 'map-pin' : 'bell',
-            onPress: () => openTarget(n)
-          });
-        }
+    /** The app's own popup for each (at most 3), with one sound (without push only). */
+    function showItems(items) {
+      if (!items.length || cancelled) return;
+      if (items.some((n) => n.notificationType === 'PARTNER_ARRIVED')) doorbell();
+      else chime();
+      for (const n of items.slice(-3)) {
+        showNotice({
+          title: n.title,
+          body: n.message,
+          priority: n.priority,
+          icon: n.notificationType === 'PARTNER_ARRIVED' ? 'map-pin' : 'bell',
+          onPress: () => openTarget(n)
+        });
       }
     }
 
@@ -287,12 +234,10 @@ export default function LiveWatcher() {
           const unread = summary?.unread ?? 0;
           if (lastUnread.current === null) await baseline();
           else if (unread > lastUnread.current) {
-            if (catchUp.current) await catchUpNotices();
-            else await present();
+            await present();
             bump('notifications', 'bookings');
             lookBookings();
           }
-          catchUp.current = false;
           if (cancelled) return;
           lastUnread.current = unread;
           setUnread(unread);
@@ -306,21 +251,9 @@ export default function LiveWatcher() {
       if (!cancelled) noticeTimer = setTimeout(lookNotifications, NOTIFICATIONS_MS);
     }
 
-    // Held payment notices pop up once the result screen has shown the outcome (already marked shown: shown here)
-    const stopRelease = onRelease(async (items) => {
-      if (cancelled) return;
-      let rang = false;
-      for (const n of items.slice(-3)) {
-        // The phone's banner rings with its channel's sound; the app's own popup gets the chime (once)
-        const shownOnPhone = await showPhoneNotification(n);
-        if (!shownOnPhone) {
-          if (!rang) {
-            chime();
-            rang = true;
-          }
-          showNotice({ title: n.title, body: n.message, priority: n.priority, icon: 'bell', onPress: () => openTarget(n) });
-        }
-      }
+    // Held payment notices pop up once the result screen has shown the outcome (without push only)
+    const stopRelease = onRelease((items) => {
+      if (!cancelled) showItems(items);
     });
 
     lookNow.current = () => {
@@ -332,12 +265,9 @@ export default function LiveWatcher() {
     lookBookings();
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        // With push, notifications that came while the app was away are already in the tray (sound included): the
-        // next look starts again from the newest one instead of popping them up a second time; screens still reload
-        if (pushReady()) {
-          catchUp.current = true;
-          quietBookings.current = true;
-        }
+        // With push, notifications that came while the app was away are already in the tray (sound included); the
+        // booking-change chime is skipped once; screens still reload
+        if (pushReady()) quietBookings.current = true;
         lookNotifications();
         lookBookings();
       }
