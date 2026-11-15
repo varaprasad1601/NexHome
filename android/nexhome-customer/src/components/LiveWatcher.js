@@ -12,6 +12,12 @@ import { holdNotice, isHeld, onRelease } from '../utils/noticeHold';
 import { lastPushTime, pushReady, registerPush, setUpPush } from '../utils/push';
 import { showNotice } from './NoticeBanner';
 
+/**
+ * Push works on this phone: registered, or a push already came in during this run (its banner rang with its sound).
+ * The app then never plays its own sound or popup for a notification, so nothing rings twice.
+ */
+const pushWorks = () => pushReady() || lastPushTime() > 0;
+
 const APP = 'CUSTOMER';
 /** How often the notification count is looked at while the app is open (one small request). */
 const NOTIFICATIONS_MS = 5000;
@@ -129,7 +135,7 @@ export default function LiveWatcher() {
           const signature = signatureOf(bookings);
           if (lastSignature.current !== null && signature !== lastSignature.current) {
             // Without push only (with push, the accept / decline notification rings)
-            if (!pushReady() && !quietBookings.current && bookings.some((b) => soundWorthy(lastStatuses.current.get(b.bookingId), b))) chime();
+            if (!pushWorks() && !quietBookings.current && bookings.some((b) => soundWorthy(lastStatuses.current.get(b.bookingId), b))) chime();
             bump('bookings');
           }
           lastSignature.current = signature;
@@ -183,7 +189,7 @@ export default function LiveWatcher() {
      * else the chime; payment ones wait while the customer pays (shown after the result screen).
      */
     async function present() {
-      if (pushReady()) return;
+      if (pushWorks()) return;
       let fresh = [];
       try {
         const page = await authRequest(`/api/notifications/me?size=5&unread=true&app=${APP}`);
@@ -267,7 +273,7 @@ export default function LiveWatcher() {
       if (state === 'active') {
         // With push, notifications that came while the app was away are already in the tray (sound included); the
         // booking-change chime is skipped once; screens still reload
-        if (pushReady()) quietBookings.current = true;
+        if (pushWorks()) quietBookings.current = true;
         lookNotifications();
         lookBookings();
       }

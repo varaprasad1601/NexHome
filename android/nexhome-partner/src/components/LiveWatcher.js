@@ -8,6 +8,12 @@ import { bump, setUnread } from '../utils/live';
 import { lastPushTime, pushReady, registerPush, setUpPush } from '../utils/push';
 import { showNotice } from './NoticeBanner';
 
+/**
+ * Push works on this phone: registered, or a push already came in during this run (its banner rang with its sound).
+ * The app then never plays its own sound or popup for a notification, so nothing rings twice.
+ */
+const pushWorks = () => pushReady() || lastPushTime() > 0;
+
 const APP = 'PARTNER';
 /** How often the notification count is looked at while the app is open (one small request). */
 const NOTIFICATIONS_MS = 5000;
@@ -84,7 +90,7 @@ export default function LiveWatcher() {
      * the app's own popup shows each (at most 3) with one chime.
      */
     async function present() {
-      if (pushReady()) return;
+      if (pushWorks()) return;
       let fresh = [];
       try {
         const page = await authRequest(`/api/notifications/me?size=5&unread=true&app=${APP}`);
@@ -149,7 +155,7 @@ export default function LiveWatcher() {
       if (state === 'active') {
         // With push, notifications that came while the app was away are already in the tray (sound included): the
         // next look starts again from the newest one; screens still reload
-        if (pushReady()) {
+        if (pushWorks()) {
           if (lastUnread.current !== null) bump('notifications', 'bookings');
           lastUnread.current = null;
         }
