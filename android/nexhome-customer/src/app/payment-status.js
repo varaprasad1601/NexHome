@@ -8,12 +8,18 @@ import { Button, ErrorBox, Text } from '../components/ui';
 import { useAuth } from '../context/AuthProvider';
 import { colors } from '../theme';
 import { money } from '../utils/format';
+import { holdPaymentNotices } from '../utils/noticeHold';
 import { finishPayment, payOnline } from '../utils/pay';
 
-/** How often the order is checked, the least time Processing shows, and how long a bank's PENDING is waited for. */
+/**
+ * How often the order is checked, the least time Processing shows, how long a SUCCESS not yet captured may settle
+ * before showing Pending, and how long a pending payment is watched (it then turns into successful or failed here).
+ */
 const CHECK_MS = 2500;
+const PENDING_CHECK_MS = 4000;
 const MIN_PROCESSING_MS = 1500;
-const PENDING_WAIT_MS = 20000;
+const SUCCESS_SETTLE_MS = 6000;
+const PENDING_WATCH_MS = 5 * 60 * 1000;
 
 /** Each result: icon, colours, title and text. */
 const RESULTS = {
@@ -36,7 +42,7 @@ const RESULTS = {
     fg: colors.amber,
     bg: colors.amberSoft,
     title: 'Payment pending',
-    text: 'Your bank is still confirming the payment. Your booking shows it as paid once confirmed.'
+    text: 'Your bank is still confirming the payment. This page updates by itself when it goes through, or check your booking later. Please do not pay again yet.'
   },
   OPEN: {
     icon: 'alert-circle',
@@ -61,13 +67,23 @@ export default function PaymentStatus() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  // Payment notifications (received / failed / pending) wait until this screen shows the outcome, then pop up
+  const [release] = useState(() => holdPaymentNotices());
+  useEffect(() => {
+    if (result) release();
+  }, [result, release]);
+  useEffect(() => () => release(0), [release]);
+
   useEffect(() => {
     let stopped = false;
     let timer;
+    let showTimer;
+    let pendingShown = false;
     const started = Date.now();
     const show = (value) => {
       const wait = Math.max(0, MIN_PROCESSING_MS - (Date.now() - started));
-      timer = setTimeout(() => !stopped && setResult(value), wait);
+      clearTimeout(showTimer);
+      showTimer = setTimeout(() => !stopped && setResult(value), wait);
     };
     const check = async () => {
       let order = null;
@@ -91,16 +107,21 @@ export default function PaymentStatus() {
         }
         if (attempt !== 'PENDING' && attempt !== 'SUCCESS') return show({ state: 'OPEN', order });
       }
-      if (Date.now() - started >= PENDING_WAIT_MS) {
+      // The bank is still confirming: Payment pending at once (a SUCCESS being captured gets a few seconds first), and
+      // this screen keeps checking, turning into successful or failed when the bank answers
+      const settling = order?.lastAttemptStatus === 'SUCCESS' && Date.now() - started < SUCCESS_SETTLE_MS;
+      if (!pendingShown && !settling && (order || Date.now() - started >= SUCCESS_SETTLE_MS)) {
+        pendingShown = true;
         const pendingRef = order && order.lastAttemptId !== (since || null) ? order.lastAttemptId : null;
-        return show({ state: 'PENDING', order, reference: pendingRef });
+        show({ state: 'PENDING', order, reference: pendingRef });
       }
-      timer = setTimeout(check, CHECK_MS);
+      if (Date.now() - started < PENDING_WATCH_MS) timer = setTimeout(check, pendingShown ? PENDING_CHECK_MS : CHECK_MS);
     };
     check();
     return () => {
       stopped = true;
       clearTimeout(timer);
+      clearTimeout(showTimer);
     };
   }, [authRequest, orderId, since]);
 

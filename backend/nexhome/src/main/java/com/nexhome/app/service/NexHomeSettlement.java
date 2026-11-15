@@ -102,6 +102,12 @@ class NexHomeSettlement {
 		if (attempts == null || attempts.isEmpty()) {
 			return;
 		}
+		// One check at a time per order: the customer's payment screen and the partner's Payment processing screen ask
+		// every few seconds, and two checks seeing the same new or changed attempt would each write its history line
+		// and tell of it (payment pending twice). The second waits here and then finds it recorded.
+		if (order.getId() != null) {
+			orderRepository.findByIdForUpdate(order.getId());
+		}
 		List<NexHomeBooking> bookings = null;
 		for (NexHomePaymentGateway.Attempt attempt : attempts) {
 			if (attempt.providerPaymentId() == null || attempt.status() == null) {

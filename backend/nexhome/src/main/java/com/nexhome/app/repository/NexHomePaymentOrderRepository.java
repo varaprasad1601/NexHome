@@ -4,10 +4,15 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import jakarta.persistence.LockModeType;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import com.nexhome.app.model.NexHomePaymentOrder;
@@ -66,4 +71,13 @@ public interface NexHomePaymentOrderRepository extends JpaRepository<NexHomePaym
 	/** Newest first, with the customers. */
 	@EntityGraph(attributePaths = "customer")
 	Page<NexHomePaymentOrder> findAllByOrderByCreationDateDescIdDesc(Pageable pageable);
+
+	/**
+	 * The order, locked until the transaction ends: recording its attempts (NexHomeSettlement.recordAttempts) takes
+	 * turns, so the customer's and the partner's checks running at once never both see an attempt as new or changed
+	 * (and tell of it twice).
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select o from NexHomePaymentOrder o where o.id = :id")
+	Optional<NexHomePaymentOrder> findByIdForUpdate(@Param("id") Long id);
 }

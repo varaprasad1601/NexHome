@@ -29,6 +29,36 @@ function notifications() {
 
 let token = null;
 let lastPushAt = 0;
+let registered = false;
+
+/** Whether this phone is registered for push: notifications reach it in the background, in the tray. */
+export function pushReady() {
+  return registered;
+}
+
+/** The ids of the account's notifications now in the phone's tray (shown by push or by the app): not shown again. */
+export async function presentedIds() {
+  const N = notifications();
+  if (!N) return [];
+  try {
+    const list = await N.getPresentedNotificationsAsync();
+    return list.map((n) => n?.request?.content?.data?.notificationId).filter((id) => id != null && id !== '');
+  } catch {
+    return [];
+  }
+}
+/** The notifications already shown (by id): one seen both by LiveWatcher's look and by its push shows once. */
+const shown = new Set();
+
+/** Marks a notification shown (its popup and sound are done). */
+export function markShown(notificationId) {
+  if (notificationId != null && notificationId !== '') shown.add(String(notificationId));
+}
+
+/** Whether a notification was already shown. */
+export function wasShown(notificationId) {
+  return notificationId != null && shown.has(String(notificationId));
+}
 
 /** When the last push came in while the app was open (its sound already played). */
 export function lastPushTime() {
@@ -36,21 +66,39 @@ export function lastPushTime() {
 }
 
 /**
- * Channels, the foreground behaviour and the listeners; returns a cleanup. `onPush()` runs when a push arrives while
- * the app is open, `onOpen(data)` when the person taps one (also the tap that started the app).
+ * Channels, the foreground behaviour and the listeners; returns a cleanup. `onPush(data)` runs when a push arrives
+ * while the app is open (not one already shown by LiveWatcher), `onOpen(data)` when the person taps one (also the tap
+ * that started the app). `hold(notification)` (optional) keeps a push back for later instead of showing it now
+ * (the customer's payment notices while a payment screen is open); it returns true when it took it.
  */
-export function setUpPush({ onPush, onOpen }) {
+export function setUpPush({ onPush, onOpen, hold }) {
   const N = notifications();
   if (!N) return () => {};
   // While the app is open the banner shows and LiveWatcher plays the NexHome chime itself (`onPush`), so the sound is
   // the same on every screen whatever the phone's channel settings; in the background the channel's sound plays
   N.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: false,
-      shouldSetBadge: false
-    })
+    handleNotification: async (notification) => {
+      const content = notification?.request?.content ?? {};
+      const data = content.data ?? {};
+      // Ours (local) always shows; a push already shown by LiveWatcher, or held for later, does not pop up again
+      let quiet = !data.local && wasShown(data.notificationId);
+      if (!data.local && !quiet && hold) {
+        const taken = hold({
+          notificationId: data.notificationId,
+          notificationType: data.notificationType,
+          priority: data.priority,
+          referenceType: data.referenceType,
+          referenceId: data.referenceId,
+          title: content.title,
+          message: content.body
+        });
+        if (taken) {
+          markShown(data.notificationId);
+          quiet = true;
+        }
+      }
+      return { shouldShowBanner: !quiet, shouldShowList: !quiet, shouldPlaySound: false, shouldSetBadge: false };
+    }
   });
   const channel = { sound: 'notify.wav', vibrationPattern: [0, 250, 150, 250], lightColor: '#0b438b' };
   N.setNotificationChannelAsync('default', { ...channel, name: 'Notifications', importance: N.AndroidImportance.HIGH }).catch(() => {});
@@ -63,6 +111,9 @@ export function setUpPush({ onPush, onOpen }) {
     // One the app showed itself (showPhoneNotification) is not a push: its sound already played
     if (data.local) return;
     lastPushAt = Date.now();
+    // Already shown (LiveWatcher's look came first) or held: no second sound
+    if (wasShown(data.notificationId)) return;
+    markShown(data.notificationId);
     onPush?.(data);
   });
   const opened = N.addNotificationResponseReceivedListener((response) => {
@@ -128,6 +179,7 @@ export async function registerPush(authRequest, app) {
       body: { deviceToken: device.data, app, platform: 'ANDROID' }
     });
     token = device.data;
+    registered = true;
     return true;
   } catch {
     // No Firebase in this build, no network, ...: the foreground chime still works
@@ -140,5 +192,6 @@ export async function unregisterPush(authRequest) {
   if (!token) return;
   const deviceToken = token;
   token = null;
+  registered = false;
   await authRequest('/api/notifications/devices/unregister', { method: 'PUT', body: { deviceToken } }).catch(() => {});
 }

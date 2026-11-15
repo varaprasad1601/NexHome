@@ -35,7 +35,8 @@ export default function Home() {
   // No timers of its own: components/LiveWatcher looks at the notifications and bookings on every screen and reloads
   // these when the professional (or NexHome) changes a booking or a notification arrives
   const summary = useApi('/api/notifications/me/summary?app=CUSTOMER', { live: 'notifications' });
-  const bookings = useApi('/api/bookings/me?size=20', { live: 'bookings' });
+  // As many as the Bookings tab (100, newest booked first), so the earliest upcoming one is never left out of Next
+  const bookings = useApi('/api/bookings/me?size=100', { live: 'bookings' });
   const contact = useApi('/api/settings/public');
   const reviews = useApi('/api/reviews/me?size=100', { live: 'bookings' });
 
@@ -154,7 +155,7 @@ export default function Home() {
         <View style={{ padding: 20, paddingTop: 12, gap: 18 }}>
           {/* Working now and Next, while there are such bookings */}
           {cards.map((card) => (
-            <HomeBookingCard key={card.key} title={card.title} booking={card.booking} live={card.key === 'working'} />
+            <HomeBookingCard key={card.key} title={card.title} booking={card.booking} live={card.key === 'working'} due={card.key === 'due'} />
           ))}
 
           {/* Banner with the logo */}
@@ -289,33 +290,45 @@ export default function Home() {
 /** The order of Home's booking: working, partner accepted, partner assigned, then the other open ones (to do). */
 const WORKING = ['IN_PROGRESS', 'PAUSED'];
 
+/** Next: partner accepted first, then partner assigned, then confirmed, then pending (each earliest scheduled first). */
+const NEXT_RANK = { PARTNER_EN_ROUTE: 0, ASSIGNED: 1, CONFIRMED: 2, PENDING: 3 };
+
 /**
- * The bookings Home shows (at most two), each with its heading: **Working now** (the work under way, paused too; the
- * one started first) and **Next** (the earliest open booking still to come: "as soon as possible" ones without a time
- * first, then the earliest scheduled time); a job done but waiting for its payment only when there is neither.
+ * The bookings Home shows, each with its heading: **Payment due** first when a finished job waits for its payment
+ * (the most recently finished, with how many more are due), then **Working now** (the work under way, paused too; the
+ * one started first), then **Next**: by stage (partner accepted, then partner assigned, then confirmed, then pending)
+ * and within a stage by scheduled time, earliest first ("as soon as possible" ones without a time first).
  */
 function homeBookings(list) {
   const open = list.filter(isOpen);
   const time = (booking) => parseApiDate(booking.scheduledStartAt)?.date.getTime() ?? 0;
   const startedAt = (booking) => parseApiDate(booking.actualStartAt)?.date.getTime() ?? 0;
+  const endedAt = (booking) => parseApiDate(booking.actualEndAt)?.date.getTime() ?? 0;
+  const due = open.filter(isPaymentDue).sort((a, b) => endedAt(b) - endedAt(a));
   const working = open
     .filter((b) => WORKING.includes(b.bookingStatus) && !isPaymentDue(b))
     .sort((a, b) => startedAt(a) - startedAt(b))[0];
   const next = open
-    .filter((b) => !WORKING.includes(b.bookingStatus) && !isPaymentDue(b))
-    .sort((a, b) => time(a) - time(b) || Number(a.bookingId) - Number(b.bookingId))[0];
+    .filter((b) => NEXT_RANK[b.bookingStatus] !== undefined)
+    .sort(
+      (a, b) =>
+        NEXT_RANK[a.bookingStatus] - NEXT_RANK[b.bookingStatus] || time(a) - time(b) || Number(a.bookingId) - Number(b.bookingId)
+    )[0];
   const cards = [];
+  if (due.length) {
+    cards.push({
+      key: 'due',
+      title: due.length > 1 ? `Payment due · ${due.length} jobs` : 'Payment due',
+      booking: due[0]
+    });
+  }
   if (working) cards.push({ key: 'working', title: 'Working now', booking: working });
   if (next) cards.push({ key: 'next', title: 'Next', booking: next });
-  if (!cards.length) {
-    const due = open.filter(isPaymentDue)[0];
-    if (due) cards.push({ key: 'due', title: 'Payment due', booking: due });
-  }
   return cards;
 }
 
 /** One booking card of Home (status card: service, when, status and professional). */
-function HomeBookingCard({ title, booking, live }) {
+function HomeBookingCard({ title, booking, live, due }) {
   return (
     <View style={{ gap: 6 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -327,19 +340,28 @@ function HomeBookingCard({ title, booking, live }) {
       <Pressable
         accessibilityRole="button"
         onPress={() => router.push(`/booking/${booking.bookingId}`)}
-        style={{ flexDirection: 'row', alignItems: 'stretch', gap: 12, padding: 14, borderRadius: 16, backgroundColor: colors.greenSoft, borderWidth: live ? 2 : 1, borderColor: live ? colors.green : '#cdebdc' }}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'stretch',
+          gap: 12,
+          padding: 14,
+          borderRadius: 16,
+          backgroundColor: due ? colors.amberSoft : colors.greenSoft,
+          borderWidth: live || due ? 2 : 1,
+          borderColor: due ? colors.amber : live ? colors.green : '#cdebdc'
+        }}
       >
         {/* The icon is as tall as the three lines: they start at its top and end at its bottom */}
         <View style={{ width: 48, borderRadius: 13, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }}>
-          <Feather name={live ? 'tool' : 'calendar'} size={20} color={colors.green} />
+          <Feather name={due ? 'credit-card' : live ? 'tool' : 'calendar'} size={20} color={due ? colors.amber : colors.green} />
         </View>
         <View style={{ flex: 1, gap: 3, justifyContent: 'space-between' }}>
           <Text weight="bold" style={{ fontSize: 13.5, lineHeight: 18 }} numberOfLines={1}>
             {serviceNameOf(booking.serviceName)}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <Feather name={booking.scheduledStartAt ? 'clock' : 'zap'} size={12} color={colors.greenDark} />
-            <Text weight="semibold" style={{ flex: 1, fontSize: 12, lineHeight: 16, color: colors.greenDark }} numberOfLines={1}>
+            <Feather name={booking.scheduledStartAt ? 'clock' : 'zap'} size={12} color={due ? colors.amber : colors.greenDark} />
+            <Text weight="semibold" style={{ flex: 1, fontSize: 12, lineHeight: 16, color: due ? colors.amber : colors.greenDark }} numberOfLines={1}>
               {booking.scheduledStartAt ? rangeLabel(booking.scheduledStartAt, booking.scheduledEndAt) : 'As soon as possible'}
             </Text>
           </View>
@@ -353,7 +375,7 @@ function HomeBookingCard({ title, booking, live }) {
           </Text>
         </View>
         <View style={{ justifyContent: 'center' }}>
-          <Feather name="chevron-right" size={18} color={colors.green} />
+          <Feather name="chevron-right" size={18} color={due ? colors.amber : colors.green} />
         </View>
       </Pressable>
     </View>

@@ -5,7 +5,7 @@ import { AppState } from 'react-native';
 import { useAuth } from '../context/AuthProvider';
 import { chime, doorbell } from '../utils/chime';
 import { bump, setUnread } from '../utils/live';
-import { lastPushTime, registerPush, setUpPush, showPhoneNotification } from '../utils/push';
+import { lastPushTime, markShown, presentedIds, pushReady, registerPush, setUpPush, showPhoneNotification, wasShown } from '../utils/push';
 import { showNotice } from './NoticeBanner';
 
 const APP = 'PARTNER';
@@ -91,13 +91,27 @@ export default function LiveWatcher() {
         // Unknown which ones: the sound alone
       }
       if (fresh.length) lastSeenId.current = Math.max(lastSeenId.current ?? 0, ...fresh.map((n) => n.notificationId));
-      if (Date.now() - lastPushTime() <= 60000) return;
-      if (fresh.some((n) => n.notificationType === 'PARTNER_ARRIVED')) doorbell();
+      if (!fresh.length) {
+        // Unknown which ones (the list failed): the sound alone, unless a push just rang
+        if (Date.now() - lastPushTime() > 60000) chime();
+        return;
+      }
+      await showItems(fresh);
+    }
+
+    /** Pops up notifications not shown yet (the phone's banner, else the app's own) with one sound. */
+    async function showItems(items) {
+      // Already in the phone's tray (a push while the app was in the background): not popped up again
+      (await presentedIds()).forEach((id) => markShown(id));
+      const unseen = items.filter((n) => !wasShown(n.notificationId));
+      unseen.forEach((n) => markShown(n.notificationId));
+      if (!unseen.length || cancelled) return;
+      if (unseen.some((n) => n.notificationType === 'PARTNER_ARRIVED')) doorbell();
       else chime();
-      for (const n of fresh.slice(-3)) {
+      for (const n of unseen.slice(-3)) {
         if (cancelled) return;
-        const shown = await showPhoneNotification(n);
-        if (!shown) {
+        const shownOnPhone = await showPhoneNotification(n);
+        if (!shownOnPhone) {
           showNotice({
             title: n.title,
             body: n.message,
@@ -143,7 +157,15 @@ export default function LiveWatcher() {
     };
     look();
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') look();
+      if (state === 'active') {
+        // With push, notifications that came while the app was away are already in the tray (sound included): the
+        // next look starts again from the newest one instead of popping them up a second time; screens still reload
+        if (pushReady()) {
+          if (lastUnread.current !== null) bump('notifications', 'bookings');
+          lastUnread.current = null;
+        }
+        look();
+      }
     });
     return () => {
       cancelled = true;

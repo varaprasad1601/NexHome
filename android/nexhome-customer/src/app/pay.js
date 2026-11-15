@@ -8,6 +8,7 @@ import { API_BASE_URL } from '../api/client';
 import { Header, Loading } from '../components/ui';
 import { useAuth } from '../context/AuthProvider';
 import { colors } from '../theme';
+import { holdPaymentNotices } from '../utils/noticeHold';
 import { ATTEMPT_DONE, PAYMENT_RETURN } from '../utils/pay';
 
 /**
@@ -17,8 +18,12 @@ import { ATTEMPT_DONE, PAYMENT_RETURN } from '../utils/pay';
  */
 const IDLE_CHECK_MS = 15000;
 const ACTIVE_CHECK_MS = 4000;
-/** How long an attempt may wait for the bank (PENDING) before the screen closes and leaves it to confirm later. */
-const PENDING_GRACE_MS = 30000;
+/**
+ * How long an attempt may wait for the bank (PENDING) while the customer is on this screen before it closes: the result
+ * screen then shows Payment pending at once and keeps watching until the bank answers. Time in the UPI app does not
+ * count (no checks while the app is in the background), so approving there is never cut short.
+ */
+const PENDING_GRACE_MS = 8000;
 
 /** Addresses the page itself may open; anything else (upi:, intent:, tez:, phonepe:, ...) is a payment app. */
 const WEB = /^(https?:|about:|data:|blob:|javascript:)/i;
@@ -55,6 +60,8 @@ export default function Pay() {
   const pendingSince = useRef(null);
   // The latest attempt when the page opened (e.g. an earlier failed try): only a newer one closes the screen
   const before = useRef(undefined);
+  // Payment notifications wait while paying; the result screen shows them after the outcome (utils/noticeHold)
+  useEffect(() => holdPaymentNotices(), []);
 
   // On to the result: Processing, then successful / failed / pending (only attempts after `since` count)
   const close = () => {

@@ -8,7 +8,8 @@ import { promptCompletion } from '../utils/completion';
 import { markRatingShown, promptRating, wasRatingShown } from '../utils/rating';
 import { isPaid } from '../utils/status';
 import { bump, setUnread } from '../utils/live';
-import { lastPushTime, registerPush, setUpPush, showPhoneNotification } from '../utils/push';
+import { holdNotice, isHeld, onRelease } from '../utils/noticeHold';
+import { lastPushTime, markShown, presentedIds, pushReady, registerPush, setUpPush, showPhoneNotification, wasShown } from '../utils/push';
 import { showNotice } from './NoticeBanner';
 
 const APP = 'CUSTOMER';
@@ -74,6 +75,8 @@ export default function LiveWatcher() {
   const lastSeenId = useRef(null);
   const lastSignature = useRef(null);
   const lastStatuses = useRef(new Map());
+  // Back from the background with push on: what happened meanwhile already rang by push; catch up quietly
+  const quietBookings = useRef(false);
   const lookNow = useRef(null);
 
   // A push while the app is open: the chime at once, and the screens reload; tapping one opens what it is about
@@ -87,7 +90,13 @@ export default function LiveWatcher() {
           bump('notifications', 'bookings');
           lookNow.current?.();
         },
-        onOpen: openTarget
+        onOpen: openTarget,
+        // While the customer pays, payment pushes wait for the result screen (utils/noticeHold)
+        hold: (notification) => {
+          if (!isHeld(notification)) return false;
+          holdNotice(notification);
+          return true;
+        }
       }),
     []
   );
@@ -120,15 +129,17 @@ export default function LiveWatcher() {
         lookingBookings = true;
         next = null;
         try {
-          const bookings = (await authRequest('/api/bookings/me?size=20'))?.content ?? [];
+          // The same 100 as Home and Bookings, so a change to any open booking is seen
+          const bookings = (await authRequest('/api/bookings/me?size=100'))?.content ?? [];
           if (cancelled) return;
           const signature = signatureOf(bookings);
           if (lastSignature.current !== null && signature !== lastSignature.current) {
-            if (bookings.some((b) => soundWorthy(lastStatuses.current.get(b.bookingId), b))) chime();
+            if (!quietBookings.current && bookings.some((b) => soundWorthy(lastStatuses.current.get(b.bookingId), b))) chime();
             bump('bookings');
           }
           lastSignature.current = signature;
           lastStatuses.current = new Map(bookings.map((b) => [b.bookingId, b]));
+          quietBookings.current = false;
           let prompted = false;
           for (const booking of bookings) {
             if (promptCompletion(booking)) {
@@ -184,13 +195,38 @@ export default function LiveWatcher() {
         // Unknown which ones: the sound alone
       }
       if (fresh.length) lastSeenId.current = Math.max(lastSeenId.current ?? 0, ...fresh.map((n) => n.notificationId));
-      if (Date.now() - lastPushTime() <= 60000) return;
-      if (fresh.some((n) => n.notificationType === 'PARTNER_ARRIVED')) doorbell();
+      if (!fresh.length) {
+        // Unknown which ones (the list failed): the sound alone, unless a push just rang
+        if (Date.now() - lastPushTime() > 60000) chime();
+        return;
+      }
+      // Payment notices wait while the customer is paying (shown after the result screen)
+      const now = [];
+      for (const n of fresh) {
+        if (wasShown(n.notificationId)) continue;
+        if (isHeld(n)) {
+          holdNotice(n);
+          markShown(n.notificationId);
+        } else {
+          now.push(n);
+        }
+      }
+      await showItems(now);
+    }
+
+    /** Pops up notifications not shown yet (the phone's banner, else the app's own) with one sound. */
+    async function showItems(items) {
+      // Already in the phone's tray (a push while the app was in the background): not popped up again
+      (await presentedIds()).forEach((id) => markShown(id));
+      const unseen = items.filter((n) => !wasShown(n.notificationId));
+      unseen.forEach((n) => markShown(n.notificationId));
+      if (!unseen.length || cancelled) return;
+      if (unseen.some((n) => n.notificationType === 'PARTNER_ARRIVED')) doorbell();
       else chime();
-      for (const n of fresh.slice(-3)) {
+      for (const n of unseen.slice(-3)) {
         if (cancelled) return;
-        const shown = await showPhoneNotification(n);
-        if (!shown) {
+        const shownOnPhone = await showPhoneNotification(n);
+        if (!shownOnPhone) {
           showNotice({
             title: n.title,
             body: n.message,
@@ -231,6 +267,16 @@ export default function LiveWatcher() {
       if (!cancelled) noticeTimer = setTimeout(lookNotifications, NOTIFICATIONS_MS);
     }
 
+    // Held payment notices pop up once the result screen has shown the outcome (already marked shown: shown here)
+    const stopRelease = onRelease((items) => {
+      if (cancelled) return;
+      chime();
+      items.slice(-3).forEach(async (n) => {
+        const shownOnPhone = await showPhoneNotification(n);
+        if (!shownOnPhone) showNotice({ title: n.title, body: n.message, priority: n.priority, icon: 'bell', onPress: () => openTarget(n) });
+      });
+    });
+
     lookNow.current = () => {
       if (Date.now() - lastLook < SCREEN_LOOK_MS) return;
       lookNotifications();
@@ -240,12 +286,20 @@ export default function LiveWatcher() {
     lookBookings();
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
+        // With push, notifications that came while the app was away are already in the tray (sound included): the
+        // next look starts again from the newest one instead of popping them up a second time; screens still reload
+        if (pushReady()) {
+          if (lastUnread.current !== null) bump('notifications', 'bookings');
+          lastUnread.current = null;
+          quietBookings.current = true;
+        }
         lookNotifications();
         lookBookings();
       }
     });
     return () => {
       cancelled = true;
+      stopRelease();
       lookNow.current = null;
       clearTimeout(bookingTimer);
       clearTimeout(noticeTimer);
